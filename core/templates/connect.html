@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fanus Player | Connect Device</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Space Grotesk', 'sans-serif'] },
+                    colors: {
+                        primary: '#0df233', // Neon Green
+                        background: '#050505',
+                        surface: '#121212',
+                    },
+                    backgroundImage: {
+                        'neon-glow': 'radial-gradient(circle at 50% 0%, rgba(13, 242, 51, 0.15) 0%, rgba(5, 5, 5, 0) 60%)',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #050505; color: #ffffff; -webkit-tap-highlight-color: transparent; }
+        
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .btn-primary {
+            background: #0df233;
+            color: #000;
+            box-shadow: 0 0 20px rgba(13, 242, 51, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-primary:active {
+            transform: scale(0.96);
+            box-shadow: 0 0 10px rgba(13, 242, 51, 0.1);
+        }
+
+        /* Step Connector Line */
+        .step-line {
+            position: absolute;
+            left: 20px;
+            top: 40px;
+            bottom: -20px;
+            width: 2px;
+            background: linear-gradient(to bottom, #0df233 0%, rgba(255,255,255,0.1) 100%);
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="h-[100dvh] flex flex-col items-center justify-center bg-neon-glow bg-no-repeat bg-top overflow-hidden relative p-6">
+
+    <div class="fixed inset-0 pointer-events-none">
+        <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/10 blur-[100px] rounded-full animate-pulse-slow"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-40 h-40 bg-blue-500/10 blur-[80px] rounded-full animate-pulse-slow" style="animation-delay: 1.5s;"></div>
+    </div>
+
+    <div class="glass-panel w-full max-w-md rounded-3xl p-8 relative z-10 animate-float flex flex-col items-center">
+        
+        <div class="size-20 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(13,242,51,0.15)] relative">
+            <span class="material-symbols-outlined text-[40px] text-primary">queue_music</span>
+            <div class="absolute inset-0 rounded-full border border-primary/50 animate-ping opacity-20"></div>
+        </div>
+
+        <h1 class="text-3xl font-bold text-center mb-2 tracking-tight">Connect & Play</h1>
+        <p class="text-gray-400 text-center text-sm mb-10 leading-relaxed px-2">
+            Link your Telegram to control playback and <br> <span class="text-white font-bold">send music files</span> directly to the player.
+        </p>
+
+        <div class="w-full space-y-6 relative mb-10 pl-2">
+            
+            <div class="relative z-10 flex gap-5 group">
+                <div class="step-line"></div>
+                <div class="size-10 rounded-full bg-surface border border-primary/50 text-primary flex items-center justify-center text-sm font-bold shadow-[0_0_15px_rgba(13,242,51,0.2)] shrink-0">1</div>
+                <div class="pt-2">
+                    <h3 class="text-white font-bold text-sm mb-1">Launch Bot</h3>
+                    <p class="text-xs text-gray-500">Tap the button below and press <strong>Start</strong>.</p>
+                </div>
+            </div>
+
+            <div class="relative z-10 flex gap-5 group">
+                <div class="size-10 rounded-full bg-surface border border-white/10 text-gray-400 group-hover:border-white/30 group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                    <span class="material-symbols-outlined text-[20px]">audio_file</span> 
+                </div>
+                <div class="pt-2">
+                    <h3 class="text-white font-bold text-sm mb-1">Send Music</h3>
+                    <p class="text-xs text-gray-500">Upload or forward <strong>Audio Files</strong> to the bot to play them here.</p>
+                </div>
+            </div>
+        </div>
+
+        <a href="{{ telegram_link }}" class="btn-primary w-full py-4 rounded-xl flex items-center justify-center gap-3 font-bold text-base group relative overflow-hidden">
+            <span class="material-symbols-outlined text-[24px] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform">rocket_launch</span>
+            Open Telegram Bot
+            
+            <div class="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent z-10"></div>
+        </a>
+
+        <p class="mt-6 text-[10px] text-gray-600 font-mono text-center">
+            Session ID: <span class="text-gray-500">{{ telegram_link.split('=')[-1][:8] }}...</span>
+        </p>
+    </div>
+
+    <div class="absolute bottom-6 text-[10px] text-gray-600 font-mono tracking-widest uppercase">
+        Fanus Ecosystem v2.0
+    </div>
+
+</body>
+</html>

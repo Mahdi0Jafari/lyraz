@@ -1,0 +1,94 @@
+name: Fanus Player Production CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+          platforms: linux/amd64
+          # 🚀 تغییر ۱: کش را فعال کردیم تا بیلد سریع‌تر شود
+          # no-cache: true  <-- این را کامنت یا حذف کردم
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "🛑 Stopping old container..."
+            sudo docker stop fanus_app || true
+            sudo docker rm fanus_app || true
+
+            # آماده‌سازی پوشه‌ها
+            mkdir -p /home/ubuntu/deploy/instance
+            mkdir -p /home/ubuntu/deploy/logs
+            
+            # 🚀 تغییر ۲: تضمین مالکیت پوشه (جلوگیری از ارور Permission در آینده)
+            sudo chown -R $USER:$USER /home/ubuntu/deploy
+            
+            cd /home/ubuntu/deploy
+
+            # ساخت فایل .env
+            echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
+            echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
+            echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
+            echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}" >> .env
+            echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
+            echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+            echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
+            
+            # 🚀 تغییر ۳: استفاده از sudo tee برای نوشتن کوکی (محکم‌کاری)
+            # اگر به هر دلیلی chown بالا کار نکرد، این خط به زور فایل را می‌نویسد
+            printf "%s" "${{ secrets.YT_COOKIES }}" | sudo tee /home/ubuntu/deploy/instance/cookies.txt > /dev/null
+            
+            # تنظیم دسترسی خواندن برای همه (تا داکر بتواند بخواند)
+            sudo chmod 644 /home/ubuntu/deploy/instance/cookies.txt
+            
+            # بررسی وضعیت فایل
+            if [ -s /home/ubuntu/deploy/instance/cookies.txt ]; then
+                echo "✅ Cookies injected successfully."
+            else
+                echo "⚠️ WARNING: Cookie file is empty!"
+            fi
+
+            echo "🔄 Pulling latest image..."
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+            
+            echo "🚀 Starting new container..."
+            sudo docker run -d \
+              --name fanus_app \
+              --restart always \
+              -p 127.0.0.1:5001:5000 \
+              -v /home/ubuntu/deploy/instance:/app/instance \
+              -v /home/ubuntu/deploy/logs:/app/logs \
+              --env-file .env \
+              ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+
+            echo "🧹 Cleaning up..."
+            sudo docker image prune -f
