@@ -1,14 +1,14 @@
 FROM python:3.11-slim
 
-# تنظیمات پایه
+# تنظیمات محیطی پایتون برای داکر
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# ۱. نصب FFmpeg (حیاتی برای دانلودر)
+# ۱. نصب پکیج‌های سیستمی (FFmpeg حیاتی است)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -17,12 +17,11 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ۳. کپی کدها
+# ۳. کپی کل پروژه
 COPY . /app
 
+# پورت ۵۰۰۰ برای وب‌سایت
 EXPOSE 5000
 
-# ۴. 🔥 دستور اجرای نهایی (اینجا جادو اتفاق می‌افتد)
-# --workers 1: همه چیز در یک پروسه باشد تا متغیر announcer مشترک بماند
-# --threads 100: قدرت پاسخگویی همزمان به ۱۰۰ نفر (برای SSE عالی است)
-CMD ["gunicorn", "--workers", "1", "--threads", "100", "--bind", "0.0.0.0:5000", "app:app"]
+# ⚠️ نکته مهم: اینجا CMD نداریم. 
+# دستور اجرا در docker-compose.yml تعیین می‌شود.

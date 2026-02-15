@@ -20,6 +20,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      # بهینه‌سازی: استفاده از کش گیت‌هاب برای بیلد سریع‌تر
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -27,8 +28,8 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
           platforms: linux/amd64
-          # 🚀 تغییر ۱: کش را فعال کردیم تا بیلد سریع‌تر شود
-          # no-cache: true  <-- این را کامنت یا حذف کردم
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
@@ -41,20 +42,16 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            echo "🛑 Stopping old container..."
-            sudo docker stop fanus_app || true
-            sudo docker rm fanus_app || true
-
-            # آماده‌سازی پوشه‌ها
-            mkdir -p /home/ubuntu/deploy/instance
-            mkdir -p /home/ubuntu/deploy/logs
+            # 1. آماده‌سازی پوشه‌ها و دسترسی‌ها
+            export DEPLOY_DIR="/home/ubuntu/deploy"
+            mkdir -p $DEPLOY_DIR/instance
+            mkdir -p $DEPLOY_DIR/logs
             
-            # 🚀 تغییر ۲: تضمین مالکیت پوشه (جلوگیری از ارور Permission در آینده)
-            sudo chown -R $USER:$USER /home/ubuntu/deploy
-            
-            cd /home/ubuntu/deploy
+            # تغییر مالکیت پوشه به یوزر جاری (جلوگیری از مشکلات Permission)
+            sudo chown -R $USER:$USER $DEPLOY_DIR
+            cd $DEPLOY_DIR
 
-            # ساخت فایل .env
+            # 2. ساخت فایل .env از Secrets گیت‌هاب
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
             echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
@@ -62,33 +59,61 @@ jobs:
             echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
-            
-            # 🚀 تغییر ۳: استفاده از sudo tee برای نوشتن کوکی (محکم‌کاری)
-            # اگر به هر دلیلی chown بالا کار نکرد، این خط به زور فایل را می‌نویسد
-            printf "%s" "${{ secrets.YT_COOKIES }}" | sudo tee /home/ubuntu/deploy/instance/cookies.txt > /dev/null
-            
-            # تنظیم دسترسی خواندن برای همه (تا داکر بتواند بخواند)
-            sudo chmod 644 /home/ubuntu/deploy/instance/cookies.txt
-            
-            # بررسی وضعیت فایل
-            if [ -s /home/ubuntu/deploy/instance/cookies.txt ]; then
-                echo "✅ Cookies injected successfully."
-            else
-                echo "⚠️ WARNING: Cookie file is empty!"
-            fi
 
-            echo "🔄 Pulling latest image..."
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-            
-            echo "🚀 Starting new container..."
-            sudo docker run -d \
-              --name fanus_app \
-              --restart always \
-              -p 127.0.0.1:5001:5000 \
-              -v /home/ubuntu/deploy/instance:/app/instance \
-              -v /home/ubuntu/deploy/logs:/app/logs \
-              --env-file .env \
-              ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+            # 3. تزریق کوکی‌ها (حیاتی برای دانلودر یوتیوب)
+            printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
+            chmod 644 instance/cookies.txt
 
-            echo "🧹 Cleaning up..."
+            # 4. ساخت فایل docker-compose.yml نهایی (معماری ۳ بخشی)
+            cat <<EOF > docker-compose.yml
+            version: '3.8'
+            
+            services:
+              # --- سرویس ۱: وب‌سایت (مدیریت درخواست‌ها و SSE) ---
+              web:
+                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+                container_name: fanus_web
+                restart: always
+                # تنظیمات خاص Gevent برای هندل کردن SSE در یک پروسه
+                command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
+                ports:
+                  - "5001:5000"
+                volumes:
+                  - ./instance:/app/instance
+                  - ./logs:/app/logs
+                env_file: .env
+
+              # --- سرویس ۲: ربات تلگرام (Logic & Interaction) ---
+              bot:
+                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+                container_name: fanus_bot
+                restart: always
+                command: python bot_runner.py
+                volumes:
+                  - ./instance:/app/instance
+                  - ./logs:/app/logs
+                env_file: .env
+
+              # --- سرویس ۳: کارگر پس‌زمینه (Huey Worker) ---
+              # وظیفه: دانلود فایل‌ها و پردازش‌های سنگین
+              worker:
+                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
+                container_name: fanus_worker
+                restart: always
+                command: python worker.py
+                volumes:
+                  - ./instance:/app/instance
+                  - ./logs:/app/logs
+                env_file: .env
+            EOF
+
+            # 5. دریافت آخرین نسخه و اجرای مجدد
+            echo "🔄 Pulling latest images..."
+            sudo docker-compose pull
+            
+            echo "🚀 Restarting stack..."
+            # این دستور کانتینرهای قدیمی را حذف و جدیدها را می‌سازد
+            sudo docker-compose up -d --remove-orphans
+
+            echo "🧹 Cleaning up unused images..."
             sudo docker image prune -f
