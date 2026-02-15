@@ -1,63 +1,88 @@
 # app.py
 
-import threading
 import os
 import logging
+import threading
+import sys
+
+# ایمپورت‌های پروژه
 from core import create_app 
 from core.services.bot import run_bot_service
 
-# تنظیمات لاگینگ برای دیدن وضعیت در کنسول
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# تنظیمات لاگینگ
+# نکته: در Gunicorn لاگ‌ها توسط خود Gunicorn مدیریت می‌شوند، اما این خط برای حالت Local مفید است.
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger(__name__)
 
-# ساخت نمونه اپلیکیشن فلاسک
+# --- 1. ایجاد اپلیکیشن فلاسک ---
+# این متغیر 'app' همان چیزی است که Gunicorn دنبالش می‌گردد (app:app)
 app = create_app()
 
-def start_bot_safe():
+# --- 2. مدیریت اجرای ربات (هم‌روندی ایمن) ---
+def start_bot_service():
     """
-    این تابع بررسی می‌کند که آیا ربات قبلاً اجرا شده یا نه.
-    اگر اجرا نشده بود، آن را در یک ترد پس‌زمینه روشن می‌کند.
+    اجرای سرویس ربات در پس‌زمینه.
+    با توجه به اینکه در gunicorn_config.py از gevent استفاده کردیم،
+    threading.Thread در واقع یک Greenlet سبک خواهد بود که عالی است.
     """
-    # بررسی لیست تردها برای جلوگیری از اجرای تکراری
-    for t in threading.enumerate():
-        if t.name == "TelegramBotThread":
-            logger.info("🤖 Bot is already running.")
-            return
+    # بررسی اینکه آیا ربات قبلاً اجرا شده است یا خیر
+    # این کار با بررسی نام تردها انجام می‌شود
+    current_threads = [t.name for t in threading.enumerate()]
+    if "TelegramBotThread" in current_threads:
+        logger.info("🤖 Bot Service is already active (Skipping start).")
+        return
 
-    logger.info("🚀 Starting Telegram Bot Service...")
+    logger.info("🚀 Initializing Telegram Bot Service...")
+    
     bot_thread = threading.Thread(
         target=run_bot_service, 
         name="TelegramBotThread", 
         daemon=True
     )
     bot_thread.start()
+    logger.info("✅ Bot Service Started in Background Thread.")
 
-# ----------------------------------------------------------------
-# سناریوی ۱: اجرا توسط Gunicorn (روی سرور)
-# وقتی Gunicorn فایل را ایمپورت می‌کند، نام آن __main__ نیست.
-# بنابراین باید اینجا ربات را استارت بزنیم.
-# ----------------------------------------------------------------
+# ==========================================
+# 🚀 ENTRY POINTS (نقاط شروع برنامه)
+# ==========================================
+
+# سناریوی ۱: اجرا توسط Gunicorn (Production)
+# وقتی دستور `gunicorn -c gunicorn_config.py app:app` اجرا می‌شود:
+# 1. Gunicorn این فایل را ایمپورت می‌کند.
+# 2. متغیر __name__ برابر با 'app' است (نه '__main__').
+# 3. Gunicorn خودش Monkey Patching را برای Gevent انجام داده است.
 if __name__ != '__main__':
-    # این خط باعث می‌شود وقتی Gunicorn با دستور gunicorn app:app اجرا می‌شود،
-    # ربات هم داخل همان Worker روشن شود.
-    start_bot_safe()
+    # استفاده از هوک 'before_first_request' دیگر در نسخه‌های جدید فلاسک توصیه نمی‌شود.
+    # بهترین جا برای استارت ترد پس‌زمینه در Gunicorn همینجاست (Global Scope Execution).
+    
+    # نکته امنیتی: اگر Gunicorn با چند ورکر اجرا شود، این کد در هر ورکر اجرا می‌شود.
+    # اما چون در gunicorn_config.py مقدار workers=1 است، مشکلی پیش نمی‌آید.
+    try:
+        start_bot_service()
+    except Exception as e:
+        logger.error(f"❌ Failed to start bot service: {e}")
 
-# ----------------------------------------------------------------
 # سناریوی ۲: اجرا به صورت دستی (Local Development)
 # دستور: python app.py
-# ----------------------------------------------------------------
 if __name__ == '__main__':
-    # استارت ربات قبل از بالا آمدن سرور
-    start_bot_safe()
+    print("⚠️  Running in LOCAL DEVELOPMENT mode.")
+    print("⚠️  For Production, use: gunicorn -c gunicorn_config.py app:app")
     
-    print("🚀 Fanus Player Platform Starting Local Server...")
+    # استارت ربات
+    start_bot_service()
     
     port = int(os.environ.get("PORT", 5000))
     
-    # نکته مهم: use_reloader=False باشد تا ربات دو بار اجرا نشود
+    # اجرای فلاسک
+    # use_reloader=False حیاتی است تا ربات دو بار اجرا نشود
     app.run(
         debug=True, 
         use_reloader=False, 
         host='0.0.0.0', 
-        port=port
+        port=port,
+        threaded=True 
     )
