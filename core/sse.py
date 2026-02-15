@@ -7,18 +7,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MessageAnnouncer:
+    """
+    مدیریت ارسال رویدادهای زنده (SSE) به کلاینت‌ها.
+    این کلاس بر اساس الگوی Publisher-Subscriber در حافظه کار می‌کند.
+    """
     def __init__(self):
         self.listeners = []
-        # قفل برای مدیریت دسترسی همزمان تردهای مختلف (Bot Thread vs Web Threads)
+        # قفل برای جلوگیری از Race Condition در محیط‌های چند نخی (Threading)
         self.lock = threading.Lock()
 
     def listen(self):
         """
-        ثبت‌نام یک کلاینت جدید برای دریافت پیام‌ها.
-        یک صف اختصاصی برای کلاینت می‌سازد و برمی‌گرداند.
+        ثبت‌نام یک کلاینت جدید.
+        یک صف (Queue) اختصاصی برمی‌گرداند که کلاینت باید روی آن منتظر بماند.
         """
-        # ظرفیت صف را بالا بردیم (50) تا در صورت ارسال رگباری پیام‌ها،
-        # کلاینت‌های کند بلافاصله قطع نشوند.
+        # ظرفیت ۵۰ پیام برای جلوگیری از پر شدن حافظه در صورت کندی کلاینت
         q = queue.Queue(maxsize=50)
         
         with self.lock:
@@ -28,19 +31,34 @@ class MessageAnnouncer:
 
     def announce(self, msg):
         """
-        ارسال پیام به تمام کلاینت‌های متصل (Broadcast).
-        اگر کلاینتی مرده باشد (صف پر شده باشد)، از لیست حذف می‌شود.
+        ارسال پیام (Broadcast) به تمام شنوندگان فعال.
         """
-        with self.lock:
-            # لیست را معکوس پیمایش می‌کنیم تا حذف کردن ایندکس‌ها را به هم نریزد
-            for i in reversed(range(len(self.listeners))):
-                try:
-                    # تلاش برای گذاشتن پیام در صف کلاینت
-                    self.listeners[i].put_nowait(msg)
-                except queue.Full:
-                    # اگر صف پر شده، یعنی کلاینت گوش نمی‌دهد یا قطع شده -> حذفش کن
-                    del self.listeners[i]
+        # استفاده از لیست موقت برای حذف کلاینت‌های مرده (Dead Listeners)
+        # تاثیری روی پرفورمنس ندارد چون تعداد شنوندگان همزمان معمولاً کم است.
+        to_remove = []
 
-# یک نمونه گلوبال که در کل برنامه استفاده شود
-# نکته مهم: این روش فقط زمانی کار می‌کند که Gunicorn با 1 Worker اجرا شود.
+        with self.lock:
+            for i, q in enumerate(self.listeners):
+                try:
+                    # ارسال پیام بدون مسدود کردن (Non-blocking)
+                    q.put_nowait(msg)
+                except queue.Full:
+                    # اگر صف پر شده، یعنی کلاینت پاسخ نمی‌دهد -> مارک برای حذف
+                    to_remove.append(i)
+            
+            # پاکسازی کلاینت‌های مرده (از آخر به اول برای حفظ ایندکس‌ها)
+            for i in reversed(to_remove):
+                try:
+                    del self.listeners[i]
+                except IndexError:
+                    pass # اگر قبلاً حذف شده باشد
+
+    def get_listener_count(self):
+        """برای مانیتورینگ: تعداد افراد آنلاین"""
+        with self.lock:
+            return len(self.listeners)
+
+# نمونه گلوبال
+# ⚠️ نکته معماری: برای عملکرد صحیح این ماژول، Gunicorn باید فقط ۱ ورکر داشته باشد
+# یا از Worker Type 'gevent' استفاده کند.
 announcer = MessageAnnouncer()
