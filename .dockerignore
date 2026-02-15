@@ -1,0 +1,40 @@
+# --- Git & GitHub (Very Important for Speed) ---
+.git
+.gitignore
+.github/
+README.md
+
+# --- Python Cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# --- Environments & Secrets ---
+env/
+venv/
+.venv/
+.env
+.env.*
+
+# --- Database ---
+# دیتابیس نباید داخل ایمیج پخته شود، بلکه باید از Volume خوانده شود
+instance/
+*.db
+*.sqlite3
+
+# --- OS Junk ---
+.DS_Store
+Thumbs.db
+
+# --- Testing & Docs ---
+tests/
+docs/
+requirements-dev.txt
+
+# --- Docker Configs ---
+# خود فایل‌های کانفیگ داکر نیازی نیست داخل کانتینر باشند
+Dockerfile
+docker-compose.yml
+.dockerignore

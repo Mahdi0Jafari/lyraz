@@ -1,0 +1,66 @@
+# --- Python & Cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# --- Environments ---
+env/
+venv/
+.venv/
+.env
+.env.*
+!.env.example
+
+# --- Database & Instance ---
+# پوشه instance می‌ماند اما دیتابیس‌های داخلش نادیده گرفته می‌شوند
+instance/
+instance/*.db
+instance/*.sqlite
+instance/*.sqlite3
+*.db
+*.sqlite3
+
+# --- OS Specific ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# --- IDEs ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Build & Distribution ---
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- Logs ---
+*.log
+logs/
+*.local
+
+# --- Media & Static Assets (To keep repo light) ---
+# نادیده گرفتن موزیک‌ها و کاورهای دانلود شده (فقط فایل‌های نگهدارنده می‌مانند)
+static/music/*
+!static/music/.gitkeep
+static/covers/*
+!static/covers/.gitkeep
+
+# --- Docker ---
+docker-compose.override.yml

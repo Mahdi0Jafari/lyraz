@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    container_name: musicplayer-web
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    # اگر بعداً ENV خواستید اینجا اضافه کنید
+    # environment:
+    #   - SECRET_KEY=your-secret
+    #   - BOT_TOKEN=your-bot-token
+    #   - BOT_USERNAME=your-bot-username
+    #   - ADMIN_PASSWORD=your-admin-password
+    #   - BASE_URL=https://example.com
+    #   - DATABASE_URI=/app/instance/database.db
+
