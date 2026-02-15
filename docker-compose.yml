@@ -1,18 +1,51 @@
-version: "3.9"
+version: '3.8'
 
 services:
+  # -------------------------------------------------------
+  # سرویس ۱: وب‌سایت (Flask + SSE)
+  # مسئول نمایش رابط کاربری و ارتباط با تلویزیون
+  # -------------------------------------------------------
   web:
     build: .
-    container_name: musicplayer-web
-    restart: unless-stopped
+    container_name: fanus_web_local
+    restart: always
+    # دستور اجرا مشابه سرور (با Gevent برای پایداری SSE)
+    command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
     ports:
-      - "5000:5000"
-    # اگر بعداً ENV خواستید اینجا اضافه کنید
-    # environment:
-    #   - SECRET_KEY=your-secret
-    #   - BOT_TOKEN=your-bot-token
-    #   - BOT_USERNAME=your-bot-username
-    #   - ADMIN_PASSWORD=your-admin-password
-    #   - BASE_URL=https://example.com
-    #   - DATABASE_URI=/app/instance/database.db
+      # پورت ۵۰۰۱ مک وصل می‌شود به پورت ۵۰۰۰ کانتینر
+      # (پورت ۵۰۰۰ روی مک گاهی با AirPlay تداخل دارد، برای همین ۵۰۰۱ گذاشتیم)
+      - "5001:5000"
+    volumes:
+      # اتصال پوشه پروژه مک به پوشه اپلیکیشن داکر (برای تغییرات آنی کد)
+      - .:/app
+    env_file: .env
 
+  # -------------------------------------------------------
+  # سرویس ۲: ربات تلگرام
+  # مسئول دریافت پیام‌ها و تعامل با کاربر
+  # -------------------------------------------------------
+  bot:
+    build: .
+    container_name: fanus_bot_local
+    restart: always
+    command: python bot_runner.py
+    volumes:
+      - .:/app
+    env_file: .env
+    depends_on:
+      - web
+
+  # -------------------------------------------------------
+  # سرویس ۳: کارگر (Worker)
+  # مسئول دانلودهای سنگین از یوتیوب و پردازش پس‌زمینه
+  # -------------------------------------------------------
+  worker:
+    build: .
+    container_name: fanus_worker_local
+    restart: always
+    command: python worker.py
+    volumes:
+      - .:/app
+    env_file: .env
+    depends_on:
+      - web

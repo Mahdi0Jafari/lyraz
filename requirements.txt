@@ -7,3 +7,4 @@ ytmusicapi
 gunicorn
 gevent
 huey
+requests

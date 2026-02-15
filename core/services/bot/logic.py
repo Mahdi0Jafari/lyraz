@@ -4,11 +4,12 @@ import json
 import logging
 import sqlite3
 import os
+import requests  # برای ارتباط با کانتینر وب
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError
 
 from core.config import Config
-from core.sse import announcer
+# ❌ announcer حذف شد چون در کانتینر جدا کار نمی‌کند
 from core.services.youtube import YouTubeService
 from .database import (
     bot_db_exec, get_user_id, get_user_current_session, 
@@ -18,66 +19,84 @@ from .database import (
 
 logger = logging.getLogger(__name__)
 
-# سرویس یوتیوب برای استفاده در منطق داخلی
+# سرویس یوتیوب برای استفاده در منطق داخلی (دانلودر)
 yt_service = YouTubeService()
+
+# --- 🔥 تابع حیاتی: پل ارتباطی با کانتینر وب (Container Bridge) ---
+def notify_web_container(data_dict):
+    """
+    ارسال دیتا به کانتینر وب برای پخش در سیستم SSE.
+    ربات (در کانتینر Bot) پیام را به وب (در کانتینر Web) می‌فرستد.
+    """
+    try:
+        # نام 'web' همان نام سرویس در docker-compose.yml است
+        # پورت 5000 پورت داخلی کانتینر وب است
+        url = "http://web:5000/internal/announce"
+        
+        # فرمت استاندارد SSE: "data: ... \n\n"
+        sse_msg = f"data: {json.dumps(data_dict)}\n\n"
+        
+        # ارسال درخواست با تایم‌اوت کوتاه (۱ ثانیه) که اگر وب قطع بود ربات گیر نکند
+        requests.post(url, json={'message': sse_msg}, timeout=1)
+    except Exception as e:
+        logger.error(f"Failed to bridge message to Web container: {e}")
 
 async def activate_session_and_notify(session_token, user_id, user_first_name, context):
     """
     ۱. سشن را در دیتابیس فعال می‌کند.
-    ۲. به SSE خبر می‌دهد که این سشن فعال شد تا تلویزیون بدون رفرش لاگین شود.
+    ۲. از طریق پل ارتباطی به وب خبر می‌دهد تا تلویزیون لاگین شود.
     """
     internal_user_id = get_user_id(user_id)
     
-    # ۱. بررسی و آپدیت دیتابیس
+    # ۱. بررسی وجود سشن
     session = get_session_info(session_token)
     if not session:
-        return None  # سشن وجود ندارد
+        return None  # سشن وجود ندارد یا نامعتبر است
 
     is_new_admin = False
     
-    # اگر سشن ادمین ندارد، کاربر فعلی ادمین می‌شود
+    # سناریو ۱: سشن هنوز ادمین ندارد -> کاربر فعلی ادمین می‌شود
     if session['admin_id'] is None:
         bot_db_exec(
             "UPDATE sessions SET status='active', admin_id=? WHERE token=?", 
             (internal_user_id, session_token)
         )
         is_new_admin = True
-    # اگر سشن مال همین کاربر است، فقط فعالش کن
+        
+    # سناریو ۲: کاربر فعلی همان ادمین است -> فقط وضعیت اکتیو می‌شود
     elif session['admin_id'] == internal_user_id:
         bot_db_exec(
             "UPDATE sessions SET status='active' WHERE token=?", 
             (session_token,)
         )
-    # اگر مال کس دیگری است، وضعیت تغییر نمی‌کند (مهمان)
     
-    # ۲. 🔥🔥🔥 ارسال خبر فوری به SSE (جایگزین Polling) 🔥🔥🔥
-    # این پیام باعث می‌شود تلویزیون همان لحظه صفحه لاگین را ببندد و وارد شود
+    # ۲. 🔥 ارسال سیگنال به وب (جایگزین Polling قدیمی) 🔥
     announcement = {
         "type": "session_activated",
         "session_token": session_token,
         "admin": {
             "name": user_first_name,
             "id": user_id,
-            # اگر دیوایس هنوز اسم ندارد، توکن را بفرست
+            # اگر کاربر هنوز اسم نگذاشته، ۴ حرف اول توکن نمایش داده شود
             "device_display_name": session['device_name'] or session_token[:4]
         }
     }
     
-    # ارسال به تمام کلاینت‌های متصل (هر کلاینت خودش چک می‌کند توکن مال اوست یا نه)
-    announcer.announce(f"data: {json.dumps(announcement)}\n\n")
+    # استفاده از تابع پل (Bridge)
+    notify_web_container(announcement)
     
     return is_new_admin
 
 async def ensure_track_and_process(update, context, video_id, title, artist):
     """
-    مدیریت هوشمند دریافت موزیک (Archive-First):
+    مدیریت هوشمند دریافت موزیک (Archive-First Strategy):
     ۱. ابتدا آرشیو (دیتابیس) را چک می‌کند.
-    ۲. اگر بود -> همان فایل را پردازش می‌کند.
+    ۲. اگر بود -> همان فایل را پردازش می‌کند (بدون دانلود مجدد).
     ۳. اگر نبود -> دانلود، آپلود به آرشیو، و سپس پردازش.
     """
     chat_id = update.effective_chat.id
     
-    # ۱. بررسی وجود در آرشیو
+    # ۱. بررسی وجود در آرشیو (Cache Hit)
     cached = get_track_by_youtube_id(video_id)
     
     if cached:
@@ -97,10 +116,11 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
         await process_track_and_queue(update, context, track_meta)
         return
 
-    # ۲. دانلود جدید
+    # ۲. دانلود جدید (Cache Miss)
     status = await update.message.reply_text(f"📥 Downloading *{title}*...", parse_mode=ParseMode.MARKDOWN)
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
     
+    # انجام دانلود (اینجا هنوز در ترد ربات است، در فاز بعدی به Worker منتقل می‌شود)
     path = await yt_service.download(video_id)
     
     if path:
@@ -108,6 +128,7 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_VOICE)
             
             if Config.STORAGE_CHANNEL_ID:
+                # ارسال به کانال آرشیو برای دریافت File ID تلگرام
                 with open(path, 'rb') as f:
                     sent = await context.bot.send_audio(
                         chat_id=Config.STORAGE_CHANNEL_ID,
@@ -131,6 +152,7 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
                 }
                 
                 await status.delete()
+                # ادامه پروسه با متادیتای جدید
                 await process_track_and_queue(update, context, track_meta)
             else:
                 await status.edit_text("❌ Configuration Error: STORAGE_CHANNEL_ID missing.")
@@ -150,6 +172,7 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
             logger.error(f"General Upload Error: {e}")
             await status.edit_text("❌ Upload failed.")
         finally:
+            # پاکسازی فایل از دیسک برای جلوگیری از پر شدن سرور
             yt_service.cleanup(path)
     else:
         await status.edit_text("❌ Download failed.")
@@ -157,9 +180,9 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
 async def process_track_and_queue(update, context, track_meta):
     """
     هسته مرکزی پردازش موزیک:
-    ۱. ثبت در دیتابیس (همیشه).
-    ۲. ارسال فایل برای کاربر (اگر دانلودی باشد - همیشه، حتی بدون دیوایس).
-    ۳. اضافه کردن به صف پخش (فقط اگر به دیوایس وصل باشد).
+    ۱. ثبت در دیتابیس.
+    ۲. ارسال فایل برای کاربر.
+    ۳. اضافه کردن به صف پخش (اگر کاربر به دستگاهی متصل باشد).
     """
     user = update.effective_user
     internal_user_id = get_user_id(user.id)
@@ -189,7 +212,7 @@ async def process_track_and_queue(update, context, track_meta):
     except Exception as e:
         logger.error(f"DB Insert Error: {e}")
 
-    # 2. دریافت ID داخلی ترک
+    # 2. دریافت ID داخلی ترک برای جدول playlist_items
     with sqlite3.connect(Config.DATABASE_URI) as conn:
         key = 'youtube_id' if track_meta.get('youtube_id') else 'file_unique_id'
         val = track_meta.get('youtube_id') if track_meta.get('youtube_id') else track_meta['file_unique_id']
@@ -199,8 +222,7 @@ async def process_track_and_queue(update, context, track_meta):
     if not track_id:
         return
 
-    # --- بخش اول: ارسال فایل برای کاربر (مستقل) ---
-    # اگر فایل یوتیوبی است، همیشه برای کاربر بفرست (چون کاربر درخواست دانلود داده)
+    # --- بخش اول: ارسال فایل برای کاربر (مستقل از دستگاه) ---
     if track_meta.get('youtube_id'):
         await context.bot.send_chat_action(chat_id=user.id, action=ChatAction.UPLOAD_VOICE)
         try:
@@ -223,7 +245,7 @@ async def process_track_and_queue(update, context, track_meta):
     target_token = get_user_current_session(user.id)
     
     if not target_token:
-        # اگر کاربر فایلی را خودش آپلود کرده (نه یوتیوب) و وصل نیست، هشدار بده
+        # اگر کاربر فایل دستی فرستاده ولی وصل نیست، هشدار بده
         if not track_meta.get('youtube_id'):
             await context.bot.send_message(user.id, "⚠️ To play this on TV, please select a device first (/devices).")
         return
@@ -236,13 +258,14 @@ async def process_track_and_queue(update, context, track_meta):
             VALUES (?, ?, ?, ?)
         """, (internal_user_id, track_id, internal_user_id, target_token))
         
-        # خبر دادن به تلویزیون (آیتم جدید اضافه شد)
+        # 🔥 خبر دادن به تلویزیون از طریق پل ارتباطی
         track_data = {
             'title': track_meta['title'], 'performer': track_meta['performer'],
             'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
             'added_by': user.first_name, 'session_token': target_token
         }
-        announcer.announce(f"data: {json.dumps(track_data)}\n\n")
+        # استفاده از تابع notify_web_container
+        notify_web_container(track_data)
         
         d_name = session['device_name'] or target_token[:4]
         await context.bot.send_message(
@@ -256,6 +279,9 @@ async def process_track_and_queue(update, context, track_meta):
         await context.bot.send_message(user.id, "⚠️ Selected device is offline or invalid.")
 
 async def handle_broadcast(context, user, file_id, meta, session):
+    """
+    برودکست کردن موزیک به کانال‌های متصل شده
+    """
     settings = get_settings()
     target_channel_id = session['linked_channel_id']
     channel_tmpl = None
