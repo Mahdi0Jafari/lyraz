@@ -46,11 +46,11 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          # افزایش تایم‌اوت برای جلوگیری از قطع شدن وسط دانلود
+          # تنظیم تایم‌اوت‌ها برای جلوگیری از قطع شدن
           timeout: 60s 
           command_timeout: 10m
           script: |
-            # تنظیم حالت توقف در صورت بروز خطا (Error Handling)
+            # توقف اسکریپت در صورت بروز هرگونه خطا
             set -e
 
             echo "========================================"
@@ -64,11 +64,11 @@ jobs:
             mkdir -p $DEPLOY_DIR/instance
             mkdir -p $DEPLOY_DIR/logs
             
-            # تغییر مالکیت به کاربر فعلی برای جلوگیری از خطای Permission
+            # تغییر مالکیت به کاربر فعلی
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
 
-            # 2. ساخت فایل .env (Environment Variables)
+            # 2. ساخت فایل .env
             echo "🔐 Generating .env file..."
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
@@ -122,30 +122,25 @@ jobs:
                 env_file: .env
             EOF
 
-            # 5. عملیات نوسازی داکر (Critical Update Steps)
-            echo "⬇️ Pulling latest images from Docker Hub..."
-            sudo docker-compose pull
+            # 5. عملیات نوسازی داکر (با استفاده از Syntax جدید V2)
+            echo "⬇️ Pulling latest images..."
+            # 🔥 تغییر حیاتی: حذف خط فاصله (docker compose)
+            sudo docker compose pull
 
             echo "🛑 Stopping and removing old containers..."
-            # این دستور کانتینرهای قبلی را کاملاً پاک می‌کند تا تداخلی نماند
-            sudo docker-compose down --remove-orphans
+            sudo docker compose down --remove-orphans
 
             echo "🔥 Starting new containers (Force Recreate)..."
-            # --force-recreate تضمین می‌کند کانتینر حتماً از نو ساخته شود
-            sudo docker-compose up -d --force-recreate
+            sudo docker compose up -d --force-recreate
 
             # 6. پاکسازی و لاگ‌های تایید
-            echo "🧹 Pruning unused images to save space..."
+            echo "🧹 Cleaning up..."
             sudo docker image prune -f
 
             echo "========================================"
             echo "✅ DEPLOYMENT FINISHED!"
-            echo "📊 Current Status (Verification):"
-            echo "========================================"
-            
-            # نمایش وضعیت کانتینرها برای اطمینان از بالا بودن
-            # این بخش در لاگ گیت‌هاب نشان می‌دهد که کانتینر چند ثانیه پیش بالا آمده
-            sudo docker-compose ps
+            echo "📊 Docker Compose Status:"
+            sudo docker compose ps
             
             echo "========================================"
             echo "🕒 Container Uptime Check:"
