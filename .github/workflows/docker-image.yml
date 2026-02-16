@@ -5,9 +5,6 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # ------------------------------------------------------------------
-  # JOB 1: BUILD & PUSH (ساخت ایمیج و ارسال به داکر هاب)
-  # ------------------------------------------------------------------
   build-and-push:
     runs-on: ubuntu-latest
     steps:
@@ -29,13 +26,9 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-          # بهینه‌سازی کش برای سرعت بیلد بالا
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ------------------------------------------------------------------
-  # JOB 2: DEPLOY (استقرار روی سرور VPS)
-  # ------------------------------------------------------------------
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -46,25 +39,14 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          # تنظیم تایم‌اوت‌ها برای جلوگیری از قطع شدن
-          timeout: 60s 
-          command_timeout: 10m
+          timeout: 120s # زمان بیشتر برای اطمینان
           script: |
-            # توقف اسکریپت در صورت بروز هرگونه خطا
             set -e
-
-            echo "========================================"
-            echo "🚀 STARTING DEPLOYMENT: $(date)"
-            echo "========================================"
+            echo "🚀 STARTING RAW DOCKER DEPLOYMENT..."
 
             # 1. آماده‌سازی مسیرها
             export DEPLOY_DIR="/home/ubuntu/deploy"
-            echo "📂 Setting up directories in $DEPLOY_DIR..."
-            
-            mkdir -p $DEPLOY_DIR/instance
-            mkdir -p $DEPLOY_DIR/logs
-            
-            # تغییر مالکیت به کاربر فعلی
+            mkdir -p $DEPLOY_DIR/instance $DEPLOY_DIR/logs
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
 
@@ -79,69 +61,63 @@ jobs:
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
 
             # 3. تزریق کوکی‌ها
-            echo "🍪 Injecting YouTube Cookies..."
             printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
             chmod 644 instance/cookies.txt
 
-            # 4. ساخت فایل docker-compose.yml
-            echo "📝 Creating docker-compose.yml..."
-            cat <<EOF > docker-compose.yml
-            version: '3.8'
-            
-            services:
-              web:
-                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-                container_name: fanus_web
-                restart: always
-                command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
-                ports:
-                  - "5001:5000"
-                volumes:
-                  - ./instance:/app/instance
-                  - ./logs:/app/logs
-                env_file: .env
+            # 4. دریافت آخرین ایمیج
+            echo "⬇️ Pulling latest image..."
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
 
-              bot:
-                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-                container_name: fanus_bot
-                restart: always
-                command: python bot_runner.py
-                volumes:
-                  - ./instance:/app/instance
-                  - ./logs:/app/logs
-                env_file: .env
+            # 5. ساخت شبکه داخلی (برای اینکه ربات بتونه با وب حرف بزنه)
+            echo "🌐 Setting up Network..."
+            sudo docker network create fanus_network || true
 
-              worker:
-                image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-                container_name: fanus_worker
-                restart: always
-                command: python worker.py
-                volumes:
-                  - ./instance:/app/instance
-                  - ./logs:/app/logs
-                env_file: .env
-            EOF
+            # 6. توقف و حذف کانتینرهای قدیمی (تمیزکاری دستی)
+            echo "🛑 Stopping old containers..."
+            sudo docker stop fanus_web fanus_bot fanus_worker || true
+            sudo docker rm fanus_web fanus_bot fanus_worker || true
 
-            # 5. عملیات نوسازی داکر (با استفاده از Syntax جدید V2)
-            echo "⬇️ Pulling latest images..."
-            # 🔥 تغییر حیاتی: حذف خط فاصله (docker compose)
-            sudo docker compose pull
+            # 7. اجرای کانتینر WEB
+            echo "🔥 Starting WEB container..."
+            sudo docker run -d \
+              --name fanus_web \
+              --restart always \
+              --network fanus_network \
+              --network-alias web \
+              -p 5001:5000 \
+              -v $DEPLOY_DIR/instance:/app/instance \
+              -v $DEPLOY_DIR/logs:/app/logs \
+              --env-file .env \
+              ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
+              gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
 
-            echo "🛑 Stopping and removing old containers..."
-            sudo docker compose down --remove-orphans
+            # 8. اجرای کانتینر BOT
+            echo "🤖 Starting BOT container..."
+            sudo docker run -d \
+              --name fanus_bot \
+              --restart always \
+              --network fanus_network \
+              -v $DEPLOY_DIR/instance:/app/instance \
+              -v $DEPLOY_DIR/logs:/app/logs \
+              --env-file .env \
+              ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
+              python bot_runner.py
 
-            echo "🔥 Starting new containers (Force Recreate)..."
-            sudo docker compose up -d --force-recreate
+            # 9. اجرای کانتینر WORKER
+            echo "👷 Starting WORKER container..."
+            sudo docker run -d \
+              --name fanus_worker \
+              --restart always \
+              --network fanus_network \
+              -v $DEPLOY_DIR/instance:/app/instance \
+              -v $DEPLOY_DIR/logs:/app/logs \
+              --env-file .env \
+              ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
+              python worker.py
 
-            # 6. پاکسازی و لاگ‌های تایید
-            echo "🧹 Cleaning up..."
+            # 10. پاکسازی نهایی
+            echo "🧹 Pruning unused images..."
             sudo docker image prune -f
 
-            echo "========================================"
-            echo "✅ DEPLOYMENT FINISHED!"
-            echo "📊 Docker Compose Status:"
-            sudo docker compose ps
-            
-            echo "========================================"
-            echo "🕒 Container Uptime Check:"
-            sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+            echo "✅ STATUS CHECK:"
+            sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
