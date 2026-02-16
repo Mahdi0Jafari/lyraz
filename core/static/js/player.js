@@ -1,20 +1,23 @@
 /**
- * Fanus Player - Main Controller (Modular v10)
- * Fixed: Lyrics Seeking, Remote Sync
+ * Fanus Player - Main Controller (Modular v11 - Ultra Optimized)
+ * Fixed: Request Flooding, SSE Sync, Lyrics Seeking
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
 import * as UI from './modules/ui.js';
 import * as Network from './modules/network.js';
 
+// متغیرهای کنترلی برای جلوگیری از گزارش‌های تکراری و بمباران سرور
+let lastReportedSecond = -1;
+let lastReportTimestamp = 0;
+
 // ==========================================
 // 🚀 INITIALIZATION
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 Fanus Player Modular Initializing...");
+    console.log("🚀 Fanus Player Modular v11 Initializing...");
     
-    // اتصال لیسنرهای صوتی به لاجیک کنترلر
     setupAudioListeners(
         onTimeUpdate,
         onTrackEnded,
@@ -22,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         (playing) => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
+            // وضعیت تغییر کرد -> گزارش فوری برای آپدیت شدن موبایل
+            reportStatus(true);
         }
     );
 
@@ -29,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupNetworkRecovery();
     UI.updateControlButtons();
 
-    // شروع پروسه احراز هویت
     if (state.sessionToken) {
         Network.validateSession({ onLogin: unlockPlayer, onQRReady: UI.showLoginQR });
     } else {
@@ -39,8 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function unlockPlayer(admin) {
     UI.unlockInterface(admin);
-    // syncTracks(true); // true = autoPlay if queue was empty
-    syncTracks(false); // avoid play() failed error initially
+    syncTracks(false); 
     Network.initControlSSE({
         onQueueUpdate: () => syncTracks(),
         onCommand: processRemoteCommand
@@ -53,15 +56,12 @@ function unlockPlayer(admin) {
 
 async function syncTracks(autoStart = false) {
     const newTracks = await Network.fetchQueue();
-    // حتی اگر لیست خالی است، باید استیت را آپدیت کنیم تا UI خالی شود
-    
-    const wasEmpty = state.tracks.length === 0;
-    state.tracks = newTracks;
+    state.tracks = newTracks || [];
     
     UI.renderPlaylist(state.tracks, loadTrack);
     
-    if (newTracks.length > 0) {
-        if (wasEmpty && autoStart) loadTrack(0, true);
+    if (state.tracks.length > 0) {
+        if (state.tracks.length === newTracks.length && autoStart) loadTrack(0, true);
         if (state.isPlaying) preloadNextTrack();
     }
 }
@@ -76,7 +76,6 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     UI.updatePlayerInfo(track);
     UI.updateActiveItem(index);
     
-    // Media Session API
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: track.title,
@@ -85,16 +84,16 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
         });
     }
     
-    // Lyrics
     if(window.fetchLyrics) window.fetchLyrics(track.file_unique_id);
 
-    // Dual Engine Logic
     if (!isSameTrack) {
         if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 3) {
-            console.log("⚡ Buffer Swap");
             swapEngines();
-            // Re-bind listeners after swap
-            setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { state.isPlaying = p; UI.updatePlayBtn(p); });
+            setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { 
+                state.isPlaying = p; 
+                UI.updatePlayBtn(p); 
+                reportStatus(true);
+            });
         } else {
             engines.active.src = `/stream/${track.file_unique_id}`;
             engines.active.load();
@@ -108,65 +107,37 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
             state.isPlaying = true;
             UI.updatePlayBtn(true);
             preloadNextTrack();
+            reportStatus(true);
         }).catch(console.error);
     }
-    
-    reportStatus();
-}
-
-// --- Next / Prev / Shuffle Logic ---
-
-function getNextIndex() {
-    if (state.tracks.length === 0) return 0;
-    if (state.repeatMode === 'one') return state.currentIndex;
-
-    if (state.shuffle) {
-        let next;
-        do { next = Math.floor(Math.random() * state.tracks.length); } 
-        while (next === state.currentIndex && state.tracks.length > 1);
-        return next;
-    }
-
-    let next = state.currentIndex + 1;
-    if (next >= state.tracks.length) {
-        return state.repeatMode === 'off' ? -1 : 0;
-    }
-    return next;
 }
 
 function nextTrack() {
     if (state.tracks[state.currentIndex]) {
         Network.markAsPlayed(state.tracks[state.currentIndex].file_unique_id);
     }
-    
     const nextIdx = getNextIndex();
-    
     if (nextIdx === -1) {
         state.isPlaying = false;
         UI.updatePlayBtn(false);
         engines.active.pause();
+        reportStatus(true);
         return;
     }
     loadTrack(nextIdx);
 }
 
-function prevTrack() {
-    if (engines.active.currentTime > 3) {
-        engines.active.currentTime = 0;
-        return;
+function getNextIndex() {
+    if (state.tracks.length === 0) return 0;
+    if (state.repeatMode === 'one') return state.currentIndex;
+    if (state.shuffle) {
+        let next;
+        do { next = Math.floor(Math.random() * state.tracks.length); } 
+        while (next === state.currentIndex && state.tracks.length > 1);
+        return next;
     }
-    loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);
-}
-
-function preloadNextTrack() {
-    const nextIdx = getNextIndex();
-    if (nextIdx !== -1 && state.tracks[nextIdx]) {
-        const nextUrl = `/stream/${state.tracks[nextIdx].file_unique_id}`;
-        if (!engines.buffer.src.includes(nextUrl)) {
-            engines.buffer.src = nextUrl;
-            engines.buffer.load();
-        }
-    }
+    let next = state.currentIndex + 1;
+    return next >= state.tracks.length ? (state.repeatMode === 'off' ? -1 : 0) : next;
 }
 
 // ==========================================
@@ -178,51 +149,23 @@ function togglePlay() {
     state.isPlaying ? engines.active.pause() : engines.active.play();
 }
 
-// 🔥 تابع جدید: پرش به زمان خاص (برای لیریک و ریموت)
 function seekToTime(seconds) {
     if (isFinite(seconds) && engines.active.duration) {
         engines.active.currentTime = seconds;
-        // گزارش فوری وضعیت برای سینک شدن ریموت
-        reportStatus(); 
+        // گزارش فوری بعد از جابجایی زمان
+        reportStatus(true); 
     }
-}
-
-function toggleShuffle() {
-    state.shuffle = !state.shuffle;
-    UI.updateControlButtons();
-    if (state.shuffle) preloadNextTrack();
-}
-
-function toggleRepeat() {
-    if (state.repeatMode === 'off') state.repeatMode = 'all';
-    else if (state.repeatMode === 'all') state.repeatMode = 'one';
-    else state.repeatMode = 'off';
-    UI.updateControlButtons();
 }
 
 function processRemoteCommand(cmd) {
     switch(cmd.action) {
-        case 'play': 
-            if(!state.isPlaying) togglePlay(); 
-            break;
-        case 'pause': 
-            if(state.isPlaying) togglePlay(); 
-            break;
-        case 'toggle': 
-            togglePlay(); 
-            break;
-        case 'next': 
-            nextTrack(); 
-            break;
-        case 'prev': 
-            prevTrack(); 
-            break;
-        case 'seek': 
-            seekToTime(cmd.payload); 
-            break;
-        case 'volume': 
-            if (isFinite(cmd.payload)) engines.active.volume = cmd.payload / 100; 
-            break;
+        case 'play': if(!state.isPlaying) togglePlay(); break;
+        case 'pause': if(state.isPlaying) togglePlay(); break;
+        case 'toggle': togglePlay(); break;
+        case 'next': nextTrack(); break;
+        case 'prev': loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length); break;
+        case 'seek': seekToTime(cmd.payload); break;
+        case 'volume': engines.active.volume = cmd.payload / 100; break;
         case 'jump': 
             const idx = state.tracks.findIndex(t => t.file_unique_id === cmd.payload);
             if(idx !== -1) loadTrack(idx);
@@ -230,14 +173,52 @@ function processRemoteCommand(cmd) {
     }
 }
 
-// --- Listeners ---
+// ==========================================
+// 📊 REPORTING & LISTENERS
+// ==========================================
 
 function onTimeUpdate() {
     UI.updateProgress(engines.active.currentTime, engines.active.duration);
     if(window.syncLyrics) window.syncLyrics(engines.active.currentTime);
     
-    // کاهش ترافیک شبکه: گزارش وضعیت هر ۲ ثانیه (زوج)
-    if (Math.floor(engines.active.currentTime) % 2 === 0) reportStatus();
+    // 🔥 بهینه‌سازی اصلی: گزارش فقط هر ۳ ثانیه یک‌بار
+    const currentSec = Math.floor(engines.active.currentTime);
+    const now = Date.now();
+    
+    // شرط ۱: ثانیه تغییر کرده باشد (جلوگیری از ارسال ۵۰ بار در ۱ ثانیه)
+    // شرط ۲: ثانیه مضربی از ۳ باشد (کاهش ترافیک کلی)
+    // شرط ۳: حداقل ۲ ثانیه از آخرین گزارش فیزیکی گذشته باشد
+    if (currentSec !== lastReportedSecond && currentSec % 3 === 0 && (now - lastReportTimestamp > 2000)) {
+        reportStatus();
+        lastReportedSecond = currentSec;
+        lastReportTimestamp = now;
+    }
+}
+
+/**
+ * ارسال وضعیت به سرور
+ * @param {boolean} force - اگر true باشد، محدودیت زمانی دور زده می‌شود
+ */
+function reportStatus(force = false) {
+    if(!state.tracks[state.currentIndex]) return;
+    
+    const currentSec = Math.floor(engines.active.currentTime);
+    const now = Date.now();
+    
+    // اگر اجباری نیست و قبلاً در این ثانیه گزارش داده‌ایم، خارج شو
+    if (!force && currentSec === lastReportedSecond) return;
+
+    Network.reportStatus(
+        state.tracks[state.currentIndex].file_unique_id,
+        state.isPlaying,
+        engines.active.currentTime,
+        engines.active.duration
+    );
+    
+    if (!force) {
+        lastReportedSecond = currentSec;
+        lastReportTimestamp = now;
+    }
 }
 
 function onTrackEnded() {
@@ -259,18 +240,7 @@ function onAudioError() {
     }
 }
 
-function reportStatus() {
-    if(!state.tracks[state.currentIndex]) return;
-    Network.reportStatus(
-        state.tracks[state.currentIndex].file_unique_id,
-        state.isPlaying,
-        engines.active.currentTime,
-        engines.active.duration
-    );
-}
-
 function setupUIControls() {
-    // Slider
     UI.elements.slider.addEventListener('input', (e) => {
         state.isDragging = true;
         const val = e.target.value;
@@ -280,11 +250,9 @@ function setupUIControls() {
     
     UI.elements.slider.addEventListener('change', (e) => {
         state.isDragging = false;
-        const seekTime = (e.target.value / 100) * engines.active.duration;
-        seekToTime(seekTime);
+        seekToTime((e.target.value / 100) * engines.active.duration);
     });
 
-    // Keyboard
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT') return;
         if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
@@ -294,31 +262,23 @@ function setupUIControls() {
 }
 
 function setupNetworkRecovery() {
-    window.addEventListener('offline', () => {
-        state.recovery.wasPlaying = !engines.active.paused;
-        state.recovery.time = engines.active.currentTime;
-        if(state.tracks[state.currentIndex]) state.recovery.trackId = state.tracks[state.currentIndex].file_unique_id;
-    });
-    
     window.addEventListener('online', () => {
         Network.initControlSSE({
             onQueueUpdate: () => syncTracks(),
             onCommand: processRemoteCommand
         });
-        syncTracks().then(() => {
-            if (state.recovery.trackId) {
-                const idx = state.tracks.findIndex(t => t.file_unique_id === state.recovery.trackId);
-                if (idx !== -1) loadTrack(idx, state.recovery.wasPlaying, state.recovery.time);
-            }
-        });
+        syncTracks();
     });
 }
 
-// Global Exports (For HTML Buttons & Lyrics Module)
+// Global Exports
 window.playPause = togglePlay;
 window.nextTrack = nextTrack;
-window.prevTrack = prevTrack;
-window.toggleShuffle = toggleShuffle;
-window.toggleRepeat = toggleRepeat;
-// 🔥 اکسپورت مهم برای لیریک
+window.prevTrack = () => loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);
+window.toggleShuffle = () => { state.shuffle = !state.shuffle; UI.updateControlButtons(); };
+window.toggleRepeat = () => {
+    const modes = ['off', 'all', 'one'];
+    state.repeatMode = modes[(modes.indexOf(state.repeatMode) + 1) % modes.length];
+    UI.updateControlButtons();
+};
 window.seekToTime = seekToTime;
