@@ -39,19 +39,17 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          timeout: 120s # زمان بیشتر برای اطمینان
+          timeout: 120s
           script: |
             set -e
-            echo "🚀 STARTING RAW DOCKER DEPLOYMENT..."
+            echo "🚀 STARTING DEPLOYMENT..."
 
-            # 1. آماده‌سازی مسیرها
             export DEPLOY_DIR="/home/ubuntu/deploy"
             mkdir -p $DEPLOY_DIR/instance $DEPLOY_DIR/logs
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
 
-            # 2. ساخت فایل .env
-            echo "🔐 Generating .env file..."
+            # فایل‌های محیطی
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
             echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
@@ -59,25 +57,34 @@ jobs:
             echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
-
-            # 3. تزریق کوکی‌ها
             printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
             chmod 644 instance/cookies.txt
 
-            # 4. دریافت آخرین ایمیج
-            echo "⬇️ Pulling latest image..."
+            echo "⬇️ Pulling image..."
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
 
-            # 5. ساخت شبکه داخلی (برای اینکه ربات بتونه با وب حرف بزنه)
             echo "🌐 Setting up Network..."
             sudo docker network create fanus_network || true
 
-            # 6. توقف و حذف کانتینرهای قدیمی (تمیزکاری دستی)
-            echo "🛑 Stopping old containers..."
-            sudo docker stop fanus_web fanus_bot fanus_worker || true
-            sudo docker rm fanus_web fanus_bot fanus_worker || true
+            # ---------------------------------------------------------
+            # 🔥 بخش حیاتی: آزادسازی پورت 5001 به روش سامورایی! 🔥
+            # ---------------------------------------------------------
+            echo "🛑 Killing ANYTHING on port 5001..."
+            
+            # 1. پیدا کردن کانتینری که پورت 5001 را گرفته
+            OLD_CONTAINER=$(sudo docker ps -q --filter "publish=5001")
+            if [ ! -z "$OLD_CONTAINER" ]; then
+                echo "Found zombie container $OLD_CONTAINER on port 5001. Killing it..."
+                sudo docker stop $OLD_CONTAINER
+                sudo docker rm $OLD_CONTAINER
+            fi
 
-            # 7. اجرای کانتینر WEB
+            # 2. پاک کردن کانتینرهای هم‌نام (محض اطمینان)
+            # اسم fanus_app مربوط به نسخه قدیمی است
+            sudo docker stop fanus_web fanus_bot fanus_worker fanus_app || true
+            sudo docker rm fanus_web fanus_bot fanus_worker fanus_app || true
+            # ---------------------------------------------------------
+
             echo "🔥 Starting WEB container..."
             sudo docker run -d \
               --name fanus_web \
@@ -91,7 +98,6 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
               gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
 
-            # 8. اجرای کانتینر BOT
             echo "🤖 Starting BOT container..."
             sudo docker run -d \
               --name fanus_bot \
@@ -103,7 +109,6 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
               python bot_runner.py
 
-            # 9. اجرای کانتینر WORKER
             echo "👷 Starting WORKER container..."
             sudo docker run -d \
               --name fanus_worker \
@@ -115,9 +120,8 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
               python worker.py
 
-            # 10. پاکسازی نهایی
-            echo "🧹 Pruning unused images..."
+            echo "🧹 Cleanup..."
             sudo docker image prune -f
 
-            echo "✅ STATUS CHECK:"
+            echo "✅ FINAL STATUS:"
             sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
