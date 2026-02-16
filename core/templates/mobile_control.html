@@ -25,14 +25,21 @@
         .tap-effect:active { transform: scale(0.95); opacity: 0.8; }
         
         /* Active Track Style */
-        .active-track { border: 1px solid #1db954 !important; background-color: rgba(29, 185, 84, 0.15) !important; }
+        .active-track { 
+            border: 1px solid #1db954 !important; 
+            background-color: rgba(29, 185, 84, 0.15) !important; 
+        }
+        .active-track h4 { color: #1db954 !important; }
+        
         .played-track { opacity: 0.5; filter: grayscale(100%); }
+        
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
 
-        /* Volume Slider */
+        /* Smooth Slider */
         input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #fff; margin-top: -6px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #fff; margin-top: -6px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: transform 0.1s; }
+        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.3); }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
     </style>
 </head>
@@ -75,9 +82,10 @@
         <div class="w-full max-w-[300px] flex flex-col gap-1 px-2 mt-2">
              <div class="relative h-6 flex items-center">
                 <input type="range" id="seek-slider" min="0" max="100" value="0" class="w-full z-10" 
-                       ontouchstart="isDraggingSlider=true" ontouchend="isDraggingSlider=false"
-                       onmousedown="isDraggingSlider=true" onmouseup="isDraggingSlider=false"
-                       onchange="seekTrack(this.value)"> 
+                       ontouchstart="startSeek()" onmousedown="startSeek()"
+                       oninput="visualSeek(this.value)"
+                       ontouchend="commitSeek(this.value)" onmouseup="commitSeek(this.value)"
+                       onchange="commitSeek(this.value)"> 
                 <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none" style="width: 0%"></div>
             </div>
         </div>
@@ -87,8 +95,8 @@
                 <span class="material-symbols-rounded text-4xl">skip_previous</span>
             </button>
             
-            <button onclick="togglePlayState()" id="play-pause-btn" class="w-14 h-14 bg-white text-black rounded-full flex items-center justify-center shadow-lg tap-effect transition-transform hover:scale-105 active:scale-95">
-                <span class="material-symbols-rounded text-3xl fill-1">play_arrow</span>
+            <button onclick="togglePlayState()" id="play-pause-btn" class="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-lg tap-effect transition-transform hover:scale-105 active:scale-95">
+                <span class="material-symbols-rounded text-4xl fill-1">play_arrow</span>
             </button>
             
             <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white tap-effect p-2">
@@ -110,17 +118,31 @@
 
     <script>
         const SESSION_TOKEN = "{{ token }}";
+        
+        // State
         let isPlaying = false;
         let currentTrackId = null;
-        let tracksData = [];
+        let tracksData = []; // دیتای خام لیست پخش
         let volumeDebounce = null;
         let isDraggingSlider = false;
-        
-        // متغیر برای ذخیره طول آهنگ جهت محاسبه سیک
         let currentDuration = 0; 
 
-        // --- Seek Logic ---
-        function seekTrack(percent) {
+        // ==========================================
+        // 🎛 Seeking Logic (Improved)
+        // ==========================================
+        function startSeek() {
+            isDraggingSlider = true;
+        }
+
+        function visualSeek(percent) {
+            // فقط ظاهر را تغییر بده (بدون ارسال به سرور)
+            document.getElementById('seek-fill').style.width = percent + '%';
+        }
+
+        function commitSeek(percent) {
+            if (!isDraggingSlider) return; // جلوگیری از ارسال تکراری
+            isDraggingSlider = false;
+            
             if (currentDuration > 0) {
                 const timeInSeconds = (percent / 100) * currentDuration;
                 if(navigator.vibrate) navigator.vibrate(30);
@@ -134,7 +156,9 @@
             volumeDebounce = setTimeout(() => { sendCommand('volume', val); }, 100); 
         }
 
-        // --- Queue Logic ---
+        // ==========================================
+        // 🎵 Queue Logic (Smart Rendering)
+        // ==========================================
         async function loadQueue() {
             try {
                 const res = await fetch(`/api/control/queue/${SESSION_TOKEN}`);
@@ -142,10 +166,10 @@
                 tracksData = tracks;
                 renderList(tracks);
                 
-                // در بارگذاری اولیه، اگر هنوز دیتایی از پلیر نیامده
+                // مقداردهی اولیه اگر دیتای سوکت هنوز نیامده
                 if (!currentTrackId && tracks.length > 0) {
-                    const first = tracks.find(t => t.is_played === 0) || tracks[tracks.length - 1];
-                    // اینجا فقط دیتای آرایه را می‌گیریم ولی UI را آپدیت نمی‌کنیم تا SSE بیاید
+                    const active = tracks.find(t => t.is_played === 0);
+                    if(active) updateNowPlayingUI(active);
                 }
             } catch(e) { console.error(e); }
         }
@@ -153,85 +177,116 @@
         function renderList(tracks) {
             const container = document.getElementById('queue-list');
             document.getElementById('queue-count').innerText = `${tracks.length} TRACKS`;
-            container.innerHTML = "";
 
             if (tracks.length === 0) {
                 container.innerHTML = `<div class='text-center text-gray-600 py-10 text-sm'>Queue is empty.</div>`;
                 return;
             }
 
+            // پاک کردن آیتم‌های حذف شده
+            Array.from(container.children).forEach(el => {
+                const id = el.dataset.id;
+                if (!tracks.find(t => t.file_unique_id === id)) {
+                    el.remove();
+                }
+            });
+
+            // آپدیت یا ساخت آیتم‌ها
             tracks.forEach((track) => {
                 const isActive = track.file_unique_id === currentTrackId;
                 const isPlayed = track.is_played === 1;
-                
-                let classes = `flex items-center gap-3 p-3 rounded-xl border border-transparent transition cursor-pointer hover:bg-white/5 bg-surface/30 `;
-                if (isActive) classes += "active-track ";
-                else if (isPlayed) classes += "played-track ";
+                let el = document.getElementById(`remote-item-${track.file_unique_id}`);
 
-                const el = document.createElement('div');
-                el.className = classes;
-                el.id = `remote-item-${track.file_unique_id}`;
-
-                el.innerHTML = `
-                    <div class="relative w-10 h-10 shrink-0 rounded-md overflow-hidden bg-black">
-                        <img src="/cover/${track.file_unique_id}" class="w-full h-full object-cover opacity-80" loading="lazy">
-                        ${isActive ? '<div class="absolute inset-0 bg-black/50 flex items-center justify-center"><span class="material-symbols-rounded text-green-500 text-sm animate-pulse">equalizer</span></div>' : ''}
-                    </div>
-                    <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                        <div class="flex items-center gap-2">
-                            <h4 class="font-medium truncate text-sm ${isActive ? 'text-green-400' : 'text-gray-200'}">${track.title}</h4>
-                            ${track.sender_name && track.sender_name !== 'Unknown' ? `<span class="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 border border-white/5 ml-auto">${track.sender_name}</span>` : ''}
+                if (!el) {
+                    // ساخت آیتم جدید
+                    el = document.createElement('div');
+                    el.id = `remote-item-${track.file_unique_id}`;
+                    el.dataset.id = track.file_unique_id;
+                    el.className = `flex items-center gap-3 p-3 rounded-xl border border-transparent transition cursor-pointer hover:bg-white/5 bg-surface/30`;
+                    
+                    el.innerHTML = `
+                        <div class="relative w-10 h-10 shrink-0 rounded-md overflow-hidden bg-black">
+                            <img src="/cover/${track.file_unique_id}" class="w-full h-full object-cover opacity-80" loading="lazy">
+                            <div class="icon-layer absolute inset-0 bg-black/50 flex items-center justify-center hidden">
+                                <span class="material-symbols-rounded text-green-500 text-sm animate-pulse">equalizer</span>
+                            </div>
                         </div>
-                        <p class="text-xs text-gray-500 truncate">${track.performer}</p>
-                    </div>
-                    <button class="del-btn text-gray-600 hover:text-red-500 p-2 transition rounded-full hover:bg-white/10">
-                        <span class="material-symbols-rounded text-lg">close</span>
-                    </button>
-                `;
+                        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+                            <div class="flex items-center gap-2">
+                                <h4 class="font-medium truncate text-sm text-gray-200 track-title">${track.title}</h4>
+                                ${track.sender_name && track.sender_name !== 'Unknown' ? `<span class="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 border border-white/5 ml-auto">${track.sender_name}</span>` : ''}
+                            </div>
+                            <p class="text-xs text-gray-500 truncate">${track.performer}</p>
+                        </div>
+                        <button class="del-btn text-gray-600 hover:text-red-500 p-2 transition rounded-full hover:bg-white/10">
+                            <span class="material-symbols-rounded text-lg">close</span>
+                        </button>
+                    `;
+                    
+                    // رویداد کلیک
+                    el.onclick = (e) => {
+                        if(e.target.closest('.del-btn')) {
+                            deleteTrack(track.item_id, el); 
+                            return;
+                        }
+                        playNow(track);
+                    };
+                    container.appendChild(el);
+                }
+
+                // 🔥 آپدیت کلاس‌ها (بدون تخریب DOM)
+                const iconLayer = el.querySelector('.icon-layer');
+                const titleText = el.querySelector('.track-title');
+
+                // Reset styles first
+                el.classList.remove('active-track', 'played-track');
+                iconLayer.classList.add('hidden');
+                titleText.classList.remove('text-green-400');
                 
-                el.onclick = (e) => {
-                    // جلوگیری از کلیک روی دکمه حذف
-                    if(e.target.closest('.del-btn')) {
-                        deleteTrack(track.id, el); // item_id از دیتابیس
-                        return;
-                    }
-                    playNow(track);
-                };
-                container.appendChild(el);
+                if (isActive) {
+                    el.classList.add('active-track');
+                    iconLayer.classList.remove('hidden');
+                    titleText.classList.add('text-green-400');
+                    // اسکرول هوشمند (فقط اگر در دید نیست)
+                    // el.scrollIntoView({behavior: "smooth", block: "nearest"});
+                } else if (isPlayed) {
+                    el.classList.add('played-track');
+                }
             });
         }
 
-        // --- Player Logic ---
+        // ==========================================
+        // ⚡ Player Logic (Optimistic UI)
+        // ==========================================
+        
         function updateNowPlayingUI(track) {
             if (!track) return;
+            currentTrackId = track.file_unique_id;
             
-            // فقط اگر واقعاً تغییر کرده باشد UI را رفرش کن
-            if (currentTrackId !== track.file_unique_id) {
-                currentTrackId = track.file_unique_id;
-                
-                document.getElementById('current-cover').src = `/cover/${track.file_unique_id}`;
-                document.getElementById('np-title').innerText = track.title;
-                document.getElementById('np-artist').innerText = track.performer;
-                
-                // رفرش لیست برای تغییر استایل (Active Track)
-                renderList(tracksData); 
-            }
+            document.getElementById('current-cover').src = `/cover/${track.file_unique_id}`;
+            document.getElementById('np-title').innerText = track.title;
+            document.getElementById('np-artist').innerText = track.performer;
+            
+            // رفرش کردن استایل لیست
+            renderList(tracksData); 
         }
 
         async function playNow(track) {
             if(navigator.vibrate) navigator.vibrate(30);
             
-            // 🔥 مهم: اینجا UI را دستی آپدیت نمی‌کنیم! (Reactive)
-            // updateNowPlayingUI(track); <-- حذف شد برای رفع باگ Desync
-            
-            // وارم‌آپ برای سرعت بیشتر
+            // 🔥 Optimistic Update: بلافاصله UI را تغییر بده
+            updateNowPlayingUI(track);
+            isPlaying = true;
+            updatePlayBtn();
+
+            // ارسال درخواست به سرور
+            // وارم‌آپ برای لود سریع‌تر
             fetch(`/stream/warmup/${track.file_unique_id}`);
-            
             sendCommand('jump', track.file_unique_id);
         }
 
         function togglePlayState() {
-            // برای Play/Pause می‌توانیم خوش‌بین باشیم چون باگ بصری ندارد
+            // 🔥 Optimistic Update
             isPlaying = !isPlaying;
             updatePlayBtn();
             sendCommand(isPlaying ? 'play' : 'pause');
@@ -249,21 +304,25 @@
                 await fetch('/api/control/command', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    // ارسال action برای سازگاری با لاجیک بکند
                     body: JSON.stringify({ token: SESSION_TOKEN, action: cmd, payload: payload })
                 });
             } catch(e) {}
         }
 
         async function deleteTrack(dbId, el) {
-            if(!confirm("Delete from queue?")) return;
-            el.style.opacity = 0;
-            // استفاده از remove برای حذف آیتم
+            if(!confirm("Remove from queue?")) return;
+            
+            // حذف آنی از ظاهر (UI)
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+            
             await sendCommand('remove', dbId);
-            setTimeout(loadQueue, 500);
+            // نیازی به لود مجدد نیست، سوکت خودش لیست را آپدیت می‌کند
         }
 
-        // --- Real-Time Sync (SSE) ---
+        // ==========================================
+        // 📡 Real-Time Sync (SSE)
+        // ==========================================
         function initSSE() {
             const eventSource = new EventSource("/events");
             
@@ -271,26 +330,25 @@
                 const data = JSON.parse(e.data);
                 if (data.session_token && data.session_token !== SESSION_TOKEN) return;
 
-                // 1. دریافت وضعیت پخش از تلویزیون
+                // 1. دریافت وضعیت پخش (Player Status)
                 if (data.type === 'status_update') {
                     const status = data.payload;
                     currentDuration = status.duration; 
 
-                    // سینک دکمه Play/Pause
+                    // سینک دکمه Play/Pause (اگر کاربر دستکاری نکرده باشد)
                     if (isPlaying !== status.is_playing) {
                         isPlaying = status.is_playing;
                         updatePlayBtn();
                     }
 
-                    // 🔥 سینک آهنگ در حال پخش (اینجا UI تغییر می‌کند)
-                    // وقتی تلویزیون واقعاً رفت ترک بعدی، این شرط صحیح می‌شود
+                    // سینک آهنگ در حال پخش
                     if (currentTrackId !== status.file_unique_id) {
                         const track = tracksData.find(t => t.file_unique_id === status.file_unique_id);
                         if (track) updateNowPlayingUI(track);
-                        else loadQueue(); // اگر آهنگ جدید است و در لیست نیست
+                        else loadQueue(); // اگر آهنگ جدید است و در لیست لوکال نیست
                     }
 
-                    // سینک نوار زمان (اگر کاربر دستش روی اسلایدر نیست)
+                    // سینک اسلایدر (فقط اگر کاربر در حال درگ کردن نیست)
                     if (!isDraggingSlider && status.duration > 0) {
                         const percent = (status.current_time / status.duration) * 100;
                         document.getElementById('seek-slider').value = percent;
@@ -299,20 +357,25 @@
                 }
                 
                 // 2. مدیریت تغییرات لیست پخش
-                if (data.file_unique_id && !data.type) loadQueue(); 
+                if (data.file_unique_id && !data.type) {
+                    loadQueue(); // آهنگ جدید اضافه شد
+                }
                 
                 if (data.type === 'command') {
-                    if(['next', 'prev', 'jump', 'remove'].includes(data.action)) setTimeout(loadQueue, 300);
+                    if(['next', 'prev', 'jump', 'remove'].includes(data.action)) {
+                        // کمی تاخیر برای اعمال تغییرات در سرور
+                        setTimeout(loadQueue, 300);
+                    }
                 }
             };
         }
 
-        // شروع برنامه
+        // Run
         loadQueue();
         initSSE();
         
-        // اطمینان از سینک بودن (هر ۱۰ ثانیه)
-        setInterval(loadQueue, 10000);
+        // Safety Check Interval
+        setInterval(loadQueue, 15000);
     </script>
 </body>
 </html>

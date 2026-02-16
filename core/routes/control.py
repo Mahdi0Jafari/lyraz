@@ -1,6 +1,5 @@
 # core/routes/control.py
 
-
 from flask import Blueprint, render_template, jsonify, request
 from core.models import get_db
 from core.sse import announcer
@@ -44,7 +43,6 @@ def get_queue(token):
     db = get_db()
     
     # کوئری برای گرفتن اطلاعات آهنگ + نام فرستنده
-    # نکته: از LEFT JOIN استفاده می‌کنیم تا اگر کاربری حذف شده بود، آهنگ همچنان نمایش داده شود.
     query = """
         SELECT 
             pi.id as item_id, 
@@ -68,7 +66,7 @@ def get_queue(token):
         
         queue = []
         for row in rows:
-            # تعیین نام نمایشی فرستنده (اول اسم کوچک، اگر نبود یوزرنیم، اگر نبود Unknown)
+            # تعیین نام نمایشی فرستنده
             sender = row["sender_name"]
             if not sender:
                 sender = row["sender_username"]
@@ -94,18 +92,21 @@ def get_queue(token):
 def send_command():
     """
     API: دریافت فرمان از موبایل و ارسال به تلویزیون (Player) از طریق SSE.
-    فرمان‌ها شامل: play, pause, next, prev, remove, jump, toggle, VOLUME
+    فرمان‌ها شامل: play, pause, next, prev, remove, jump, toggle, seek, volume
     """
     data = request.json
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
 
     token = data.get('token')
-    cmd = data.get('command')   
-    payload = data.get('payload') # می‌تواند item_id (حذف)، file_unique_id (پخش) یا عدد (ولوم) باشد
+    
+    # 🔥🔥🔥 اصلاحیه مهم: خواندن کلید 'action' که از موبایل ارسال می‌شود 🔥🔥🔥
+    # اگر action نبود، command را چک کن (برای سازگاری عقب‌رو)
+    cmd = data.get('action') or data.get('command')   
+    payload = data.get('payload') 
     
     if not token or not cmd:
-        return jsonify({'status': 'error', 'message': 'Missing token or command'}), 400
+        return jsonify({'status': 'error', 'message': 'Missing token or action'}), 400
 
     db = get_db()
     
@@ -114,7 +115,7 @@ def send_command():
     try:
         # --- سناریو ۱: حذف آهنگ از صف ---
         if cmd == 'remove' and payload:
-            # payload در اینجا باید item_id باشد (شناسه منحصر به فرد در جدول playlist_items)
+            # payload در اینجا باید item_id باشد
             db.execute(
                 "DELETE FROM playlist_items WHERE id = ? AND session_token = ?", 
                 (payload, token)
@@ -123,15 +124,14 @@ def send_command():
             logger.info(f"🗑️ Item {payload} removed from playlist.")
 
         # --- ارسال سیگنال به کلاینت‌های متصل (تلویزیون) ---
-        # این پیام توسط player.js در تلویزیون دریافت و پردازش می‌شود
         msg_data = {
             'type': 'command',
-            'action': cmd,
+            'action': cmd, # ارسال به عنوان action برای فرانت‌اند
             'payload': payload,
             'session_token': token
         }
         
-        # فرمت استاندارد SSE: "data: ... \n\n"
+        # فرمت استاندارد SSE
         announcer.announce(f"data: {json.dumps(msg_data)}\n\n")
         
         return jsonify({'status': 'success'})
@@ -144,7 +144,6 @@ def send_command():
 def mark_played():
     """
     API: تغییر وضعیت آهنگ به 'پخش شده'.
-    معمولاً وقتی آهنگ تمام می‌شود یا اسکیپ می‌شود توسط Player صدا زده می‌شود.
     """
     data = request.json
     if not data: return jsonify({'status': 'error', 'message': 'No data'}), 400
@@ -155,12 +154,9 @@ def mark_played():
     db = get_db()
     
     try:
-        # پیدا کردن ID داخلی آهنگ بر اساس شناسه فایل تلگرام
         track = db.execute("SELECT id FROM tracks WHERE file_unique_id = ?", (unique_id,)).fetchone()
         
         if track:
-            # آپدیت وضعیت در جدول رابط
-            # نکته: آهنگ از دیتابیس حذف نمی‌شود، فقط پرچم is_played یک می‌شود
             db.execute("""
                 UPDATE playlist_items 
                 SET is_played = 1 
@@ -177,16 +173,15 @@ def mark_played():
         logger.error(f"Mark Played Error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# --- 🔥 روت حیاتی برای سینک دوطرفه 🔥 ---
 @control_bp.route('/api/control/report_status', methods=['POST'])
 def report_status():
     """
-    دریافت وضعیت لحظه‌ای از تلویزیون و پخش آن برای موبایل‌ها.
+    دریافت وضعیت لحظه‌ای از تلویزیون و پخش آن برای موبایل‌ها (سینک دوطرفه).
     """
     data = request.json
     if not data: return jsonify({'status': 'error'}), 400
 
-    # ساخت پیام برای برودکست SSE
+    # ساخت پیام برای برودکست SSE به ریموت‌ها
     msg = {
         'type': 'status_update',
         'session_token': data.get('token'),
@@ -198,7 +193,6 @@ def report_status():
         }
     }
     
-    # ارسال به تمام لیسنرها (موبایل‌ها)
     announcer.announce(f"data: {json.dumps(msg)}\n\n")
     
     return jsonify({'status': 'ok'})

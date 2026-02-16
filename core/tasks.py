@@ -26,7 +26,7 @@ huey = SqliteHuey(
 
 # 2. سرویس‌ها
 yt_service = YouTubeService()
-# بات تلگرام برای آپلود فایل در کانال آرشیو
+# بات تلگرام برای آپلود فایل در کانال آرشیو و ارسال به کاربر
 bot = Bot(token=Config.BOT_TOKEN)
 
 # --- توابع کمکی ---
@@ -133,61 +133,63 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta['thumb_id'], track_meta['youtube_id']
         ))
 
-        # 4. دریافت ID داخلی ترک
-        # (باید کانکشن موقت بسازیم چون در ترد جداگانه هستیم)
-        track_db_id = None
-        with sqlite3.connect(Config.DATABASE_URI) as conn:
-            cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
-            res = cur.fetchone()
-            if res: track_db_id = res[0]
-
-        # 5. اضافه کردن به صف پخش (اگر سشن وجود دارد)
-        if session_token and track_db_id:
-            internal_user_id = get_user_id(user_id)
-            
-            # افزودن به playlist_items
-            bot_db_exec("""
-                INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
-                VALUES (?, ?, ?, ?)
-            """, (internal_user_id, track_db_id, internal_user_id, session_token))
-
-            # --- 🔥 اطلاع‌رسانی به Web (تلویزیون) ---
-            track_data = {
-                'title': title, 
-                'performer': artist,
-                'file_unique_id': track_meta['file_unique_id'], 
-                'duration': track_meta['duration'],
-                'added_by': user_first_name, 
-                'session_token': session_token
-            }
-            # ارسال سیگنال از طریق Bridge
-            notify_web_bridge(track_data)
-
-            # --- اطلاع‌رسانی به کاربر (ادیت پیام ویتینگ) ---
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=f"✅ *{title}*\nAdded to queue.",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            # اگر سشن نداشت، فقط فایل را برایش بفرست
+        # 4. پاکسازی پیام "در حال دانلود..."
+        try:
             await bot.delete_message(chat_id=chat_id, message_id=message_id)
-            await bot.send_audio(
-                chat_id=chat_id,
-                audio=track_meta['file_id'],
-                caption=f"✅ Downloaded.\n(Connect to a device to play directly)",
-                title=title,
-                performer=artist
-            )
+        except:
+            pass
+
+        # 5. 🔥 ارسال فایل برای کاربر (همیشه) 🔥
+        # اگر به تلویزیون وصل باشد، در کپشن ذکر می‌شود
+        user_caption = f"🎧 *{title}*\n👤 {artist}"
+        if session_token:
+            user_caption += "\n📺 *Added to Queue*"
+        
+        await bot.send_audio(
+            chat_id=chat_id,
+            audio=track_meta['file_id'],
+            caption=user_caption,
+            title=title,
+            performer=artist,
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+        # 6. پردازش اتصال به تلویزیون (اگر سشن وجود دارد)
+        if session_token:
+            # دریافت ID داخلی ترک
+            track_db_id = None
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
+                res = cur.fetchone()
+                if res: track_db_id = res[0]
+
+            if track_db_id:
+                internal_user_id = get_user_id(user_id)
+                
+                # افزودن به playlist_items
+                bot_db_exec("""
+                    INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
+                    VALUES (?, ?, ?, ?)
+                """, (internal_user_id, track_db_id, internal_user_id, session_token))
+
+                # --- 🔥 اطلاع‌رسانی به Web (تلویزیون) ---
+                track_data = {
+                    'title': title, 
+                    'performer': artist,
+                    'file_unique_id': track_meta['file_unique_id'], 
+                    'duration': track_meta['duration'],
+                    'added_by': user_first_name, 
+                    'session_token': session_token
+                }
+                # ارسال سیگنال از طریق Bridge
+                notify_web_bridge(track_data)
 
     except Exception as e:
         logger.error(f"Task Failed: {e}")
         try:
-            await bot.edit_message_text(
+            await bot.send_message(
                 chat_id=chat_id, 
-                message_id=message_id, 
-                text="❌ System Error occurred."
+                text="❌ System Error occurred during processing."
             )
         except: pass
         
