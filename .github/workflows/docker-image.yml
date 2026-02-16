@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # ------------------------------------------------------------------
+  # JOB 1: BUILD & PUSH (ساخت ایمیج و ارسال به داکر هاب)
+  # ------------------------------------------------------------------
   build-and-push:
     runs-on: ubuntu-latest
     steps:
@@ -20,17 +23,19 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # بهینه‌سازی: استفاده از کش گیت‌هاب برای بیلد سریع‌تر
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
-          platforms: linux/amd64
+          # بهینه‌سازی کش برای سرعت بیلد بالا
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ------------------------------------------------------------------
+  # JOB 2: DEPLOY (استقرار روی سرور VPS)
+  # ------------------------------------------------------------------
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -41,17 +46,30 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
+          # افزایش تایم‌اوت برای جلوگیری از قطع شدن وسط دانلود
+          timeout: 60s 
+          command_timeout: 10m
           script: |
-            # 1. آماده‌سازی پوشه‌ها و دسترسی‌ها
+            # تنظیم حالت توقف در صورت بروز خطا (Error Handling)
+            set -e
+
+            echo "========================================"
+            echo "🚀 STARTING DEPLOYMENT: $(date)"
+            echo "========================================"
+
+            # 1. آماده‌سازی مسیرها
             export DEPLOY_DIR="/home/ubuntu/deploy"
+            echo "📂 Setting up directories in $DEPLOY_DIR..."
+            
             mkdir -p $DEPLOY_DIR/instance
             mkdir -p $DEPLOY_DIR/logs
             
-            # تغییر مالکیت پوشه به یوزر جاری (جلوگیری از مشکلات Permission)
+            # تغییر مالکیت به کاربر فعلی برای جلوگیری از خطای Permission
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
 
-            # 2. ساخت فایل .env از Secrets گیت‌هاب
+            # 2. ساخت فایل .env (Environment Variables)
+            echo "🔐 Generating .env file..."
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
             echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
@@ -60,21 +78,21 @@ jobs:
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
 
-            # 3. تزریق کوکی‌ها (حیاتی برای دانلودر یوتیوب)
+            # 3. تزریق کوکی‌ها
+            echo "🍪 Injecting YouTube Cookies..."
             printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
             chmod 644 instance/cookies.txt
 
-            # 4. ساخت فایل docker-compose.yml نهایی (معماری ۳ بخشی)
+            # 4. ساخت فایل docker-compose.yml
+            echo "📝 Creating docker-compose.yml..."
             cat <<EOF > docker-compose.yml
             version: '3.8'
             
             services:
-              # --- سرویس ۱: وب‌سایت (مدیریت درخواست‌ها و SSE) ---
               web:
                 image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
                 container_name: fanus_web
                 restart: always
-                # تنظیمات خاص Gevent برای هندل کردن SSE در یک پروسه
                 command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
                 ports:
                   - "5001:5000"
@@ -83,7 +101,6 @@ jobs:
                   - ./logs:/app/logs
                 env_file: .env
 
-              # --- سرویس ۲: ربات تلگرام (Logic & Interaction) ---
               bot:
                 image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
                 container_name: fanus_bot
@@ -94,8 +111,6 @@ jobs:
                   - ./logs:/app/logs
                 env_file: .env
 
-              # --- سرویس ۳: کارگر پس‌زمینه (Huey Worker) ---
-              # وظیفه: دانلود فایل‌ها و پردازش‌های سنگین
               worker:
                 image: ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
                 container_name: fanus_worker
@@ -107,13 +122,31 @@ jobs:
                 env_file: .env
             EOF
 
-            # 5. دریافت آخرین نسخه و اجرای مجدد
-            echo "🔄 Pulling latest images..."
+            # 5. عملیات نوسازی داکر (Critical Update Steps)
+            echo "⬇️ Pulling latest images from Docker Hub..."
             sudo docker-compose pull
-            
-            echo "🚀 Restarting stack..."
-            # این دستور کانتینرهای قدیمی را حذف و جدیدها را می‌سازد
-            sudo docker-compose up -d --remove-orphans
 
-            echo "🧹 Cleaning up unused images..."
+            echo "🛑 Stopping and removing old containers..."
+            # این دستور کانتینرهای قبلی را کاملاً پاک می‌کند تا تداخلی نماند
+            sudo docker-compose down --remove-orphans
+
+            echo "🔥 Starting new containers (Force Recreate)..."
+            # --force-recreate تضمین می‌کند کانتینر حتماً از نو ساخته شود
+            sudo docker-compose up -d --force-recreate
+
+            # 6. پاکسازی و لاگ‌های تایید
+            echo "🧹 Pruning unused images to save space..."
             sudo docker image prune -f
+
+            echo "========================================"
+            echo "✅ DEPLOYMENT FINISHED!"
+            echo "📊 Current Status (Verification):"
+            echo "========================================"
+            
+            # نمایش وضعیت کانتینرها برای اطمینان از بالا بودن
+            # این بخش در لاگ گیت‌هاب نشان می‌دهد که کانتینر چند ثانیه پیش بالا آمده
+            sudo docker-compose ps
+            
+            echo "========================================"
+            echo "🕒 Container Uptime Check:"
+            sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
