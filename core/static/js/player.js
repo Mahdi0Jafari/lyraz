@@ -1,5 +1,6 @@
 /**
  * Fanus Player - Main Controller (Modular v10)
+ * Fixed: Lyrics Seeking, Remote Sync
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
@@ -39,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function unlockPlayer(admin) {
     UI.unlockInterface(admin);
     // syncTracks(true); // true = autoPlay if queue was empty
-    syncTracks(false); // avoid play() failed because the user didn't interact with the document first error
+    syncTracks(false); // avoid play() failed error initially
     Network.initControlSSE({
         onQueueUpdate: () => syncTracks(),
         onCommand: processRemoteCommand
@@ -52,15 +53,17 @@ function unlockPlayer(admin) {
 
 async function syncTracks(autoStart = false) {
     const newTracks = await Network.fetchQueue();
-    if (!newTracks.length) return;
+    // حتی اگر لیست خالی است، باید استیت را آپدیت کنیم تا UI خالی شود
     
     const wasEmpty = state.tracks.length === 0;
     state.tracks = newTracks;
     
     UI.renderPlaylist(state.tracks, loadTrack);
     
-    if (wasEmpty && autoStart) loadTrack(0, true);
-    if (state.isPlaying) preloadNextTrack();
+    if (newTracks.length > 0) {
+        if (wasEmpty && autoStart) loadTrack(0, true);
+        if (state.isPlaying) preloadNextTrack();
+    }
 }
 
 function loadTrack(index, autoPlay = true, startPos = 0) {
@@ -132,7 +135,10 @@ function getNextIndex() {
 }
 
 function nextTrack() {
-    Network.markAsPlayed(state.tracks[state.currentIndex]?.file_unique_id);
+    if (state.tracks[state.currentIndex]) {
+        Network.markAsPlayed(state.tracks[state.currentIndex].file_unique_id);
+    }
+    
     const nextIdx = getNextIndex();
     
     if (nextIdx === -1) {
@@ -168,7 +174,17 @@ function preloadNextTrack() {
 // ==========================================
 
 function togglePlay() {
+    if (state.tracks.length === 0) return;
     state.isPlaying ? engines.active.pause() : engines.active.play();
+}
+
+// 🔥 تابع جدید: پرش به زمان خاص (برای لیریک و ریموت)
+function seekToTime(seconds) {
+    if (isFinite(seconds) && engines.active.duration) {
+        engines.active.currentTime = seconds;
+        // گزارش فوری وضعیت برای سینک شدن ریموت
+        reportStatus(); 
+    }
 }
 
 function toggleShuffle() {
@@ -186,13 +202,27 @@ function toggleRepeat() {
 
 function processRemoteCommand(cmd) {
     switch(cmd.action) {
-        case 'play': if(!state.isPlaying) togglePlay(); break;
-        case 'pause': if(state.isPlaying) togglePlay(); break;
-        case 'toggle': togglePlay(); break;
-        case 'next': nextTrack(); break;
-        case 'prev': prevTrack(); break;
-        case 'seek': if(isFinite(cmd.payload)) engines.active.currentTime = cmd.payload; break;
-        case 'volume': engines.active.volume = cmd.payload / 100; break;
+        case 'play': 
+            if(!state.isPlaying) togglePlay(); 
+            break;
+        case 'pause': 
+            if(state.isPlaying) togglePlay(); 
+            break;
+        case 'toggle': 
+            togglePlay(); 
+            break;
+        case 'next': 
+            nextTrack(); 
+            break;
+        case 'prev': 
+            prevTrack(); 
+            break;
+        case 'seek': 
+            seekToTime(cmd.payload); 
+            break;
+        case 'volume': 
+            if (isFinite(cmd.payload)) engines.active.volume = cmd.payload / 100; 
+            break;
         case 'jump': 
             const idx = state.tracks.findIndex(t => t.file_unique_id === cmd.payload);
             if(idx !== -1) loadTrack(idx);
@@ -205,6 +235,8 @@ function processRemoteCommand(cmd) {
 function onTimeUpdate() {
     UI.updateProgress(engines.active.currentTime, engines.active.duration);
     if(window.syncLyrics) window.syncLyrics(engines.active.currentTime);
+    
+    // کاهش ترافیک شبکه: گزارش وضعیت هر ۲ ثانیه (زوج)
     if (Math.floor(engines.active.currentTime) % 2 === 0) reportStatus();
 }
 
@@ -241,8 +273,6 @@ function setupUIControls() {
     // Slider
     UI.elements.slider.addEventListener('input', (e) => {
         state.isDragging = true;
-        // UI update live handled by CSS usually, but we can force it
-        // Note: Logic moved here to keep UI module dumb
         const val = e.target.value;
         UI.elements.progressFill.style.width = `${val}%`;
         UI.elements.thumb.style.left = `${val}%`;
@@ -250,15 +280,16 @@ function setupUIControls() {
     
     UI.elements.slider.addEventListener('change', (e) => {
         state.isDragging = false;
-        engines.active.currentTime = (e.target.value / 100) * engines.active.duration;
+        const seekTime = (e.target.value / 100) * engines.active.duration;
+        seekToTime(seekTime);
     });
 
     // Keyboard
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT') return;
         if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-        if (e.key === 'ArrowRight') engines.active.currentTime += 5;
-        if (e.key === 'ArrowLeft') engines.active.currentTime -= 5;
+        if (e.key === 'ArrowRight') seekToTime(engines.active.currentTime + 5);
+        if (e.key === 'ArrowLeft') seekToTime(engines.active.currentTime - 5);
     });
 }
 
@@ -283,9 +314,11 @@ function setupNetworkRecovery() {
     });
 }
 
-// Global Exports (For HTML Buttons)
+// Global Exports (For HTML Buttons & Lyrics Module)
 window.playPause = togglePlay;
 window.nextTrack = nextTrack;
 window.prevTrack = prevTrack;
 window.toggleShuffle = toggleShuffle;
 window.toggleRepeat = toggleRepeat;
+// 🔥 اکسپورت مهم برای لیریک
+window.seekToTime = seekToTime;

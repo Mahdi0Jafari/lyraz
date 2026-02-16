@@ -1,9 +1,10 @@
 /**
  * Lyrics Manager Module (TV Mode Optimized)
+ * Features: Synced Scrolling, Click-to-Seek
  */
 
 let lyricsData = [];
-// 🔥 تغییر مهم: پیش‌فرض true است چون لیریک همیشه در صفحه هست
+// 🔥 پیش‌فرض true است چون لیریک همیشه در دیزاین جدید نمایش داده می‌شود
 let isLyricsViewActive = true; 
 
 const lyricsPanel = document.getElementById('lyrics-panel');
@@ -18,7 +19,7 @@ async function fetchLyrics(uniqueId) {
     lyricsData = [];
     lyricsPanel.innerHTML = '<div class="h-full flex items-center justify-center"><span class="animate-pulse text-primary text-lg font-bold">Searching...</span></div>';
     
-    // اگر دکمه لیریک وجود دارد، آن را فعال نشان بده
+    // اگر دکمه لیریک وجود دارد (در موبایل)، آن را فعال نشان بده
     if(lyricsBtn) lyricsBtn.classList.add('text-primary');
 
     try {
@@ -46,7 +47,7 @@ function parseLRC(lrcText) {
         
         const min = parseInt(match[1]);
         const sec = parseInt(match[2]);
-        // هندل کردن میلی‌ثانیه ۲ رقمی یا ۳ رقمی
+        // هندل کردن میلی‌ثانیه ۲ رقمی یا ۳ رقمی برای دقت بالا
         const ms = match[3].length === 3 ? parseInt(match[3]) : parseInt(match[3]) * 10;
         
         const time = min * 60 + sec + (ms / 1000);
@@ -59,20 +60,28 @@ function parseLRC(lrcText) {
 function renderLyricsUI() {
     lyricsPanel.innerHTML = '';
     
-    // فضای خالی بالا (برای اینکه خط اول وسط بیاید)
+    // فضای خالی بالا (برای اینکه خط اول وسط بیاید - حالت Cinematic)
     const spacer = document.createElement('div');
-    spacer.style.minHeight = "40%"; // متناسب با ارتفاع کانتینر جدید
+    spacer.style.minHeight = "40%"; 
     lyricsPanel.appendChild(spacer);
 
     lyricsData.forEach((line, index) => {
         const p = document.createElement('p');
-        p.className = 'lyric-line'; // استایل از CSS خوانده می‌شود
+        p.className = 'lyric-line'; // استایل‌ها از فایل style.css خوانده می‌شوند
         p.innerText = line.text;
         p.id = `line-${index}`;
         
         // قابلیت Seek با کلیک روی متن
+        // این تابع حالا در player.js تعریف و اکسپورت شده است
         p.onclick = () => {
-            if(window.seekToTime) window.seekToTime(line.time);
+            if (window.seekToTime) {
+                window.seekToTime(line.time);
+                
+                // افکت ویبره برای فیدبک لمسی (اگر مرورگر ساپورت کند)
+                if (navigator.vibrate) navigator.vibrate(20);
+            } else {
+                console.warn("Seek function not ready yet.");
+            }
         };
         
         lyricsPanel.appendChild(p);
@@ -85,7 +94,7 @@ function renderLyricsUI() {
 }
 
 function syncLyrics(currentTime) {
-    // اگر پنل مخفی شده یا لیریک نداریم، پردازش نکن (صرفه‌جویی در CPU)
+    // اگر لیریک نداریم یا پنل مخفی است، پردازش نکن (بهینه‌سازی CPU)
     if (!isLyricsViewActive || lyricsData.length === 0 || !lyricsPanel) return;
 
     // الگوریتم پیدا کردن خط فعلی
@@ -99,19 +108,20 @@ function syncLyrics(currentTime) {
     }
 
     if (activeIndex !== -1) {
-        // حذف کلاس اکتیو از قبلی
+        // حذف کلاس اکتیو از خط قبلی
         const current = lyricsPanel.querySelector('.active');
-        // بهینه‌سازی: اگر خط فعلی همان خط قبلی است، کاری نکن (جلوگیری از پرش)
+        
+        // بهینه‌سازی: اگر خط فعلی همان خط قبلی است، DOM را دستکاری نکن (جلوگیری از پرش)
         if (current && current.id === `line-${activeIndex}`) return;
         
         if (current) current.classList.remove('active');
 
-        // افزودن کلاس اکتیو به جدید
+        // فعال کردن خط جدید و اسکرول به آن
         const newLine = document.getElementById(`line-${activeIndex}`);
         if (newLine) {
             newLine.classList.add('active');
             
-            // اسکرول نرم به وسط
+            // اسکرول نرم و سینمایی به وسط صفحه
             newLine.scrollIntoView({ 
                 behavior: 'smooth', 
                 block: 'center' 
@@ -124,9 +134,9 @@ function toggleLyrics() {
     isLyricsViewActive = !isLyricsViewActive;
     
     if (isLyricsViewActive) {
-        // نمایش پنل
+        // نمایش پنل با انیمیشن
         lyricsPanel.classList.remove('opacity-0', 'pointer-events-none');
-        lyricsPanel.classList.remove('hidden'); // اگر کلاس hidden دارد
+        lyricsPanel.classList.remove('hidden'); 
         if(lyricsBtn) lyricsBtn.classList.add('text-primary'); 
         
         // سینک فوری برای اینکه کاربر معطل نشود
@@ -138,7 +148,7 @@ function toggleLyrics() {
     }
 }
 
-// اکسپورت توابع به ویندو
+// اکسپورت توابع به ویندو (برای دسترسی از player.js)
 window.fetchLyrics = fetchLyrics;
 window.syncLyrics = syncLyrics;
 window.toggleLyrics = toggleLyrics;
