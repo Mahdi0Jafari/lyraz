@@ -57,6 +57,11 @@ jobs:
             echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
+            
+            # 🔥 کلیدهای جدید اسپاتیفای اضافه شدند
+            echo "SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}" >> .env
+            echo "SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}" >> .env
+            
             printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
             chmod 644 instance/cookies.txt
 

@@ -53,7 +53,10 @@ class YouTubeService:
             'nocheckcertificate': True,
             'geo_bypass': True,
             'postprocessors': [
-                {'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'},
+                {'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': Config.AUDIO_QUALITY, # <--- استفاده از تنظیم داینامیک,
+                },
                 {'key': 'FFmpegMetadata','add_metadata': True},
             ],
         }
