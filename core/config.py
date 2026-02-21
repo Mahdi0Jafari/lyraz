@@ -14,6 +14,9 @@ class Config:
     # --- تنظیمات تلگرام ---
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     BOT_USERNAME = os.getenv('BOT_USERNAME', 'naqoosbot')
+
+    # تنظیم کیفیت صدا (به صورت رشته - مثال: '128', '192', '320')
+    AUDIO_QUALITY = os.getenv('AUDIO_QUALITY', '192')
     
     # 🔥 تنظیم جدید: آیدی کانال آرشیو موزیک
     # نکته: باید حتما با -100 شروع شود (فرمت کانال‌های تلگرام)
@@ -21,6 +24,7 @@ class Config:
     
     # --- تنظیمات عمومی ---
     BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:5000')
+    
     
     # --- مسیرها و دیتابیس ---
     # مسیر پایه پوشه instance (محل ذخیره دیتابیس، لاگ‌ها و کوکی‌ها)
