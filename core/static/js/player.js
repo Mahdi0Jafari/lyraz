@@ -1,13 +1,13 @@
 /**
- * Fanus Player - Main Controller (Modular v11 - Ultra Optimized)
- * Fixed: Request Flooding, SSE Sync, Lyrics Seeking
+ * Fanus Player - Main Controller (Enterprise v12)
+ * Features: Smart Preload, Adaptive Network, Zero-Flood SSE
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
 import * as UI from './modules/ui.js';
 import * as Network from './modules/network.js';
 
-// متغیرهای کنترلی برای جلوگیری از گزارش‌های تکراری و بمباران سرور
+// --- Throttling State ---
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
 
@@ -16,7 +16,7 @@ let lastReportTimestamp = 0;
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 Fanus Player Modular v11 Initializing...");
+    console.log("🚀 Fanus Player Enterprise Initializing...");
     
     setupAudioListeners(
         onTimeUpdate,
@@ -25,8 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         (playing) => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
-            // وضعیت تغییر کرد -> گزارش فوری برای آپدیت شدن موبایل
-            reportStatus(true);
+            // وضعیت پخش تغییر کرد -> Force Report برای آپدیت آنی ریموت
+            reportStatus(true); 
         }
     );
 
@@ -51,7 +51,7 @@ function unlockPlayer(admin) {
 }
 
 // ==========================================
-// 🎵 PLAYBACK LOGIC
+// 🎵 PLAYBACK LOGIC & SMART BUFFERING
 // ==========================================
 
 async function syncTracks(autoStart = false) {
@@ -76,6 +76,7 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     UI.updatePlayerInfo(track);
     UI.updateActiveItem(index);
     
+    // Media Session API for Hardware Control
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: track.title,
@@ -86,6 +87,7 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     
     if(window.fetchLyrics) window.fetchLyrics(track.file_unique_id);
 
+    // Dual Engine Logic
     if (!isSameTrack) {
         if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 3) {
             swapEngines();
@@ -106,10 +108,51 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
         engines.active.play().then(() => {
             state.isPlaying = true;
             UI.updatePlayBtn(true);
-            preloadNextTrack();
-            reportStatus(true);
+            preloadNextTrack(); // آغاز بافر هوشمند آهنگ بعدی
+            reportStatus(true); 
         }).catch(console.error);
     }
+}
+
+// --- Smart Pre-fetching (Network Aware) ---
+function preloadNextTrack() {
+    const nextIdx = getNextIndex();
+    
+    if (nextIdx !== -1 && state.tracks[nextIdx]) {
+        const nextTrack = state.tracks[nextIdx];
+        const nextUrl = `/stream/${nextTrack.file_unique_id}`;
+        
+        // 1. بررسی وضعیت شبکه و پیش‌بارگذاری استتیک‌ها (کاور/لیریک)
+        const shouldPreloadAudio = Network.preloadAssets(nextTrack.file_unique_id);
+        
+        // 2. اگر شبکه ضعیف است، بافر کردن فایل صوتی را متوقف کن تا آهنگ فعلی گیر نکند
+        if (!shouldPreloadAudio) {
+            console.warn("⚠️ [Adaptive Network] Audio preloading skipped to save bandwidth.");
+            return;
+        }
+
+        // 3. اگر شبکه قوی است، فایل صوتی را در پس‌زمینه بافر کن
+        if (!engines.buffer.src.includes(nextUrl)) {
+            engines.buffer.src = nextUrl;
+            engines.buffer.load(); 
+        }
+    }
+}
+
+// --- Queue Navigation ---
+function getNextIndex() {
+    if (state.tracks.length === 0) return 0;
+    if (state.repeatMode === 'one') return state.currentIndex;
+
+    if (state.shuffle) {
+        let next;
+        do { next = Math.floor(Math.random() * state.tracks.length); } 
+        while (next === state.currentIndex && state.tracks.length > 1);
+        return next;
+    }
+
+    let next = state.currentIndex + 1;
+    return next >= state.tracks.length ? (state.repeatMode === 'off' ? -1 : 0) : next;
 }
 
 function nextTrack() {
@@ -127,21 +170,8 @@ function nextTrack() {
     loadTrack(nextIdx);
 }
 
-function getNextIndex() {
-    if (state.tracks.length === 0) return 0;
-    if (state.repeatMode === 'one') return state.currentIndex;
-    if (state.shuffle) {
-        let next;
-        do { next = Math.floor(Math.random() * state.tracks.length); } 
-        while (next === state.currentIndex && state.tracks.length > 1);
-        return next;
-    }
-    let next = state.currentIndex + 1;
-    return next >= state.tracks.length ? (state.repeatMode === 'off' ? -1 : 0) : next;
-}
-
 // ==========================================
-// 🎮 CONTROLS & EVENTS
+// 🎮 CONTROLS & COMMANDS
 // ==========================================
 
 function togglePlay() {
@@ -152,8 +182,7 @@ function togglePlay() {
 function seekToTime(seconds) {
     if (isFinite(seconds) && engines.active.duration) {
         engines.active.currentTime = seconds;
-        // گزارش فوری بعد از جابجایی زمان
-        reportStatus(true); 
+        reportStatus(true); // Force update to sync remotes instantly
     }
 }
 
@@ -174,20 +203,17 @@ function processRemoteCommand(cmd) {
 }
 
 // ==========================================
-// 📊 REPORTING & LISTENERS
+// 📊 REPORTING & SSE OPTIMIZATION
 // ==========================================
 
 function onTimeUpdate() {
     UI.updateProgress(engines.active.currentTime, engines.active.duration);
     if(window.syncLyrics) window.syncLyrics(engines.active.currentTime);
     
-    // 🔥 بهینه‌سازی اصلی: گزارش فقط هر ۳ ثانیه یک‌بار
+    // 🔥 Throttling Logic: ارسال وضعیت فقط هر 3 ثانیه یک‌بار
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
-    // شرط ۱: ثانیه تغییر کرده باشد (جلوگیری از ارسال ۵۰ بار در ۱ ثانیه)
-    // شرط ۲: ثانیه مضربی از ۳ باشد (کاهش ترافیک کلی)
-    // شرط ۳: حداقل ۲ ثانیه از آخرین گزارش فیزیکی گذشته باشد
     if (currentSec !== lastReportedSecond && currentSec % 3 === 0 && (now - lastReportTimestamp > 2000)) {
         reportStatus();
         lastReportedSecond = currentSec;
@@ -196,8 +222,8 @@ function onTimeUpdate() {
 }
 
 /**
- * ارسال وضعیت به سرور
- * @param {boolean} force - اگر true باشد، محدودیت زمانی دور زده می‌شود
+ * ارسال وضعیت به سرور برای Sync کردن ریموت‌ها
+ * @param {boolean} force - اگر true باشد، محدودیت‌های زمانی نادیده گرفته می‌شود
  */
 function reportStatus(force = false) {
     if(!state.tracks[state.currentIndex]) return;
@@ -205,7 +231,7 @@ function reportStatus(force = false) {
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
-    // اگر اجباری نیست و قبلاً در این ثانیه گزارش داده‌ایم، خارج شو
+    // در حالت عادی، از ارسال‌های تکراری در یک ثانیه جلوگیری کن
     if (!force && currentSec === lastReportedSecond) return;
 
     Network.reportStatus(
@@ -220,6 +246,10 @@ function reportStatus(force = false) {
         lastReportTimestamp = now;
     }
 }
+
+// ==========================================
+// 🛡️ ERROR RECOVERY & LISTENERS
+// ==========================================
 
 function onTrackEnded() {
     state.retryCount = 0;

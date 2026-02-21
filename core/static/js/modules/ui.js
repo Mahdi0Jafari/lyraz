@@ -26,16 +26,73 @@ export const elements = {
     btnRepeat: document.getElementById('btn-repeat')
 };
 
-// --- توابع آپدیت ظاهر ---
+// ==========================================
+// 🎨 Dynamic Palette Extraction (Zero-Dependency)
+// ==========================================
+function applyDynamicTheme(imgEl) {
+    try {
+        const canvas = document.createElement('canvas');
+        // willReadFrequently به مرورگر می‌گوید این بوم برای خواندن پیکسل است (بهینه‌سازی پرفورمنس)
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        // کوچک کردن بوم برای پردازش فوق‌سریع (کاهش بار CPU روی تلویزیون‌ها)
+        canvas.width = 64; 
+        canvas.height = 64;
+        
+        ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        let r = 0, g = 0, b = 0, count = 0;
+        const step = 4 * 5; // پرش از روی پیکسل‌ها برای سرعت بیشتر (هر 5 پیکسل یکی)
+        
+        for (let i = 0; i < data.length; i += step) {
+            // نادیده گرفتن پیکسل‌های خیلی تاریک (سیاه) یا خیلی روشن (سفید) برای رسیدن به رنگ‌های غنی‌تر
+            if (data[i] > 15 && data[i] < 240 && data[i+3] > 0) {
+                r += data[i];
+                g += data[i+1];
+                b += data[i+2];
+                count++;
+            }
+        }
+        
+        if (count > 0) {
+            r = Math.floor(r / count);
+            g = Math.floor(g / count);
+            b = Math.floor(b / count);
+        } else {
+            // رنگ پیش‌فرض در صورت شکست (سبز اسپاتیفای)
+            r = 29; g = 185; b = 84; 
+        }
+
+        // تزریق رنگ به متغیر CSS در سطح Root برای استفاده در کل برنامه
+        document.documentElement.style.setProperty('--dynamic-rgb', `${r}, ${g}, ${b}`);
+    } catch (e) {
+        console.warn("⚠️ Canvas Color Extraction Blocked (CORS or Render error)", e);
+    }
+}
+
+// ==========================================
+// 🖥️ توابع آپدیت ظاهر
+// ==========================================
 
 export function updatePlayerInfo(track) {
     elements.title.innerText = track.title;
     elements.artist.innerText = track.performer;
     
     elements.cover.style.opacity = 0;
+    
+    // ⚠️ مهم: برای جلوگیری از خطای امنیتی CORS هنگام خواندن پیکسل‌های تصویر
+    elements.cover.crossOrigin = "Anonymous"; 
+    
     setTimeout(() => {
         elements.cover.src = `/cover/${track.file_unique_id}`;
-        elements.cover.onload = () => { elements.cover.style.opacity = 1; };
+        elements.cover.onload = () => { 
+            elements.cover.style.opacity = 1; 
+            // اعمال تم رنگی بلافاصله پس از لود شدن کاور
+            applyDynamicTheme(elements.cover);
+        };
     }, 200);
 }
 
@@ -65,7 +122,7 @@ export function renderPlaylist(tracks, loadTrackCallback) {
         div.onclick = () => loadTrackCallback(i);
         div.innerHTML = `
             <div class="relative w-12 h-12 flex-shrink-0">
-                <img src="/cover/${track.file_unique_id}" class="w-full h-full rounded-lg object-cover bg-gray-800" loading="lazy">
+                <img src="/cover/${track.file_unique_id}" class="w-full h-full rounded-lg object-cover bg-gray-800" loading="lazy" crossOrigin="Anonymous">
                 <div class="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><i class="ri-play-fill text-white"></i></div>
             </div>
             <div class="flex-1 min-w-0">
