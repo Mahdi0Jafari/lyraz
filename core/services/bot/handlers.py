@@ -3,7 +3,6 @@
 import uuid
 import re
 import logging
-# 🔥 FIXED: Added missing imports (InlineKeyboardMarkup, InlineKeyboardButton)
 from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
@@ -14,7 +13,7 @@ from core.services.spotify_official import spotify_keyless
 from .database import (
     bot_db_exec, get_user_id, update_user_session, get_session_info,
     get_user_current_session, set_device_name, get_active_sessions,
-    get_track_by_youtube_id
+    get_track_by_youtube_id, get_user_role
 )
 from .keyboards import get_main_menu_keyboard, get_smart_buttons, get_onboarding_keyboard
 from .logic import (
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 yt_service = YouTubeService()
 
 # ==========================================
-# 🚀 CORE COMMANDS
+# 🚀 CORE COMMANDS (V4 Live Hubs)
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -43,53 +42,54 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    (user.id, user.first_name, user.username))
     if not user: return
 
-    # --- Scenario 1: Connect via QR Code ---
+    # --- Scenario 1: Connect via QR Code (Hub Connection) ---
     if args and args[0].startswith('session_'):
         token = args[0].split('_')[1]
         
+        # در معماری V4، توکن به عنوان سشن اکتیو آپدیت می‌شود
         update_user_session(user.id, token)
         is_new_admin = await activate_session_and_notify(token, user.id, user.first_name, context)
         
         if is_new_admin is None:
-            await update.message.reply_text("❌ Invalid or Expired QR code.")
+            await update.message.reply_text("❌ Invalid or Expired Hub Link.")
             return
 
         session = get_session_info(token)
-        d_name = session['device_name'] or f"`{token[:4]}`"
+        d_name = session['device_name'] or f"Hub-{token[:4]}"
 
         if is_new_admin:
             context.user_data['renaming_token'] = token
             await update.message.reply_text(
-                f"🎉 *Connection Successful!*\n\nYou are now the Admin of this device.\n✍️ Please enter a *Name* for this screen (e.g., Living Room TV):",
+                f"🎉 *Hub Activated!*\n\nYou are now the Admin of this Live Hub.\n✍️ Please enter a *Name* for it (e.g., Living Room TV, Party Sync):",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=ForceReply(selective=True)
             )
         else:
             await update.message.reply_text(
-                f"✅ *Connected to {d_name}*\n\nEverything you search or download here will now play on your screen.", 
+                f"✅ *Connected to {d_name}*\n\nEverything you search or download here will now play synchronously on all devices connected to this Hub.", 
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
 
     else:
-        # --- Scenario 2: Normal Start (Discovery Engine UX) ---
+        # --- Scenario 2: Normal Start ---
         current_token = get_user_current_session(user.id)
         
         welcome_msg = (
-            f"👋 *Welcome to Fanus, {user.first_name}!*\n"
-            "Your personal bridge for seamless music streaming.\n\n"
+            f"👋 *Welcome to Fanus V4, {user.first_name}!*\n"
+            "Your centralized Live Audio infrastructure.\n\n"
             "🎼 *What can I do?*\n"
-            "📥 *Download:* Paste a Spotify/YouTube link to save tracks.\n"
+            "📥 *Download:* Paste a Spotify/YouTube link to archive tracks.\n"
             "🔍 *Search:* Instantly find any song from the global database.\n"
-            "📺 *Stream:* Connect to your TV/PC for a synchronized experience.\n\n"
+            "📡 *Live Sync:* Play music synchronously across multiple screens.\n\n"
         )
         
         if current_token:
             sess = get_session_info(current_token)
-            d_name = sess['device_name'] if sess else "Unknown"
-            welcome_msg += f"🟢 *Status:* Currently synced with *{d_name}*.\n\n👇 *Get started:* Use the menu below or send a music link."
+            d_name = sess['device_name'] if sess and sess['device_name'] else "Unknown Hub"
+            welcome_msg += f"🟢 *Status:* Currently routing audio to *{d_name}*.\n\n👇 *Get started:* Use the menu below or send a music link."
         else:
-            welcome_msg += "👇 *Get started:* Use the menu below, or tap to open the Web Player."
+            welcome_msg += "👇 *Get started:* Tap 'Open Web Player' to create your first Live Hub."
 
         await update.message.reply_text(
             welcome_msg, 
@@ -104,11 +104,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ==========================================
-# 📡 LINK PARSERS & DIRECT DOWNLOADS
+# 📡 LINK PARSERS & DISPATCHERS
 # ==========================================
 
 async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    """Extracts YouTube Video ID and dispatches to Huey"""
     match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
     if not match:
         await update.message.reply_text("❌ Invalid YouTube link format.")
@@ -128,9 +127,7 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    """Processes Spotify links (Tracks or Playlists) using the Embed Scraper"""
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
-    
     sp_data = spotify_keyless.parse_link(url)
     
     if sp_data.get('status') == 'error':
@@ -146,6 +143,7 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
             
         vid = results[0]['videoId']
+        # TODO in tasks: Save sp_data['id'] as spotify_id for zero-latency future hits
         await dispatch_to_huey(update, context, vid, sp_data['title'], sp_data['artist'], status_msg)
 
     # --- Case 2: Playlist or Album ---
@@ -155,12 +153,13 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"📥 Found *{len(tracks)}* tracks in this {sp_data['type']}.\nAdding to download queue...",
             parse_mode=ParseMode.MARKDOWN
         )
-        
         try: await status_msg.delete()
         except: pass
         
         from core.tasks import process_spotify_playlist_item
         current_token = get_user_current_session(update.effective_user.id)
+        role = get_user_role(update.effective_user.id)
+        target_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
         
         for track in tracks:
             process_spotify_playlist_item(
@@ -170,13 +169,13 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
                 user_id=update.effective_user.id,
                 user_first_name=update.effective_user.first_name,
                 session_token=current_token,
-                chat_id=update.effective_chat.id
+                chat_id=update.effective_chat.id,
+                quality=target_quality
             )
             
         await update.message.reply_text(f"✅ {len(tracks)} items have been successfully dispatched to the background worker.")
 
 async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg):
-    """Helper function to route downloads to the background worker"""
     from core.tasks import download_and_process_track
     user = update.effective_user
     current_token = get_user_current_session(user.id)
@@ -189,8 +188,9 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         await ensure_track_and_process(update, context, video_id=vid, title=title, artist=artist)
         return
 
-    # 2. Cache Miss -> Send to Worker
-    download_quality = Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else '192'
+    # 2. RBAC Quality Check
+    role = get_user_role(user.id)
+    download_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
 
     await status_msg.edit_text(f"⏳ *{title}* added to the queue...", parse_mode=ParseMode.MARKDOWN)
     download_and_process_track(
@@ -207,24 +207,22 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # --- 1. Persistent Menu Routing ---
-    if text == "📺 My Devices" or text == "📱 My Devices": 
+    if text == "📺 My Devices" or text == "📱 My Devices" or text == "📺 My Hubs": 
         await list_devices(update, context)
         return
         
     if text == "📖 Setup Guide" or text == "❓ Help": 
         guide_text = (
-            "🚀 *Quick Setup Guide:*\n\n"
-            "1️⃣ *To Play on TV/PC:* Open the Fanus website on your screen and scan the QR code using your phone's camera.\n"
-            "2️⃣ *Spotify Downloads:* Just copy any track or playlist link from Spotify and paste it here.\n"
-            "3️⃣ *Direct Uploads:* Forward any MP3 file to me, and I'll add it to your synchronized queue.\n\n"
-            "Need a specific song? Just use the *Search Music* button!"
+            "🚀 *Quick Setup Guide (Live Hubs):*\n\n"
+            "1️⃣ *Create a Hub:* Open the Web Player on any device. Scan the QR code.\n"
+            "2️⃣ *Multi-Screen Sync:* Tap 'My Devices', copy the 'Live Player' link, and open it on as many screens as you want.\n"
+            "3️⃣ *Send Music:* Paste Spotify/YouTube links or forward MP3 files.\n"
+            "4️⃣ *Remote Control:* Tap 'Remote Control' in the menu to manage playback from your phone."
         )
         await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN)
         return
         
     if text == "🔍 Search Music":
-        # Actionable instruction rather than a dead end
         await update.message.reply_text(
             "🔎 *How to Search:*\nSimply type `@naqoosbot [song name]` right here in the chat, or tap the button below!",
             parse_mode=ParseMode.MARKDOWN,
@@ -236,15 +234,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔗 Send me a valid *Spotify* or *YouTube* link, and I'll start downloading it immediately.", parse_mode=ParseMode.MARKDOWN)
         return
 
-    # --- 2. Renaming Flow ---
+    # --- Renaming Flow ---
     if 'renaming_token' in context.user_data:
         token = context.user_data['renaming_token']
         set_device_name(token, text)
         del context.user_data['renaming_token']
-        await update.message.reply_text(f"✅ Device successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(f"✅ Hub successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
         return
     
-    # --- 3. Smart Link Detection (Zero-Question Processing) ---
+    # --- Smart Link Detection ---
     if re.match(r'(https?://)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)/.+', text):
         await handle_youtube_link(update, context, text)
         return
@@ -253,8 +251,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_spotify_link(update, context, text)
         return
 
-    # --- 4. Search Fallback (Zero-Question Search Initiation) ---
-    # If it's not a menu command and not a link, we assume it's a search query
+    # --- Search Fallback ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
         results = yt_service.search(text)
@@ -296,19 +293,21 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not session_list:
         base_url = Config.BASE_URL if Config.BASE_URL else "the website"
         await update.message.reply_text(
-            f"❌ *No active devices found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to connect.",
+            f"❌ *No active Hubs found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True
         )
         return
 
-    await update.message.reply_text("📱 *Your Connected Devices:*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("📡 *Your Live Hubs:*\n_Select a Hub to make it active, or share its Live Player link._", parse_mode=ParseMode.MARKDOWN)
     for sess in session_list:
         token = sess['token']
-        d_name = sess['device_name'] or token[:4]
+        d_name = sess['device_name'] or f"Hub-{token[:4]}"
         is_cur = (token == current_token)
-        label = f"👤 {d_name} (Guest Mode)" if sess.get('is_guest_entry') else f"📺 {d_name}"
-        if is_cur: label = f"🟢 {d_name} (Currently Active)"
+        label = f"👤 {d_name} (Guest Mode)" if sess.get('is_guest_entry') else f"📡 {d_name}"
+        if is_cur: label = f"🟢 {d_name} (Active Hub)"
+        
+        # استفاده از کیبورد جدید که دکمه Live Player را دارد
         await update.message.reply_text(label, reply_markup=get_smart_buttons(token, is_cur))
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -317,26 +316,15 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = query.from_user
     
-    if data == "help_connect":
-        base_url = Config.BASE_URL if Config.BASE_URL else "the Web Player"
-        await context.bot.send_message(
-            user.id, 
-            f"💡 *How to Connect:*\nOpen [{base_url}]({base_url}) on your screen and scan the QR code displayed there.", 
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True
-        )
-        return
-    elif data == "help_upload":
-        await context.bot.send_message(user.id, "🎙 *Upload Music:*\nSimply forward any MP3 file from other chats to this bot, or upload a file directly.")
-        return
-
     if data.startswith("select_"):
         target = data.split("_")[1]
-        update_user_session(user.id, target)
+        update_user_session(user.id, target) # در دیتابیس V4 این last_active_at را آپدیت می‌کند
         sess = get_session_info(target)
-        d_name = sess['device_name'] or target[:4]
+        d_name = sess['device_name'] or f"Hub-{target[:4]}"
+        
+        # آپدیت کردن پیام کیبورد برای نمایش وضعیت اکتیو
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target, True))
-        await context.bot.send_message(user.id, f"✅ Active Device switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
+        await context.bot.send_message(user.id, f"✅ Active Hub switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
 
     elif data.startswith("manage_"):
         token = data.split("_")[1]
@@ -348,10 +336,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         token = data.split("_")[1]
         sess = get_session_info(token)
         if sess['admin_id'] != get_user_id(user.id):
-            await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this device.")
+            await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this Hub.")
             return
         context.user_data['renaming_token'] = token
-        await context.bot.send_message(user.id, f"✍️ Enter a new name for `{sess['device_name']}`:", parse_mode=ParseMode.MARKDOWN, reply_markup=ForceReply(selective=True))
+        await context.bot.send_message(user.id, f"✍️ Enter a new name for `{sess['device_name'] or 'Hub'}`:", parse_mode=ParseMode.MARKDOWN, reply_markup=ForceReply(selective=True))
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message.audio: return

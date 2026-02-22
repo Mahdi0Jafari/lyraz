@@ -22,13 +22,13 @@ def get_main_menu_keyboard():
 def get_onboarding_keyboard(session_token=None):
     """
     Main keyboard for /start message and fallback responses.
-    Adapts structurally based on whether a TV/PC is currently linked.
+    Adapts structurally based on whether a Live Hub is currently linked.
     """
     buttons = []
     
     if not session_token:
         # Scenario 1: Not Connected -> Focus on Discovery and Connection
-        base_url = getattr(Config, 'BASE_URL', "https://google.com") # Safe fallback fallback
+        base_url = getattr(Config, 'BASE_URL', "https://google.com")
         buttons.append([
             InlineKeyboardButton("🌐 Open Web Player", url=base_url)
         ])
@@ -36,20 +36,27 @@ def get_onboarding_keyboard(session_token=None):
             InlineKeyboardButton("🔍 Try Inline Search", switch_inline_query_current_chat="")
         ])
     else:
-        # Scenario 2: Connected -> Focus on Operational Speed
+        # Scenario 2: Connected -> Provide Both Producer (Remote) and Consumer (Live) links
         buttons.append([
             InlineKeyboardButton("🔍 Tap to Search & Play", switch_inline_query_current_chat=""),
         ])
         
-        # Smart rendering for Remote Control based on HTTPS protocol requirement for WebApps
         remote_url = f"{Config.BASE_URL}/remote/{session_token}"
+        live_url = f"{Config.BASE_URL}/live/{session_token}"
+        
+        # Smart rendering for Remote Control based on HTTPS protocol requirement for WebApps
         if remote_url.startswith('https'):
-            remote_btn = InlineKeyboardButton("🎮 Remote Control", web_app=WebAppInfo(url=remote_url))
+            buttons.append([
+                InlineKeyboardButton("🎛 Remote Control", web_app=WebAppInfo(url=remote_url)),
+                InlineKeyboardButton("🎧 Live Player", url=live_url)
+            ])
         else:
-            remote_btn = InlineKeyboardButton("🎮 Remote Control", url=remote_url)
+            buttons.append([
+                InlineKeyboardButton("🎛 Remote Control", url=remote_url),
+                InlineKeyboardButton("🎧 Live Player", url=live_url)
+            ])
             
         buttons.append([
-            remote_btn,
             InlineKeyboardButton("⚙️ Settings", callback_data=f"manage_{session_token}")
         ])
         
@@ -57,26 +64,31 @@ def get_onboarding_keyboard(session_token=None):
 
 def get_smart_buttons(token, is_current):
     """
-    Device Management Buttons (Used in device listing command)
+    Device Management Buttons (Used in device listing command).
+    Now exposes the Live Sync URL for Multi-Screen Audio.
     """
     remote_url = f"{Config.BASE_URL}/remote/{token}"
+    live_url = f"{Config.BASE_URL}/live/{token}"
     buttons = []
     
-    # Row 1: Remote Access
+    # Row 1: Remote Access (Producer)
     if remote_url.startswith('https'):
         buttons.append([InlineKeyboardButton("🎛 Open Remote UI", web_app=WebAppInfo(url=remote_url))])
     else:
         buttons.append([InlineKeyboardButton("🎛 Open Remote UI", url=remote_url)])
         
-    row2 = []
-    # Row 2: Select / Active Indicator & Rename
+    # Row 2: Shareable Live Link (Consumer)
+    buttons.append([InlineKeyboardButton("🔗 Open / Share Live Player", url=live_url)])
+        
+    row3 = []
+    # Row 3: Select / Active Indicator & Rename
     if is_current:
-        row2.append(InlineKeyboardButton("✅ Active Device", callback_data="noop"))
+        row3.append(InlineKeyboardButton("✅ Active Hub", callback_data="noop"))
     else:
-        row2.append(InlineKeyboardButton("🎯 Select This", callback_data=f"select_{token}"))
+        row3.append(InlineKeyboardButton("🎯 Select This", callback_data=f"select_{token}"))
     
-    row2.append(InlineKeyboardButton("✏️ Rename", callback_data=f"rename_{token}"))
-    buttons.append(row2)
+    row3.append(InlineKeyboardButton("✏️ Rename", callback_data=f"rename_{token}"))
+    buttons.append(row3)
         
     return InlineKeyboardMarkup(buttons)
 

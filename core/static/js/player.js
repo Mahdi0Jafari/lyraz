@@ -1,22 +1,21 @@
 /**
- * Fanus Player - Main Controller (Enterprise v12)
- * Features: Smart Preload, Adaptive Network, Zero-Flood SSE
+ * Fanus Player - Main Controller (Live Hubs V4)
+ * Features: State Recovery, NTP Sync, Dual Engine
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
 import * as UI from './modules/ui.js';
 import * as Network from './modules/network.js';
 
-// --- Throttling State ---
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
 
 // ==========================================
-// 🚀 INITIALIZATION
+// 🚀 INITIALIZATION (V4: State-Driven)
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 Fanus Player Enterprise Initializing...");
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 Fanus Live Hub Initializing...");
     
     setupAudioListeners(
         onTimeUpdate,
@@ -25,8 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
         (playing) => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
-            // وضعیت پخش تغییر کرد -> Force Report برای آپدیت آنی ریموت
-            reportStatus(true); 
+            // فقط زمانی ریپورت کن که اکشن کاربر باشد، نه ری‌سینک سیستم
+            if (!state.isSyncing) reportStatus(true); 
         }
     );
 
@@ -34,12 +33,52 @@ document.addEventListener('DOMContentLoaded', () => {
     setupNetworkRecovery();
     UI.updateControlButtons();
 
+    // V4: اگر توکن تزریق شده داریم، اول وضعیت زنده را ریکاوری می‌کنیم
     if (state.sessionToken) {
-        Network.validateSession({ onLogin: unlockPlayer, onQRReady: UI.showLoginQR });
+        if (state.hubStatus === 'active') {
+            await recoverHubState();
+        } else {
+            Network.validateSession({ onLogin: unlockPlayer, onQRReady: UI.showLoginQR });
+        }
     } else {
         Network.initAuth({ onLogin: unlockPlayer, onQRReady: UI.showLoginQR });
     }
 });
+
+async function recoverHubState() {
+    console.log("🔄 Recovering Live Hub State...");
+    UI.unlockInterface({ name: 'Hub', device_display_name: 'Live Sync' }); // UI باز می‌شود
+    
+    // ۱. استخراج اطلاعات زنده از سرور
+    const liveState = await Network.fetchHubState();
+    
+    // ۲. لود کردن کل لیست پخش
+    await syncTracks(false);
+    
+    // ۳. اتصال به سیستم رویدادهای زنده
+    Network.initControlSSE({
+        onQueueUpdate: () => syncTracks(),
+        onCommand: processRemoteCommand
+    });
+
+    // ۴. اعمال وضعیت روی پلیر (Cold Start Sync)
+    if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
+        const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
+        
+        if (idx !== -1) {
+            console.log(`⏱ Syncing to track index ${idx} at second ${liveState.seek_position}`);
+            // فلگ isSyncing باعث می‌شود پلیر در حین پرش، استاتوس جدید به سرور نفرستد
+            state.isSyncing = true; 
+            
+            loadTrack(idx, liveState.is_playing, liveState.seek_position);
+            
+            setTimeout(() => { state.isSyncing = false; }, 1000);
+        }
+    } else {
+        // اگر هیچ آهنگی در حال پخش نبود، اولین آهنگ را آماده کن اما پخش نکن
+        if (state.tracks.length > 0) loadTrack(0, false);
+    }
+}
 
 function unlockPlayer(admin) {
     UI.unlockInterface(admin);
@@ -76,7 +115,6 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     UI.updatePlayerInfo(track);
     UI.updateActiveItem(index);
     
-    // Media Session API for Hardware Control
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: track.title,
@@ -87,14 +125,13 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     
     if(window.fetchLyrics) window.fetchLyrics(track.file_unique_id);
 
-    // Dual Engine Logic
     if (!isSameTrack) {
         if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 3) {
             swapEngines();
             setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { 
                 state.isPlaying = p; 
                 UI.updatePlayBtn(p); 
-                reportStatus(true);
+                if(!state.isSyncing) reportStatus(true);
             });
         } else {
             engines.active.src = `/stream/${track.file_unique_id}`;
@@ -102,19 +139,24 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
         }
     }
 
-    if (startPos > 0) engines.active.currentTime = startPos;
+    if (startPos > 0) {
+        // برای جلوگیری از ارور The play() request was interrupted
+        engines.active.currentTime = startPos;
+    }
 
     if (autoPlay) {
-        engines.active.play().then(() => {
-            state.isPlaying = true;
-            UI.updatePlayBtn(true);
-            preloadNextTrack(); // آغاز بافر هوشمند آهنگ بعدی
-            reportStatus(true); 
-        }).catch(console.error);
+        const playPromise = engines.active.play();
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                state.isPlaying = true;
+                UI.updatePlayBtn(true);
+                preloadNextTrack();
+                if(!state.isSyncing) reportStatus(true); 
+            }).catch(e => console.warn("Auto-play prevented by browser:", e));
+        }
     }
 }
 
-// --- Smart Pre-fetching (Network Aware) ---
 function preloadNextTrack() {
     const nextIdx = getNextIndex();
     
@@ -122,16 +164,10 @@ function preloadNextTrack() {
         const nextTrack = state.tracks[nextIdx];
         const nextUrl = `/stream/${nextTrack.file_unique_id}`;
         
-        // 1. بررسی وضعیت شبکه و پیش‌بارگذاری استتیک‌ها (کاور/لیریک)
         const shouldPreloadAudio = Network.preloadAssets(nextTrack.file_unique_id);
         
-        // 2. اگر شبکه ضعیف است، بافر کردن فایل صوتی را متوقف کن تا آهنگ فعلی گیر نکند
-        if (!shouldPreloadAudio) {
-            console.warn("⚠️ [Adaptive Network] Audio preloading skipped to save bandwidth.");
-            return;
-        }
+        if (!shouldPreloadAudio) return;
 
-        // 3. اگر شبکه قوی است، فایل صوتی را در پس‌زمینه بافر کن
         if (!engines.buffer.src.includes(nextUrl)) {
             engines.buffer.src = nextUrl;
             engines.buffer.load(); 
@@ -139,7 +175,6 @@ function preloadNextTrack() {
     }
 }
 
-// --- Queue Navigation ---
 function getNextIndex() {
     if (state.tracks.length === 0) return 0;
     if (state.repeatMode === 'one') return state.currentIndex;
@@ -182,56 +217,65 @@ function togglePlay() {
 function seekToTime(seconds) {
     if (isFinite(seconds) && engines.active.duration) {
         engines.active.currentTime = seconds;
-        reportStatus(true); // Force update to sync remotes instantly
+        if(!state.isSyncing) reportStatus(true);
     }
 }
 
 function processRemoteCommand(cmd) {
+    // V4: استفاده از sync_timestamp برای جبران تاخیر
+    state.isSyncing = true; // جلوگیری از لوپ بی‌نهایت ریپورت به سرور
+    
+    let targetTime = cmd.payload;
+    
+    // جبران تاخیر برای Seek (اگر سرور گفت برو ثانیه ۱۰ و پیام ۲ ثانیه تو راه بود، باید بری ثانیه ۱۲)
+    if (cmd.action === 'seek' && cmd.sync_timestamp) {
+        const latency = (Date.now() / 1000) - cmd.sync_timestamp;
+        if (latency > 0 && latency < 5 && state.isPlaying) {
+             targetTime += latency;
+        }
+    }
+
     switch(cmd.action) {
         case 'play': if(!state.isPlaying) togglePlay(); break;
         case 'pause': if(state.isPlaying) togglePlay(); break;
         case 'toggle': togglePlay(); break;
         case 'next': nextTrack(); break;
         case 'prev': loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length); break;
-        case 'seek': seekToTime(cmd.payload); break;
+        case 'seek': seekToTime(targetTime); break;
         case 'volume': engines.active.volume = cmd.payload / 100; break;
         case 'jump': 
             const idx = state.tracks.findIndex(t => t.file_unique_id === cmd.payload);
             if(idx !== -1) loadTrack(idx);
             break;
     }
+    
+    setTimeout(() => { state.isSyncing = false; }, 500);
 }
 
 // ==========================================
-// 📊 REPORTING & SSE OPTIMIZATION
+// 📊 REPORTING
 // ==========================================
 
 function onTimeUpdate() {
     UI.updateProgress(engines.active.currentTime, engines.active.duration);
     if(window.syncLyrics) window.syncLyrics(engines.active.currentTime);
     
-    // 🔥 Throttling Logic: ارسال وضعیت فقط هر 3 ثانیه یک‌بار
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
-    if (currentSec !== lastReportedSecond && currentSec % 3 === 0 && (now - lastReportTimestamp > 2000)) {
+    if (currentSec !== lastReportedSecond && currentSec % 5 === 0 && (now - lastReportTimestamp > 4000)) {
         reportStatus();
         lastReportedSecond = currentSec;
         lastReportTimestamp = now;
     }
 }
 
-/**
- * ارسال وضعیت به سرور برای Sync کردن ریموت‌ها
- * @param {boolean} force - اگر true باشد، محدودیت‌های زمانی نادیده گرفته می‌شود
- */
 function reportStatus(force = false) {
-    if(!state.tracks[state.currentIndex]) return;
+    if(!state.tracks[state.currentIndex] || state.isSyncing) return;
     
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
-    // در حالت عادی، از ارسال‌های تکراری در یک ثانیه جلوگیری کن
     if (!force && currentSec === lastReportedSecond) return;
 
     Network.reportStatus(
@@ -248,7 +292,7 @@ function reportStatus(force = false) {
 }
 
 // ==========================================
-// 🛡️ ERROR RECOVERY & LISTENERS
+// 🛡️ RECOVERY
 // ==========================================
 
 function onTrackEnded() {
@@ -263,7 +307,7 @@ function onAudioError() {
             const t = engines.active.currentTime;
             engines.active.load();
             engines.active.currentTime = t;
-            engines.active.play();
+            engines.active.play().catch(e => console.warn("Recovery play blocked", e));
         }, 1000);
     } else {
         nextTrack();
@@ -293,15 +337,10 @@ function setupUIControls() {
 
 function setupNetworkRecovery() {
     window.addEventListener('online', () => {
-        Network.initControlSSE({
-            onQueueUpdate: () => syncTracks(),
-            onCommand: processRemoteCommand
-        });
-        syncTracks();
+        recoverHubState(); // V4: به جای فقط لود لیست، کل وضعیت را بازیابی کن
     });
 }
 
-// Global Exports
 window.playPause = togglePlay;
 window.nextTrack = nextTrack;
 window.prevTrack = () => loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);
