@@ -32,12 +32,16 @@ class YouTubeService:
             logger.error(f"YT Search Error: {e}")
             return []
 
-    async def download(self, video_id):
+    # 🔥 پارامتر quality=None اینجا اضافه شد تا با tasks.py سازگار شود
+    async def download(self, video_id, quality=None):
         link = f"https://music.youtube.com/watch?v={video_id}"
         output_template = os.path.join(self.download_dir, '%(id)s.%(ext)s')
         final_path = os.path.join(self.download_dir, f"{video_id}.mp3")
 
-        logger.info(f"[*] Downloading: {link}")
+        # تعیین کیفیت نهایی: اگر به تابع پاس داده شده بود همان، وگرنه مقدار پیش‌فرض کانفیگ
+        target_quality = str(quality) if quality else str(Config.AUDIO_QUALITY)
+        
+        logger.info(f"[*] Downloading: {link} | Quality: {target_quality}kbps")
 
         # اگر فایل از قبل بود، همان را برگردان
         if os.path.exists(final_path):
@@ -55,7 +59,8 @@ class YouTubeService:
             'postprocessors': [
                 {'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': Config.AUDIO_QUALITY, # <--- استفاده از تنظیم داینامیک,
+                # تزریق متغیر کیفیت به موتور FFmpeg
+                'preferredquality': target_quality, 
                 },
                 {'key': 'FFmpegMetadata','add_metadata': True},
             ],
@@ -65,7 +70,7 @@ class YouTubeService:
         if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
             ydl_opts['ffmpeg_location'] = self.ffmpeg_path
 
-        # 🔥 لود کردن کوکی از فایل (حیاتی برای رفع ارور Sign in)
+        # لود کردن کوکی از فایل (حیاتی برای رفع ارور Sign in)
         if os.path.exists(Config.YT_COOKIES_PATH):
             ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
             logger.info(f"🍪 Cookies loaded: {Config.YT_COOKIES_PATH}")
@@ -76,7 +81,7 @@ class YouTubeService:
             def run_download():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(link, download=True)
-                    # 🔥 رفع باگ NoneType: اگر دانلود شکست خورد، None برگردان
+                    # رفع باگ NoneType: اگر دانلود شکست خورد، None برگردان
                     if not info:
                         return None
                     return info.get('id')
