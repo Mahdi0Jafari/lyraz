@@ -10,19 +10,22 @@ logger = logging.getLogger(__name__)
 
 def get_db():
     """
-    اتصال به دیتابیس با تنظیمات بهینه برای هم‌روندی (Concurrency).
+    اتصال به دیتابیس با تنظیمات بهینه برای هم‌روندی و یکپارچگی داده (V4 Architecture).
     """
     db = getattr(g, '_database', None)
     if db is None:
         try:
             db = g._database = sqlite3.connect(Config.DATABASE_URI)
             
-            # 🔥 بهینه‌سازی حیاتی: فعال‌سازی WAL Mode
-            # این اجازه می‌دهد خواندن و نوشتن همزمان انجام شود بدون قفل شدن دیتابیس
+            # 🔥 بهینه‌سازی حیاتی: فعال‌سازی WAL Mode برای جلوگیری از قفل شدن دیتابیس
             db.execute('PRAGMA journal_mode=WAL;')
             
             # تنظیم همگام‌سازی روی NORMAL برای تعادل بین امنیت و سرعت
             db.execute('PRAGMA synchronous=NORMAL;')
+            
+            # 🔥 فعال‌سازی Foreign Keys (در SQLite پیش‌فرض خاموش است)
+            # این کار از وجود داده‌های یتیم (مثل آیتم‌های پلی‌لیست بدون سشن) جلوگیری می‌کند
+            db.execute('PRAGMA foreign_keys=ON;')
             
             db.row_factory = sqlite3.Row
         except sqlite3.Error as e:
@@ -38,7 +41,7 @@ def close_db(e=None):
 
 def init_db():
     """
-    ایجاد ساختار اولیه دیتابیس (Schema)
+    ایجاد ساختار اولیه دیتابیس (Schema V4 - Live Hubs)
     """
     db_folder = os.path.dirname(Config.DATABASE_URI)
     if db_folder and not os.path.exists(db_folder):
@@ -51,23 +54,26 @@ def init_db():
 
     try:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
-            # فعال‌سازی WAL برای کانکشن اولیه
             conn.execute('PRAGMA journal_mode=WAL;')
+            conn.execute('PRAGMA foreign_keys=ON;')
             c = conn.cursor()
             
-            # 1. Users Table
+            # 1. Users Table (RBAC Architecture)
+            # حذف current_session چون رابطه کاربر و هاب یک-به-چند شده است
             c.execute('''CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
                 first_name TEXT,
                 username TEXT,
-                current_session TEXT,
+                role TEXT DEFAULT 'user',
+                daily_quota INTEGER DEFAULT 20,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
 
-            # 2. Tracks Table
+            # 2. Tracks Table (Global Audio Assets)
+            # اضافه شدن spotify_id و bitrate
             c.execute('''CREATE TABLE IF NOT EXISTS tracks (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_unique_id TEXT UNIQUE,
                 file_id TEXT,
                 title TEXT,
@@ -76,10 +82,14 @@ def init_db():
                 file_size INTEGER,
                 thumb_id TEXT,
                 youtube_id TEXT UNIQUE,
+                spotify_id TEXT UNIQUE,
+                bitrate INTEGER DEFAULT 192,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
-            # 🔥 ایندکس برای جستجوی سریع آهنگ‌ها
+            # ایندکس‌های حیاتی برای کش کردن و مپینگ سریع
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_unique ON tracks(file_unique_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_youtube ON tracks(youtube_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_spotify ON tracks(spotify_id);')
             
             # 3. Channels Table
             c.execute('''CREATE TABLE IF NOT EXISTS channels (
@@ -91,7 +101,8 @@ def init_db():
                 added_by INTEGER
             )''')
 
-            # 4. Sessions Table
+            # 4. Sessions Table (The Live Hub)
+            # تبدیل به ماشین وضعیت برای همگام‌سازی چندگانه
             c.execute('''CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 admin_id INTEGER,
@@ -99,12 +110,19 @@ def init_db():
                 device_name TEXT DEFAULT NULL,
                 device_agent TEXT,
                 linked_channel_id TEXT DEFAULT NULL,
+                is_persistent BOOLEAN DEFAULT 1,
+                current_track_id INTEGER DEFAULT NULL,
+                play_status TEXT DEFAULT 'stop',
+                seek_position REAL DEFAULT 0.0,
+                sync_timestamp REAL DEFAULT 0.0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(admin_id) REFERENCES users(id),
-                FOREIGN KEY(linked_channel_id) REFERENCES channels(chat_id) ON DELETE SET NULL
+                last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(admin_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(linked_channel_id) REFERENCES channels(chat_id) ON DELETE SET NULL,
+                FOREIGN KEY(current_track_id) REFERENCES tracks(id) ON DELETE SET NULL
             )''')
             
-            # 5. Playlist Items Table
+            # 5. Playlist Items Table (Queue Management)
             c.execute('''CREATE TABLE IF NOT EXISTS playlist_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 owner_id INTEGER,
@@ -114,11 +132,11 @@ def init_db():
                 is_played BOOLEAN DEFAULT 0,
                 position INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(owner_id) REFERENCES users(id),
-                FOREIGN KEY(track_id) REFERENCES tracks(id),
-                FOREIGN KEY(added_by) REFERENCES users(id)
+                FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                FOREIGN KEY(added_by) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY(session_token) REFERENCES sessions(token) ON DELETE CASCADE
             )''')
-            # 🔥 ایندکس حیاتی برای سرعت لود شدن لیست پخش
             c.execute('CREATE INDEX IF NOT EXISTS idx_playlist_session ON playlist_items(session_token);')
 
             # 6. Settings Table
@@ -128,7 +146,6 @@ def init_db():
                 default_caption TEXT,
                 is_auto_broadcast_enabled BOOLEAN DEFAULT 0
             )''')
-            
             c.execute("INSERT OR IGNORE INTO settings (id, default_caption, is_auto_broadcast_enabled) VALUES (1, '🎧 {title} - {artist}\n👤 Sent by: {sender}', 0)")
 
             # 7. Lyrics Cache Table
@@ -140,7 +157,7 @@ def init_db():
             )''')
             
             conn.commit()
-            print("✅ Database Schema Optimized & Ready (WAL Mode Enabled)")
+            print("✅ Database Schema V4 Optimized & Ready (WAL + Foreign Keys Enabled)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")

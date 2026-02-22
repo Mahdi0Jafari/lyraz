@@ -5,50 +5,94 @@ let sseConnection = null;
 let authConnection = null;
 
 // ==========================================
-// 🔐 Authentication & Session
+// 🔐 Authentication & Session (Anti-Fragile V4)
 // ==========================================
 
+function setupAuthSSE(callbacks) {
+    if (authConnection) authConnection.close();
+    authConnection = new EventSource("/events");
+    
+    authConnection.onmessage = (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'session_activated' && msg.session_token === state.sessionToken) {
+                console.log("[Network] Hub activated via SSE!");
+                authConnection.close();
+                callbacks.onLogin(msg.admin);
+            }
+        } catch (err) {}
+    };
+}
+
 export async function initAuth(callbacks) {
+    // 🔥 جلوگیری از ساخت سشن روح: اگر هاب در حالت انتظار است، توکن جدید نساز
+    if (state.sessionToken && state.hubStatus === 'waiting') {
+        console.log("[Network] Resuming existing waiting Hub:", state.sessionToken);
+        callbacks.onQRReady(`${window.location.origin}/connect/${state.sessionToken}`);
+        setupAuthSSE(callbacks);
+        return;
+    }
+
+    console.log("[Network] Requesting new Live Hub...");
     try {
         const res = await fetch('/api/auth/init', { method: 'POST' });
         const data = await res.json();
         
-        state.sessionToken = data.token;
-        localStorage.setItem('fanus_session_token', state.sessionToken);
-        
-        callbacks.onQRReady(`${window.location.origin}/connect/${state.sessionToken}`);
-        
-        // Listen for Login via SSE
-        if (authConnection) authConnection.close();
-        authConnection = new EventSource("/events");
-        authConnection.onmessage = (e) => {
-            try {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'session_activated' && msg.session_token === state.sessionToken) {
-                    authConnection.close();
-                    callbacks.onLogin(msg.admin);
-                }
-            } catch (err) {}
-        };
-        
-    } catch (err) { console.error("Auth Failed", err); }
+        if (data.status === 'success') {
+            state.sessionToken = data.token;
+            state.hubStatus = 'waiting';
+            localStorage.setItem('fanus_session_token', state.sessionToken);
+            
+            // آپدیت کردن آدرس مرورگر به صورت بی‌صدا (بدون رفرش) برای قابلیت اشتراک‌گذاری
+            if (!window.location.pathname.includes(state.sessionToken)) {
+                window.history.replaceState({}, '', `/live/${state.sessionToken}`);
+            }
+            
+            callbacks.onQRReady(`${window.location.origin}/connect/${state.sessionToken}`);
+            setupAuthSSE(callbacks);
+        }
+    } catch (err) { 
+        console.error("[Network] Hub Creation Failed", err); 
+    }
 }
 
 export async function validateSession(callbacks) {
+    if (!state.sessionToken) {
+        return initAuth(callbacks);
+    }
+
     try {
+        console.log(`[Network] Validating Hub: ${state.sessionToken}`);
         const res = await fetch(`/api/auth/check/${state.sessionToken}`);
+        
+        // اگر هاب در دیتابیس وجود نداشت (پاک شده یا اشتباه است)
         if (res.status === 404) {
-            localStorage.clear();
-            location.reload();
-            return;
+            console.warn("[Network] Hub not found. Resetting...");
+            localStorage.removeItem('fanus_session_token');
+            state.sessionToken = null;
+            state.hubStatus = 'waiting';
+            
+            // اگر کاربر در آدرس اشتباهی بود، او را به صفحه اصلی بفرست تا از نو شروع کند
+            if (window.location.pathname !== '/') {
+                window.location.href = '/';
+                return;
+            }
+            return initAuth(callbacks);
         }
+        
         const data = await res.json();
+        state.hubStatus = data.status;
+
         if (data.status === 'active') {
+            console.log("[Network] Hub is Active. Proceeding to player.");
             callbacks.onLogin(data.admin);
         } else {
-            initAuth(callbacks); // توکن نامعتبر یا منقضی شده
+            console.log("[Network] Hub is Waiting for Admin.");
+            // هاب وجود دارد اما ادمین ندارد -> فقط QR را نشان بده و گوش کن
+            initAuth(callbacks); 
         }
     } catch (e) { 
+        console.error("[Network] Validation Error:", e);
         initAuth(callbacks); 
     }
 }
@@ -97,9 +141,21 @@ export async function fetchQueue() {
     }
 }
 
+// 🔥 V4: Fetch Live Hub State for Cold Starts
+export async function fetchHubState() {
+    if (!state.sessionToken) return null;
+    try {
+        const res = await fetch(`/api/stream/state/${state.sessionToken}`);
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) {
+        console.error("[Network] Hub State Fetch Error", e);
+        return null;
+    }
+}
+
 export function reportStatus(trackId, isPlaying, currentTime, duration) {
     if (!state.sessionToken) return;
-    // استفاده از keepalive برای اطمینان از ارسال حتی در صورت بستن تب
     fetch('/api/control/report_status', {
         method: 'POST',
         keepalive: true, 
@@ -126,48 +182,27 @@ export function markAsPlayed(trackId) {
 // 🧠 Smart Network Awareness & Pre-fetching
 // ==========================================
 
-/**
- * بررسی هوشمند وضعیت پهنای باند و محدودیت دیتای کاربر
- * @returns {boolean} آیا شرایط برای Preload مهیا است؟
- */
 export function isNetworkFavorableForPreload() {
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     
     if (conn) {
-        // 1. اگر کاربر Data Saver گوشی را روشن کرده باشد
         if (conn.saveData) return false;
-        
-        // 2. اگر شبکه 2G یا به شدت کند باشد
-        if (conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') {
-            return false;
-        }
-        
-        // 3. اگر پهنای باند خیلی ضعیف باشد
-        if (conn.downlink && conn.downlink < 1.0) {
-            return false;
-        }
+        if (conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') return false;
+        if (conn.downlink && conn.downlink < 1.0) return false;
     }
-    // پیش‌فرض: اجازه لود در پس‌زمینه (4G, 3G, WiFi)
     return true; 
 }
 
-/**
- * فچ کردن بی‌صدای (Silent Fetch) Assetهای آهنگ بعدی
- * @param {string} trackId - آیدی آهنگ بعدی
- * @returns {boolean} - آیا بافر کردن فایل صوتی هم مجاز است؟
- */
 export function preloadAssets(trackId) {
     if (!isNetworkFavorableForPreload() || !trackId) {
-        return false; // به پلیر می‌گوید فایل صوتی را بافر نکند
+        return false; 
     }
 
-    // 1. Preload Cover Image (ذخیره خودکار در کش تصویر مرورگر)
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.src = `/cover/${trackId}`;
 
-    // 2. Preload Lyrics (ذخیره در کش HTTP) - با اولویت پایین
     fetch(`/stream/lyrics/${trackId}`, { priority: 'low' }).catch(() => {});
     
-    return true; // سیگنال برای پلیر که ادامه دهد و فایل صوتی را بافر کند
+    return true; 
 }

@@ -1,4 +1,5 @@
 # core/routes/bridge.py
+
 from flask import Blueprint, request, jsonify
 from core.sse import announcer
 import logging
@@ -9,20 +10,18 @@ logger = logging.getLogger(__name__)
 @bridge_bp.route('/internal/announce', methods=['POST'])
 def internal_announce():
     """
-    این متد فقط توسط کانتینر Bot (از طریق شبکه داکر) صدا زده می‌شود.
-    هدف: دریافت پیام از ربات و پخش آن برای کلاینت‌های SSE (تلویزیون/موبایل).
+    دریافت پیام از کانتینر Bot (طریق شبکه داخلی داکر)
+    و پخش (Broadcast) آن برای تمام کلاینت‌های متصل به هاب (Web Players).
     """
-    # امنیت ساده: فقط اجازه درخواست از لوکال نتورک داکر (اختیاری)
-    # در اینجا فرض بر اعتماد به شبکه داخلی داکر است.
-    
     data = request.json
     if not data:
-        return jsonify({'status': 'error', 'msg': 'No data'}), 400
+        return jsonify({'status': 'error', 'msg': 'No data provided'}), 400
         
     message = data.get('message')
     if message:
-        # تزریق پیام به سیستم SSE در کانتینر وب
+        # پیام مستقیماً به سیستم SSE (Server-Sent Events) تزریق می‌شود
         announcer.announce(message)
+        logger.debug(f"Bridge: Message broadcasted via SSE.")
         return jsonify({'status': 'ok', 'broadcasted': True})
         
     return jsonify({'status': 'ignored'})

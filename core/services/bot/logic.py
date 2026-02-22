@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 import requests
+import time
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError
 
@@ -39,13 +40,13 @@ def notify_web_container(data_dict):
 
 
 # ==========================================
-# 🔑 SESSION MANAGEMENT
+# 🔑 SESSION MANAGEMENT (Live Hubs)
 # ==========================================
 
 async def activate_session_and_notify(session_token, user_id, user_first_name, context):
     """
-    1. Activates the session in the database.
-    2. Notifies the web container to trigger TV login.
+    1. Activates the Hub in the database.
+    2. Notifies the web container to trigger Live Player UI.
     """
     internal_user_id = get_user_id(user_id)
     
@@ -55,18 +56,18 @@ async def activate_session_and_notify(session_token, user_id, user_first_name, c
 
     is_new_admin = False
     
-    # Scenario 1: Session has no admin yet -> Current user becomes admin
+    # Scenario 1: Hub has no admin yet -> Current user becomes admin
     if session['admin_id'] is None:
         bot_db_exec(
-            "UPDATE sessions SET status='active', admin_id=? WHERE token=?", 
+            "UPDATE sessions SET status='active', admin_id=?, last_active_at=CURRENT_TIMESTAMP WHERE token=?", 
             (internal_user_id, session_token)
         )
         is_new_admin = True
         
-    # Scenario 2: Current user is already the admin -> Just activate
+    # Scenario 2: Current user is already the admin -> Just activate & bump timestamp
     elif session['admin_id'] == internal_user_id:
         bot_db_exec(
-            "UPDATE sessions SET status='active' WHERE token=?", 
+            "UPDATE sessions SET status='active', last_active_at=CURRENT_TIMESTAMP WHERE token=?", 
             (session_token,)
         )
     
@@ -77,7 +78,7 @@ async def activate_session_and_notify(session_token, user_id, user_first_name, c
         "admin": {
             "name": user_first_name,
             "id": user_id,
-            "device_display_name": session['device_name'] or session_token[:4]
+            "device_display_name": session['device_name'] or f"Hub-{session_token[:4]}"
         }
     }
     
@@ -104,7 +105,6 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
     
     if cached:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_VOICE)
-        # Notify user of fast retrieval
         await update.message.reply_text(f"⚡️ *Loaded from Archive:* {title}", parse_mode=ParseMode.MARKDOWN)
         
         track_meta = {
@@ -115,7 +115,8 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
             'duration': cached['duration'], 
             'file_size': cached['file_size'],
             'thumb_id': cached['thumb_id'], 
-            'youtube_id': video_id
+            'youtube_id': video_id,
+            'bitrate': cached['bitrate']
         }
         await process_track_and_queue(update, context, track_meta)
         return
@@ -124,7 +125,6 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
     status = await update.message.reply_text(f"📥 Downloading *{title}*...", parse_mode=ParseMode.MARKDOWN)
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
     
-    # Audio quality is automatically injected from Config inside yt_service
     path = await yt_service.download(video_id)
     
     if path:
@@ -151,7 +151,8 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
                     'duration': sent.audio.duration,
                     'file_size': sent.audio.file_size,
                     'thumb_id': sent.audio.thumbnail.file_id if sent.audio.thumbnail else None,
-                    'youtube_id': video_id
+                    'youtube_id': video_id,
+                    'bitrate': Config.AUDIO_QUALITY # Fallback bitrate
                 }
                 
                 await status.delete()
@@ -182,22 +183,22 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
 async def process_track_and_queue(update, context, track_meta):
     """
     Core Processing Hub:
-    1. Register track in DB.
+    1. Register track in DB (V4 Schema).
     2. Send audio file back to the user.
-    3. Add to TV queue (if session is active).
+    3. Add to Hub queue & Broadcast Sync Signal.
     """
     user = update.effective_user
     internal_user_id = get_user_id(user.id)
     
-    # 1. Insert/Update Tracks Table
+    # 1. Insert/Update Tracks Table (V4 Schema Support)
     try:
         sql = """
-            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(youtube_id) DO UPDATE SET file_id=excluded.file_id
         """ if track_meta.get('youtube_id') else """
-            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, bitrate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_unique_id) DO UPDATE SET file_id=excluded.file_id
         """
         
@@ -207,8 +208,11 @@ async def process_track_and_queue(update, context, track_meta):
             track_meta['duration'], track_meta['file_size'], 
             track_meta['thumb_id']
         ]
+        
         if track_meta.get('youtube_id'):
             args.append(track_meta['youtube_id'])
+            
+        args.append(track_meta.get('bitrate', 192)) # Default if not provided
             
         bot_db_exec(sql, tuple(args))
     except Exception as e:
@@ -243,13 +247,13 @@ async def process_track_and_queue(update, context, track_meta):
         except Exception as e:
             logger.error(f"Failed to deliver audio to user: {e}")
 
-    # --- Part B: Device Queue Injection ---
+    # --- Part B: Hub Queue Injection (V4) ---
     target_token = get_user_current_session(user.id)
     
     if not target_token:
-        # If user uploaded an MP3 manually but isn't connected
+        # If user uploaded an MP3 manually but isn't connected to a Hub
         if not track_meta.get('youtube_id'):
-            await context.bot.send_message(user.id, "⚠️ Track saved. To play this on a screen, connect a device first from the menu.")
+            await context.bot.send_message(user.id, "⚠️ Track saved. To play this, connect to a Live Hub first from the menu.")
         return
 
     session = get_session_info(target_token)
@@ -260,15 +264,16 @@ async def process_track_and_queue(update, context, track_meta):
             VALUES (?, ?, ?, ?)
         """, (internal_user_id, track_id, internal_user_id, target_token))
         
-        # Dispatch to Web Player via Bridge
+        # Dispatch to Web Player via Bridge (With Sync Timestamp)
         track_data = {
             'title': track_meta['title'], 'performer': track_meta['performer'],
             'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
-            'added_by': user.first_name, 'session_token': target_token
+            'added_by': user.first_name, 'session_token': target_token,
+            'sync_timestamp': time.time() # V4 NTP Logic
         }
         notify_web_container(track_data)
         
-        d_name = session['device_name'] or target_token[:4]
+        d_name = session['device_name'] or f"Hub-{target_token[:4]}"
         await context.bot.send_message(
             user.id, 
             f"✅ Sent to *{d_name}*", 
@@ -277,7 +282,7 @@ async def process_track_and_queue(update, context, track_meta):
 
         await handle_broadcast(context, user, track_meta['file_id'], track_meta, session)
     else:
-        await context.bot.send_message(user.id, "⚠️ The selected device is currently offline or invalid.")
+        await context.bot.send_message(user.id, "⚠️ The selected Hub is currently offline or invalid.")
 
 
 async def handle_broadcast(context, user, file_id, meta, session):

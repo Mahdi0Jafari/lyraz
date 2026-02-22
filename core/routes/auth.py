@@ -3,42 +3,53 @@
 from flask import Blueprint, jsonify, request, render_template, send_from_directory
 from core.models import get_db
 from core.config import Config
-import uuid
+import secrets
+import string
+import logging
 
+logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__)
 
-# --- ۱. صفحه واسط (Landing Page) ---
+def generate_hub_token(length=7):
+    """
+    تولید توکن ۷ کاراکتری (Base36 - حروف کوچک و اعداد)
+    ظرفیت: حدود ۷۸ میلیارد ترکیب یکتا.
+    ایده‌آل برای تایپ کردن با کیبورد تلویزیون و لینک‌های کوتاه.
+    """
+    alphabet = string.ascii_lowercase + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+# --- ۱. صفحه واسط اتصال (Landing Page) ---
 @auth_bp.route('/connect/<token>')
 def connect_landing(token):
     """
     وقتی کاربر QR Code روی تلویزیون را اسکن می‌کند، به این صفحه می‌آید.
-    این صفحه یک دکمه خوشگل نشان می‌دهد که کاربر را به ربات تلگرام می‌فرستد.
+    هدایت کاربر به ربات تلگرام به همراه توکن هاب.
     """
-    # ساخت لینک عمیق (Deep Link) برای شروع ربات با توکن سشن
-    # مثال: https://t.me/FanusMusicBot?start=session_12345678
+    # ساخت لینک عمیق (Deep Link) برای شروع ربات با توکن هاب
+    # مثال: https://t.me/FanusMusicBot?start=session_a7k9p2x
     telegram_link = f"https://t.me/{Config.BOT_USERNAME}?start=session_{token}"
     
-    # رندر کردن قالب connect.html و ارسال لینک به آن
     return render_template('connect.html', telegram_link=telegram_link)
 
-
-# --- ۲. API شروع سشن (توسط تلویزیون صدا زده می‌شود) ---
+# --- ۲. API شروع هاب (توسط تلویزیون/کلاینت صدا زده می‌شود) ---
 @auth_bp.route('/api/auth/init', methods=['POST'])
 def init_session():
     """
-    ایجاد یک سشن جدید برای نمایشگر (TV/Desktop).
-    یک توکن می‌سازد و در دیتابیس ذخیره می‌کند.
+    ایجاد یک هاب جدید (Live Hub) برای دستگاه پخش‌کننده.
+    یک توکن ۷ رقمی می‌سازد و به عنوان سشن دائمی ثبت می‌کند.
     """
-    # تولید توکن یکتا و کوتاه (۸ کاراکتر)
-    token = str(uuid.uuid4())[:8]
-    
+    token = generate_hub_token()
     db = get_db()
+    
     try:
-        # ایجاد ردیف جدید در جدول sessions با وضعیت waiting
-        db.execute("INSERT INTO sessions (token, status) VALUES (?, 'waiting')", (token,))
+        # در معماری V4، هاب‌ها به صورت پیش‌فرض دائمی (is_persistent=1) ثبت می‌شوند
+        db.execute(
+            "INSERT INTO sessions (token, status, is_persistent) VALUES (?, 'waiting', 1)", 
+            (token,)
+        )
         db.commit()
         
-        # لینک مستقیم ربات (برای استفاده‌های احتمالی، هرچند ما از صفحه connect استفاده می‌کنیم)
         bot_link = f"https://t.me/{Config.BOT_USERNAME}?start=session_{token}"
         
         return jsonify({
@@ -47,31 +58,31 @@ def init_session():
             'url': bot_link 
         })
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logger.error(f"Hub Initialization Error: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to initialize hub.'}), 500
 
-
-# --- ۳. API بررسی وضعیت (توسط تلویزیون مدام صدا زده می‌شود) ---
+# --- ۳. API بررسی وضعیت (Polling اولیه تا زمان لاگین) ---
 @auth_bp.route('/api/auth/check/<token>', methods=['GET'])
 def check_session_status(token):
     """
-    تلویزیون هر ۲ ثانیه این را صدا می‌زند تا ببیند آیا کسی QR را اسکن کرده و در ربات Start زده است یا خیر.
+    پلیرها قبل از اینکه به SSE وصل شوند، این مسیر را چک می‌کنند 
+    تا ببینند ادمین دستگاه را در تلگرام رجیستر کرده است یا خیر.
     """
     db = get_db()
     
-    # دریافت اطلاعات سشن به همراه نام ادمین (اگر وصل شده باشد)
     query = """
-        SELECT s.*, u.first_name, u.telegram_id 
+        SELECT s.status, s.admin_id, s.device_name, u.first_name, u.telegram_id 
         FROM sessions s
         LEFT JOIN users u ON s.admin_id = u.id
         WHERE s.token = ?
     """
     sess = db.execute(query, (token,)).fetchone()
     
-    # اگر توکن در دیتابیس نبود (منقضی یا اشتباه)
+    # اگر توکن در دیتابیس نبود
     if not sess:
         return jsonify({'status': 'expired'}), 404
         
-    # اگر وضعیت active شده بود (یعنی ادمین در ربات دکمه استارت را زده)
+    # اگر وضعیت active شده بود (ادمین استارت زده است)
     if sess['status'] == 'active' and sess['admin_id']:
         return jsonify({
             'status': 'active',
@@ -79,21 +90,18 @@ def check_session_status(token):
                 'id': sess['admin_id'],
                 'name': sess['first_name'],
                 'telegram_id': sess['telegram_id'],
-                # نام دیوایس را برای تلویزیون می‌فرستیم
-                'device_display_name': sess['device_name'] or sess['first_name']
+                # نمایش نام شخصی‌سازی شده هاب یا نام صاحب آن
+                'device_display_name': sess['device_name'] or f"{sess['first_name']}'s Hub"
             }
         })
         
-    # اگر هنوز کسی وصل نشده
+    # هنوز کسی اسکن و تایید نکرده است
     return jsonify({'status': 'waiting'})
 
-
-# --- 🔥 ۴. مسیر حیاتی PWA (Service Worker) ---
+# --- ۴. مسیر حیاتی PWA (Service Worker) ---
 @auth_bp.route('/sw.js')
 def serve_sw():
     """
-    این تابع فایل sw.js را از پوشه static می‌خواند اما آن را 
-    روی آدرس ریشه (yoursite.com/sw.js) سرو می‌کند.
-    این کار برای اینکه سرویس‌ورکر بتواند کل سایت را کش کند الزامی است.
+    سرو کردن فایل Service Worker روی مسیر روت برای کنترل کش (Offline Mode).
     """
     return send_from_directory('static', 'sw.js', mimetype='application/javascript')
