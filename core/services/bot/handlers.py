@@ -3,7 +3,8 @@
 import uuid
 import re
 import logging
-from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent
+# 🔥 FIXED: Added missing imports (InlineKeyboardMarkup, InlineKeyboardButton)
+from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
 
@@ -30,7 +31,7 @@ yt_service = YouTubeService()
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main Entry Point"""
+    """Main Entry Point & Onboarding Hub"""
     user = update.effective_user
     args = context.args
     
@@ -59,48 +60,62 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_new_admin:
             context.user_data['renaming_token'] = token
             await update.message.reply_text(
-                f"🎉 *Connected Successfully!*\nYou are now the Admin of this device.\n\n✍️ Please enter a *Name* for this screen:",
+                f"🎉 *Connection Successful!*\n\nYou are now the Admin of this device.\n✍️ Please enter a *Name* for this screen (e.g., Living Room TV):",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=ForceReply(selective=True)
             )
         else:
             await update.message.reply_text(
-                f"✅ *Connected to {d_name}*\nYou can now send music links or search.", 
-                reply_markup=get_onboarding_keyboard(token), 
+                f"✅ *Connected to {d_name}*\n\nEverything you search or download here will now play on your screen.", 
+                reply_markup=get_main_menu_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
 
     else:
-        # --- Scenario 2: Normal Start ---
+        # --- Scenario 2: Normal Start (Discovery Engine UX) ---
         current_token = get_user_current_session(user.id)
+        
+        welcome_msg = (
+            f"👋 *Welcome to Fanus, {user.first_name}!*\n"
+            "Your personal bridge for seamless music streaming.\n\n"
+            "🎼 *What can I do?*\n"
+            "📥 *Download:* Paste a Spotify/YouTube link to save tracks.\n"
+            "🔍 *Search:* Instantly find any song from the global database.\n"
+            "📺 *Stream:* Connect to your TV/PC for a synchronized experience.\n\n"
+        )
+        
         if current_token:
             sess = get_session_info(current_token)
             d_name = sess['device_name'] if sess else "Unknown"
-            msg = f"🟢 *Welcome Back, {user.first_name}!*\nConnected to: *{d_name}*\n\n👇 Send a Spotify/YouTube link, or tap *Search Music*."
+            welcome_msg += f"🟢 *Status:* Currently synced with *{d_name}*.\n\n👇 *Get started:* Use the menu below or send a music link."
         else:
-            msg = (
-                f"👋 *Hi {user.first_name}!*\n\n"
-                "⛔️ *No Device Connected.*\n\n"
-                "To start playing music:\n"
-                "1. Open the website on your TV/Laptop.\n"
-                "2. Scan the QR code.\n"
-                "3. Press Start."
-            )
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=get_onboarding_keyboard(current_token))
+            welcome_msg += "👇 *Get started:* Use the menu below, or tap to open the Web Player."
+
+        await update.message.reply_text(
+            welcome_msg, 
+            parse_mode=ParseMode.MARKDOWN, 
+            reply_markup=get_main_menu_keyboard()
+        )
+        
+        await update.message.reply_text(
+            "⚡️ *Quick Actions:*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_onboarding_keyboard(current_token)
+        )
 
 # ==========================================
 # 📡 LINK PARSERS & DIRECT DOWNLOADS
 # ==========================================
 
 async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    """استخراج ویدیو آیدی از لینک یوتیوب و ارسال به دانلودر"""
+    """Extracts YouTube Video ID and dispatches to Huey"""
     match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
     if not match:
-        await update.message.reply_text("❌ Invalid YouTube link.")
+        await update.message.reply_text("❌ Invalid YouTube link format.")
         return
         
     vid = match.group(1)
-    status_msg = await update.message.reply_text("⏳ Processing YouTube link...")
+    status_msg = await update.message.reply_text("⏳ Processing YouTube track...")
     
     try:
         results = yt_service.search(vid)
@@ -109,12 +124,11 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     except:
         title, artist = "Unknown Track", "Unknown Artist"
 
-    # 🔥 اینجا context ارسال می‌شود
     await dispatch_to_huey(update, context, vid, title, artist, status_msg)
 
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    """پردازش لینک‌های اسپاتیفای (آهنگ یا پلی‌لیست)"""
+    """Processes Spotify links (Tracks or Playlists) using the Embed Scraper"""
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
     
     sp_data = spotify_keyless.parse_link(url)
@@ -123,23 +137,22 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         await status_msg.edit_text(f"❌ {sp_data.get('message')}")
         return
 
-    # --- حالت اول: تک‌آهنگ ---
+    # --- Case 1: Single Track ---
     if sp_data['type'] == 'track':
-        await status_msg.edit_text(f"🔎 Matching *{sp_data['title']}* on YouTube...", parse_mode=ParseMode.MARKDOWN)
+        await status_msg.edit_text(f"🔎 Matching *{sp_data['title']}* on global database...", parse_mode=ParseMode.MARKDOWN)
         results = yt_service.search(sp_data['search_query'])
         if not results:
-            await status_msg.edit_text("❌ Could not find a match for this track on YouTube.")
+            await status_msg.edit_text("❌ Could not find a match for this specific track.")
             return
             
         vid = results[0]['videoId']
-        # 🔥 اینجا context ارسال می‌شود
         await dispatch_to_huey(update, context, vid, sp_data['title'], sp_data['artist'], status_msg)
 
-    # --- حالت دوم: پلی‌لیست یا آلبوم ---
+    # --- Case 2: Playlist or Album ---
     elif sp_data['type'] in ['playlist', 'album']:
         tracks = sp_data['tracks']
         await status_msg.edit_text(
-            f"📥 Found *{len(tracks)}* tracks in {sp_data['type']}.\nAdding to queue sequentially...",
+            f"📥 Found *{len(tracks)}* tracks in this {sp_data['type']}.\nAdding to download queue...",
             parse_mode=ParseMode.MARKDOWN
         )
         
@@ -160,54 +173,78 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
                 chat_id=update.effective_chat.id
             )
             
-        await update.message.reply_text(f"✅ {sp_data['type'].capitalize()} items have been dispatched to the background worker.")
+        await update.message.reply_text(f"✅ {len(tracks)} items have been successfully dispatched to the background worker.")
 
-# 🔥 اصلاح حیاتی: context به عنوان ورودی دوم اضافه شد
 async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg):
-    """تابع کمکی برای ارسال به Worker"""
+    """Helper function to route downloads to the background worker"""
     from core.tasks import download_and_process_track
     user = update.effective_user
     current_token = get_user_current_session(user.id)
     
-    # 1. Check Cache
+    # 1. Check Cache Hit
     cached = get_track_by_youtube_id(vid)
     if cached:
         try: await status_msg.delete()
         except: pass
-        # 🔥 اینجا context با موفقیت به logic.py پاس داده می‌شود
         await ensure_track_and_process(update, context, video_id=vid, title=title, artist=artist)
         return
 
-    # 2. Send to Worker
-    await status_msg.edit_text(f"⏳ *{title}* added to download queue...", parse_mode=ParseMode.MARKDOWN)
+    # 2. Cache Miss -> Send to Worker
+    download_quality = Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else '192'
+
+    await status_msg.edit_text(f"⏳ *{title}* added to the queue...", parse_mode=ParseMode.MARKDOWN)
     download_and_process_track(
         video_id=vid, title=title, artist=artist, 
         user_id=user.id, user_first_name=user.first_name, 
-        session_token=current_token, chat_id=update.effective_chat.id, message_id=status_msg.message_id
+        session_token=current_token, chat_id=update.effective_chat.id, message_id=status_msg.message_id,
+        quality=download_quality
     )
 
 # ==========================================
-# 💬 TEXT & MENU HANDLER
+# 💬 TEXT & NAVIGATION HANDLER
 # ==========================================
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # 1. Menu Buttons
-    if text == "📱 My Devices": 
-        await list_devices(update, context); return
-    if text == "❓ Help": 
-        await update.message.reply_text("📚 *Guide:*\n- Send a YouTube or Spotify link.\n- Use Inline Search.\n- Upload MP3 directly."); return
+    # --- 1. Persistent Menu Routing ---
+    if text == "📺 My Devices" or text == "📱 My Devices": 
+        await list_devices(update, context)
+        return
+        
+    if text == "📖 Setup Guide" or text == "❓ Help": 
+        guide_text = (
+            "🚀 *Quick Setup Guide:*\n\n"
+            "1️⃣ *To Play on TV/PC:* Open the Fanus website on your screen and scan the QR code using your phone's camera.\n"
+            "2️⃣ *Spotify Downloads:* Just copy any track or playlist link from Spotify and paste it here.\n"
+            "3️⃣ *Direct Uploads:* Forward any MP3 file to me, and I'll add it to your synchronized queue.\n\n"
+            "Need a specific song? Just use the *Search Music* button!"
+        )
+        await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN)
+        return
+        
+    if text == "🔍 Search Music":
+        # Actionable instruction rather than a dead end
+        await update.message.reply_text(
+            "🔎 *How to Search:*\nSimply type `@naqoosbot [song name]` right here in the chat, or tap the button below!",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]])
+        )
+        return
+        
+    if text == "📥 Download Link":
+        await update.message.reply_text("🔗 Send me a valid *Spotify* or *YouTube* link, and I'll start downloading it immediately.", parse_mode=ParseMode.MARKDOWN)
+        return
 
-    # 2. Renaming Flow
+    # --- 2. Renaming Flow ---
     if 'renaming_token' in context.user_data:
         token = context.user_data['renaming_token']
         set_device_name(token, text)
         del context.user_data['renaming_token']
-        await update.message.reply_text(f"✅ Device renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_onboarding_keyboard(token))
+        await update.message.reply_text(f"✅ Device successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
         return
     
-    # 3. 🔥 Smart Link Detection 🔥
+    # --- 3. Smart Link Detection (Zero-Question Processing) ---
     if re.match(r'(https?://)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)/.+', text):
         await handle_youtube_link(update, context, text)
         return
@@ -216,9 +253,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_spotify_link(update, context, text)
         return
 
-    # 4. Fallback
-    current = get_user_current_session(update.effective_user.id)
-    await update.message.reply_text("👇 Tap the button below to search, or paste a Spotify/YouTube link:", reply_markup=get_onboarding_keyboard(current))
+    # --- 4. Search Fallback (Zero-Question Search Initiation) ---
+    # If it's not a menu command and not a link, we assume it's a search query
+    status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
+    try:
+        results = yt_service.search(text)
+        if not results:
+            await status_msg.edit_text("❌ No results found. Try a different keyword.")
+            return
+            
+        vid = results[0]['videoId']
+        title = results[0]['title']
+        artist = results[0]['artists'][0]['name'] if results[0].get('artists') else "Unknown"
+        
+        await dispatch_to_huey(update, context, vid, title, artist, status_msg)
+        
+    except Exception as e:
+        logger.error(f"Text Search Fallback Error: {e}")
+        await status_msg.edit_text("❌ An error occurred during the search.")
 
 # ==========================================
 # 🎵 OTHER HANDLERS
@@ -242,16 +294,21 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 session_list.insert(0, fake)
 
     if not session_list:
-        await update.message.reply_text("❌ No active devices found.")
+        base_url = Config.BASE_URL if Config.BASE_URL else "the website"
+        await update.message.reply_text(
+            f"❌ *No active devices found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to connect.",
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
         return
 
-    await update.message.reply_text("📱 *Your Devices:*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("📱 *Your Connected Devices:*", parse_mode=ParseMode.MARKDOWN)
     for sess in session_list:
         token = sess['token']
         d_name = sess['device_name'] or token[:4]
         is_cur = (token == current_token)
-        label = f"👤 {d_name} (Guest)" if sess.get('is_guest_entry') else f"📺 {d_name}"
-        if is_cur: label = f"🟢 {d_name} (Selected)"
+        label = f"👤 {d_name} (Guest Mode)" if sess.get('is_guest_entry') else f"📺 {d_name}"
+        if is_cur: label = f"🟢 {d_name} (Currently Active)"
         await update.message.reply_text(label, reply_markup=get_smart_buttons(token, is_cur))
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -261,7 +318,13 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
     
     if data == "help_connect":
-        await context.bot.send_message(user.id, "💡 *How to Connect:*\nOpen the website on your TV/PC and scan the QR code displayed there.", parse_mode=ParseMode.MARKDOWN)
+        base_url = Config.BASE_URL if Config.BASE_URL else "the Web Player"
+        await context.bot.send_message(
+            user.id, 
+            f"💡 *How to Connect:*\nOpen [{base_url}]({base_url}) on your screen and scan the QR code displayed there.", 
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
         return
     elif data == "help_upload":
         await context.bot.send_message(user.id, "🎙 *Upload Music:*\nSimply forward any MP3 file from other chats to this bot, or upload a file directly.")
@@ -273,7 +336,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sess = get_session_info(target)
         d_name = sess['device_name'] or target[:4]
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target, True))
-        await context.bot.send_message(user.id, f"✅ Active Device: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
+        await context.bot.send_message(user.id, f"✅ Active Device switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
 
     elif data.startswith("manage_"):
         token = data.split("_")[1]
@@ -285,10 +348,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         token = data.split("_")[1]
         sess = get_session_info(token)
         if sess['admin_id'] != get_user_id(user.id):
-            await context.bot.send_message(user.id, "⛔️ Access Denied.")
+            await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this device.")
             return
         context.user_data['renaming_token'] = token
-        await context.bot.send_message(user.id, f"✍️ Enter new name for `{sess['device_name']}`:", parse_mode=ParseMode.MARKDOWN, reply_markup=ForceReply(selective=True))
+        await context.bot.send_message(user.id, f"✍️ Enter a new name for `{sess['device_name']}`:", parse_mode=ParseMode.MARKDOWN, reply_markup=ForceReply(selective=True))
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message.audio: return
@@ -334,11 +397,10 @@ async def youtube_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else: title, artist = meta_part, "Unknown"
 
         title, artist = title.strip(), artist.strip()
-        status_msg = await update.message.reply_text(f"⏳ Processing...")
-        # 🔥 اینجا context ارسال می‌شود
+        status_msg = await update.message.reply_text(f"⏳ Processing track...")
         await dispatch_to_huey(update, context, vid, title, artist, status_msg)
     except Exception as e:
-        await update.message.reply_text("❌ Error processing request.")
+        await update.message.reply_text("❌ Error processing your request.")
 
 async def handle_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pass

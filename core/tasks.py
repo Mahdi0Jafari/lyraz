@@ -17,21 +17,21 @@ from core.services.bot.database import bot_db_exec, get_user_id
 
 logger = logging.getLogger("huey.consumer")
 
-# 1. تعریف صف وظایف (Huey)
+# 1. Initialize Task Queue (Huey)
 huey = SqliteHuey(
     name='fanus_tasks',
     filename=os.path.join(Config.INSTANCE_PATH, 'queue.db')
 )
 
-# 2. سرویس‌ها
+# 2. Services
 yt_service = YouTubeService()
 
 # ==========================================
-# 🛠 توابع کمکی
+# 🛠 HELPER FUNCTIONS
 # ==========================================
 
 def notify_web_bridge(data_dict):
-    """ارسال پیام به کانتینر وب (Bridge) برای آپدیت SSE"""
+    """Sends a message to the Web container to update the SSE broadcast"""
     try:
         url = "http://web:5000/internal/announce"
         sse_msg = f"data: {json.dumps(data_dict)}\n\n"
@@ -40,7 +40,7 @@ def notify_web_bridge(data_dict):
         logger.error(f"Bridge notification failed: {e}")
 
 async def upload_to_telegram(local_bot, file_path, title, artist, video_id):
-    """آپلود فایل دانلود شده به کانال آرشیو و دریافت شناسه فایل"""
+    """Uploads downloaded file to the Storage Channel and retrieves the File ID"""
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
 
@@ -63,47 +63,48 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id):
 
 
 # ==========================================
-# 🎧 تسک اصلی: دانلود تک‌آهنگ
+# 🎧 MAIN TASK: SINGLE TRACK DOWNLOAD
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id):
-    """تسک Worker برای دانلود و پردازش یک تک‌آهنگ"""
-    logger.info(f"🚀 Task Started: {title} ({video_id})")
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None):
+    """Worker Task for downloading and processing a single track"""
+    logger.info(f"🚀 Task Started: {title} ({video_id}) | Quality: {quality}")
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     try:
         loop.run_until_complete(
-            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id)
+            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality)
         )
     finally:
         loop.close()
 
-async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id):
+async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None):
     path = None
-    # 🔥 ساخت یک نمونه بات مستقل فقط برای همین تسک برای جلوگیری از کرش Event Loop
+    # 🔥 Initialize an isolated bot instance to prevent Event Loop crashes
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
-        # 1. دانلود فایل
-        path = await yt_service.download(video_id)
+        # 1. Download File
+        # 🔥 Quality parameter passed down to yt_service
+        path = await yt_service.download(video_id, quality=quality)
         
         if not path:
             if message_id:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed. Please try again.")
             return
 
-        # 2. آپلود به تلگرام (پاس دادن بات لوکال)
+        # 2. Upload to Telegram Storage (Using Local Bot)
         tg_audio = await upload_to_telegram(local_bot, path, title, artist, video_id)
         
         if not tg_audio:
             if message_id:
-                await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
+                await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive the track to cloud.")
             return
 
-        # 3. ذخیره در دیتابیس (Tracks Table)
+        # 3. Store in Database (Tracks Table)
         track_meta = {
             'file_unique_id': tg_audio.file_unique_id,
             'file_id': tg_audio.file_id,
@@ -127,12 +128,12 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta['thumb_id'], track_meta['youtube_id']
         ))
 
-        # 4. پاکسازی پیام وضعیت (در صورت وجود)
+        # 4. Clean up processing status message
         if message_id:
             try: await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
             except: pass
 
-        # 5. 🔥 ارسال فایل برای کاربر 🔥
+        # 5. 🔥 Deliver File to User 🔥
         user_caption = f"🎧 *{title}*\n👤 {artist}"
         if session_token:
             user_caption += "\n📺 *Added to Queue*"
@@ -147,9 +148,9 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 parse_mode=ParseMode.MARKDOWN
             )
         except Exception as e:
-            logger.error(f"Failed to send audio to user: {e}")
+            logger.error(f"Failed to deliver audio to user: {e}")
 
-        # 6. پردازش اتصال به تلویزیون
+        # 6. Process Device Connection (Web Player Queue)
         if session_token:
             track_db_id = None
             with sqlite3.connect(Config.DATABASE_URI) as conn:
@@ -174,42 +175,44 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     except Exception as e:
         logger.error(f"Task Failed: {e}")
         if message_id:
-            try: await local_bot.send_message(chat_id=chat_id, text="❌ System Error occurred.")
+            try: await local_bot.send_message(chat_id=chat_id, text="❌ A system error occurred during processing.")
             except: pass
     finally:
         if path: yt_service.cleanup(path)
-        # 🔥 بستن ایمن کانکشن بات بعد از پایان تسک
+        # 🔥 Safely shutdown bot connection after task completion
         try: await local_bot.initialize() ; await local_bot.shutdown()
         except: pass
 
 
 # ==========================================
-# 🗂 تسک جدید: پردازش آیتم‌های پلی‌لیست اسپاتیفای
+# 🗂 PLAYLIST PROCESSING TASK
 # ==========================================
 
 @huey.task()
-def process_spotify_playlist_item(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id):
+def process_spotify_playlist_item(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id, quality=None):
     """
-    تسک مخصوص پلی‌لیست: ابتدا در یوتیوب سرچ می‌کند، اگر در دیتابیس بود از کش می‌خواند، 
-    در غیر این صورت آن را برای دانلود به جریان اصلی می‌فرستد.
+    Playlist Task: 
+    1. Searches YouTube. 
+    2. Checks DB Cache. 
+    3. If Cache Miss, triggers full download protocol.
     """
     logger.info(f"🔎 Spotify Item Task: {search_query}")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            _async_spotify_logic(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id)
+            _async_spotify_logic(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id, quality)
         )
     finally:
         loop.close()
 
-async def _async_spotify_logic(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id):
+async def _async_spotify_logic(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id, quality=None):
     local_bot = Bot(token=Config.BOT_TOKEN)
     try:
-        # ۱. تاخیر تصادفی (Jitter) بین 1 تا 3 ثانیه برای جلوگیری از بن شدن توسط یوتیوب در لیست‌های طولانی
+        # 1. Random Jitter (1-3s) to prevent YouTube rate limits on massive playlists
         await asyncio.sleep(random.uniform(1.0, 3.0))
 
-        # ۲. جستجو در یوتیوب
+        # 2. Search on YouTube
         results = yt_service.search(search_query)
         if not results:
             logger.warning(f"No YT match found for: {search_query}")
@@ -219,7 +222,7 @@ async def _async_spotify_logic(search_query, expected_title, expected_artist, us
         title = expected_title
         artist = expected_artist
 
-        # ۳. بررسی وجود فایل در آرشیو (Cache Hit)
+        # 3. Check Archive (Cache Hit)
         cached = None
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
@@ -227,7 +230,6 @@ async def _async_spotify_logic(search_query, expected_title, expected_artist, us
             cached = cur.fetchone()
 
         if cached:
-            # اگر فایل در سرور موجود است، فقط آن را به کاربر بفرست و به صف تلویزیون اضافه کن
             user_caption = f"🎧 *{title}*\n👤 {artist}\n📺 *Added to Queue*" if session_token else f"🎧 *{title}*\n👤 {artist}"
             try:
                 await local_bot.send_audio(
@@ -251,9 +253,8 @@ async def _async_spotify_logic(search_query, expected_title, expected_artist, us
                 notify_web_bridge(track_data)
             return
 
-        # ۴. اگر فایل نبود (Cache Miss)، پروسه دانلود کامل را اجرا کن
-        # پیام وضعیت (Downloading...) را برای پلی‌لیست‌ها رد می‌کنیم تا چت کاربر اسپم نشود
-        await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=None)
+        # 4. Cache Miss -> Trigger Full Download Protocol
+        await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=None, quality=quality)
 
     except Exception as e:
         logger.error(f"Spotify Playlist Logic Error: {e}")
