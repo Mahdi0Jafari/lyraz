@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import requests
 import time
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError
 
@@ -228,57 +229,71 @@ async def process_track_and_queue(update, context, track_meta):
     if not track_id:
         return
 
-    # --- Part A: Deliver File to User ---
-    if track_meta.get('youtube_id'):
-        await context.bot.send_chat_action(chat_id=user.id, action=ChatAction.UPLOAD_VOICE)
-        try:
-            caption = f"🎧 *{track_meta['title']}*\n👤 {track_meta['performer']}"
-            if Config.BOT_USERNAME:
-                caption += f"\n🆔 @{Config.BOT_USERNAME}"
-            
-            await context.bot.send_audio(
-                chat_id=user.id,
-                audio=track_meta['file_id'],
-                title=track_meta['title'],
-                performer=track_meta['performer'],
-                caption=caption,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except Exception as e:
-            logger.error(f"Failed to deliver audio to user: {e}")
-
-    # --- Part B: Hub Queue Injection (V4) ---
+    # 3. Hub Queue Injection (V4.2 Routing)
     target_token = get_user_current_session(user.id)
     
     if not target_token:
-        # If user uploaded an MP3 manually but isn't connected to a Hub
-        if not track_meta.get('youtube_id'):
-            await context.bot.send_message(user.id, "⚠️ Track saved. To play this, connect to a Live Hub first from the menu.")
+        # If user isn't connected to a Hub, just send the file and warn them
+        if track_meta.get('youtube_id'):
+            await context.bot.send_chat_action(chat_id=user.id, action=ChatAction.UPLOAD_VOICE)
+            try:
+                caption = f"🎧 *{track_meta['title']}*\n👤 {track_meta['performer']}"
+                if Config.BOT_USERNAME: caption += f"\n🆔 @{Config.BOT_USERNAME}"
+                await context.bot.send_audio(
+                    chat_id=user.id, audio=track_meta['file_id'],
+                    title=track_meta['title'], performer=track_meta['performer'],
+                    caption=caption, parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception: pass
+            
+        await context.bot.send_message(user.id, "⚠️ Track saved. To play this synchronously, connect to a Live Hub first from the menu.")
         return
 
     session = get_session_info(target_token)
     if session:
-        # Register in playlist DB
+        # The Hub admin retains ownership of the session, but the active user is recorded as added_by
+        hub_owner_id = session['admin_id'] if session['admin_id'] else internal_user_id
+
         bot_db_exec("""
             INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
             VALUES (?, ?, ?, ?)
-        """, (internal_user_id, track_id, internal_user_id, target_token))
+        """, (hub_owner_id, track_id, internal_user_id, target_token))
         
-        # Dispatch to Web Player via Bridge (With Sync Timestamp)
+        # Dispatch to Web Player via Bridge
         track_data = {
+            'type': 'new_track',
             'title': track_meta['title'], 'performer': track_meta['performer'],
             'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
             'added_by': user.first_name, 'session_token': target_token,
-            'sync_timestamp': time.time() # V4 NTP Logic
+            'sync_timestamp': time.time()
         }
         notify_web_container(track_data)
         
+        # 4. 🔥 Deliver File with Hub Context & Direct Link
         d_name = session['device_name'] or f"Hub-{target_token[:4]}"
-        await context.bot.send_message(
-            user.id, 
-            f"✅ Sent to *{d_name}*", 
-            parse_mode=ParseMode.MARKDOWN
-        )
+        caption = f"🎧 *{track_meta['title']}*\n👤 {track_meta['performer']}\n📡 Added to: *{d_name}*"
+        
+        base_url = Config.BASE_URL.rstrip('/') if Config.BASE_URL else "http://localhost:5000"
+        reply_markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{target_token}")
+        ]])
+
+        if track_meta.get('youtube_id'):
+            await context.bot.send_chat_action(chat_id=user.id, action=ChatAction.UPLOAD_VOICE)
+            try:
+                await context.bot.send_audio(
+                    chat_id=user.id, audio=track_meta['file_id'],
+                    title=track_meta['title'], performer=track_meta['performer'],
+                    caption=caption, parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Failed to deliver audio: {e}")
+        else:
+            # If it was an MP3 forward, just send the context text
+            await context.bot.send_message(
+                chat_id=user.id, text=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup
+            )
 
         await handle_broadcast(context, user, track_meta['file_id'], track_meta, session)
     else:
@@ -290,7 +305,7 @@ async def handle_broadcast(context, user, file_id, meta, session):
     Broadcasts the processed track to attached public/private channels if configured.
     """
     settings = get_settings()
-    target_channel_id = session['linked_channel_id']
+    target_channel_id = session.get('linked_channel_id')
     channel_tmpl = None
     
     if target_channel_id:
