@@ -1,95 +1,42 @@
 /* ==================================================
-   Core Variables & Settings
+   Core Variables & Hardware Acceleration
    ================================================== */
    :root {
-    /* رنگ پیش‌فرض سیستم (سبز اسپاتیفای) - این رنگ توسط جاوااسکریپت داینامیک تغییر می‌کند */
+    /* رنگ پیش‌فرض سیستم - تغییرات داینامیک باید از طریق JS اعمال شود */
     --dynamic-rgb: 29, 185, 84; 
 }
 
 body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #050505;
+    /* رنگ پس‌زمینه پایه. افکت گرادیان به جای body، در HTML (تگ #bg-blur) مدیریت می‌شود */
+    background-color: #050505; 
     
-    /* افکت گرادیان پویا که بر اساس رنگ کاور تغییر می‌کند */
-    background-image: radial-gradient(circle at 50% -20%, rgba(var(--dynamic-rgb), 0.25) 0%, transparent 70%);
-    background-attachment: fixed;
-    transition: background-image 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-    
-    /* تنظیمات لمسی و اسکرول (جلوگیری از رفتارهای ناخواسته در موبایل) */
-    overscroll-behavior: none;
-    user-select: none;
-    -webkit-user-select: none;
+    /* بهینه‌سازی رفتار لمسی */
+    overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
 }
 
 /* ==================================================
-   TV & Remote Control Focus Fixes
+   Mobile Ergonomics & Safe Areas
    ================================================== */
-/* حذف کادر آبی پیش‌فرض مرورگر */
-button:focus, input:focus, div:focus, a:focus {
-    outline: none !important;
-    box-shadow: none !important;
-    -webkit-tap-highlight-color: transparent;
-}
+/* محاسبات دقیق برای Notch و Home Indicator */
+.pb-safe { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 20px)); }
+.pt-safe { padding-top: calc(0.5rem + env(safe-area-inset-top, 20px)); }
 
-/* استایل عمومی دکمه‌های کنترل (با پشتیبانی از تلویزیون) */
-.control-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 2px solid transparent;
-    cursor: pointer;
-}
-
-/* حالت فوکوس تلویزیون (با کنترل) */
-.control-btn:focus {
-    transform: scale(1.15);
-    background-color: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.5);
-    box-shadow: 0 0 20px rgba(var(--dynamic-rgb), 0.4);
-    color: rgb(var(--dynamic-rgb)) !important;
-    z-index: 50;
-}
-
-/* استایل اختصاصی دکمه Play اصلی */
-#play-btn {
-    transition: transform 0.2s ease, background-color 0.2s, box-shadow 0.2s;
-    border: 4px solid transparent;
-}
-
-#play-btn:focus {
-    transform: scale(1.1) !important;
-    background-color: rgb(var(--dynamic-rgb)) !important;
-    color: white !important;
-    border-color: white !important;
-    box-shadow: 0 0 30px rgba(var(--dynamic-rgb), 0.8) !important;
-}
-
-/* فیدبک لمسی و کلیک (کاهش سایز مقطعی) */
-.active-press {
-    transform: scale(0.95) !important;
-    opacity: 0.8;
-}
-
-/* استایل دکمه‌های عمومی تلویزیون/موبایل */
-.tv-button {
-    outline: none;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.tv-button:focus-visible, .tv-button:active {
-    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.4);
-    transform: scale(1.1);
-    background-color: rgba(255,255,255,0.15);
-    border-radius: 9999px;
+/* ==================================================
+   Typography & Layout Utilities
+   ================================================== */
+.dir-auto {
+    direction: auto;
+    text-align: center;
 }
 
 /* ==================================================
-   Lyrics System
+   Performance-Optimized Lyrics System
    ================================================== */
 .lyrics-mask {
+    /* ایجاد افکت محو شدگی در بالا و پایین لیست بدون افت فریم */
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
     mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
 }
@@ -98,12 +45,19 @@ button:focus, input:focus, div:focus, a:focus {
     font-size: 1.15rem; 
     font-weight: 500;
     line-height: 1.6;
-    color: rgba(255, 255, 255, 0.45);
-    transition: transform 0.4s ease, color 0.4s ease, filter 0.4s ease, margin 0.4s ease;
+    color: rgba(255, 255, 255, 0.4);
+    /* 🔥 اصلاح: اضافه شدن filter blur به استایل پایه */
+    filter: blur(1.5px);
+    
+    /* استفاده از will-change برای اطلاع به موتور رندرینگ جهت اختصاص لایه GPU جداگانه */
+    will-change: transform, color, opacity, filter;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+                color 0.4s ease, 
+                opacity 0.4s ease,
+                filter 0.4s ease;
     cursor: pointer;
     padding: 8px 24px;
-    margin: 2px 0;
-    filter: blur(0.6px);
+    margin: 4px 0;
     transform-origin: center center;
     width: 100%;
     box-sizing: border-box;
@@ -112,60 +66,63 @@ button:focus, input:focus, div:focus, a:focus {
 }
 
 .lyric-line:hover { 
-    color: rgba(255, 255, 255, 0.8); 
-    filter: blur(0); 
+    color: rgba(255, 255, 255, 0.7); 
+    filter: blur(0px); /* رفع تاری هنگام هاور */
 }
 
 .lyric-line.active {
-    color: rgb(var(--dynamic-rgb)); /* داینامیک شدن رنگ لیریک */
+    color: rgb(var(--dynamic-rgb));
     font-weight: 800;
+    /* انیمیشن مقیاس‌پذیری نرم بدون تغییر در Margin که باعث Reflow شود */
     transform: scale(1.15); 
-    filter: blur(0);
-    text-shadow: 0 0 25px rgba(var(--dynamic-rgb), 0.5);
-    margin: 18px 0; 
+    opacity: 1;
+    filter: blur(0px); /* 🔥 اصلاح: لیریک فعال کاملاً واضح می‌شود */
+    text-shadow: 0 0 20px rgba(var(--dynamic-rgb), 0.4);
     z-index: 10;
     position: relative;
 }
 
 /* ==================================================
-   UI Components (Glass, Scroll, Playlist)
+   TV & Remote Control Navigation (Spatial Navigation)
    ================================================== */
-.glass-panel {
-    background: rgba(18, 18, 18, 0.6); 
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8);
+/* حذف Outline استاندارد فقط برای دکمه‌های کنترلی خاص، نه کل سیستم */
+.tv-button {
+    outline: none;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+    will-change: transform;
 }
 
-.qr-card {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 0 40px rgba(var(--dynamic-rgb), 0.2);
+.tv-button:focus-visible {
+    transform: scale(1.1);
+    background-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 4px rgba(var(--dynamic-rgb), 0.6);
+    border-radius: 9999px; /* شکل دایره‌ای برای Focus Ring */
+    z-index: 50;
 }
 
-/* اسکرول‌بارهای شخصی‌سازی‌شده */
-.custom-scroll::-webkit-scrollbar { width: 4px; }
+/* ==================================================
+   Scrollbars & Micro-Aesthetics
+   ================================================== */
+.custom-scroll::-webkit-scrollbar { width: 5px; }
 .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-.custom-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
-.custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
-
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* کلاس کمکی برای انیمیشن آیکون‌ها */
-.fill-1 { font-variation-settings: 'FILL' 1; }
-
-/* انیمیشن ورود (Fade In) */
-@keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.98); }
-    to { opacity: 1; transform: scale(1); }
+.custom-scroll::-webkit-scrollbar-thumb { 
+    background: rgba(255, 255, 255, 0.2); 
+    border-radius: 10px; 
 }
-.animate-fade-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.custom-scroll::-webkit-scrollbar-thumb:hover { 
+    background: rgba(var(--dynamic-rgb), 0.8); 
+}
 
-/* آیتم‌های لیست پخش */
+/* ==================================================
+   Dynamic Components
+   ================================================== */
+.track-item {
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
 .track-item.active {
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
-    border-left: 3px solid rgb(var(--dynamic-rgb)); /* خط کناری داینامیک */
+    background: linear-gradient(90deg, rgba(var(--dynamic-rgb), 0.15) 0%, transparent 100%);
+    border-left: 3px solid rgb(var(--dynamic-rgb));
 }
 .track-item.active h4 { color: rgb(var(--dynamic-rgb)); }
-.track-item.active img { box-shadow: 0 0 10px rgba(var(--dynamic-rgb), 0.3); }
+.track-item.active img { box-shadow: 0 0 15px rgba(var(--dynamic-rgb), 0.4); }
