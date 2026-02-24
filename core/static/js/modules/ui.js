@@ -23,7 +23,11 @@ export const elements = {
     iconPlay: document.getElementById('icon-play'),
     iconPause: document.getElementById('icon-pause'),
     btnShuffle: document.getElementById('btn-shuffle'),
-    btnRepeat: document.getElementById('btn-repeat')
+    btnRepeat: document.getElementById('btn-repeat'),
+    
+    // 🔥 اضافه شدن فیلدهای جدید برای نمایش نام فرستنده
+    trackAdder: document.getElementById('track-adder'),
+    addedByName: document.getElementById('added-by-name')
 };
 
 // ==========================================
@@ -32,10 +36,8 @@ export const elements = {
 function applyDynamicTheme(imgEl) {
     try {
         const canvas = document.createElement('canvas');
-        // willReadFrequently به مرورگر می‌گوید این بوم برای خواندن پیکسل است (بهینه‌سازی پرفورمنس)
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         
-        // کوچک کردن بوم برای پردازش فوق‌سریع (کاهش بار CPU روی تلویزیون‌ها)
         canvas.width = 64; 
         canvas.height = 64;
         
@@ -45,10 +47,9 @@ function applyDynamicTheme(imgEl) {
         const data = imageData.data;
         
         let r = 0, g = 0, b = 0, count = 0;
-        const step = 4 * 5; // پرش از روی پیکسل‌ها برای سرعت بیشتر (هر 5 پیکسل یکی)
+        const step = 4 * 5; 
         
         for (let i = 0; i < data.length; i += step) {
-            // نادیده گرفتن پیکسل‌های خیلی تاریک (سیاه) یا خیلی روشن (سفید) برای رسیدن به رنگ‌های غنی‌تر
             if (data[i] > 15 && data[i] < 240 && data[i+3] > 0) {
                 r += data[i];
                 g += data[i+1];
@@ -62,11 +63,9 @@ function applyDynamicTheme(imgEl) {
             g = Math.floor(g / count);
             b = Math.floor(b / count);
         } else {
-            // رنگ پیش‌فرض در صورت شکست (سبز اسپاتیفای)
             r = 29; g = 185; b = 84; 
         }
 
-        // تزریق رنگ به متغیر CSS در سطح Root برای استفاده در کل برنامه
         document.documentElement.style.setProperty('--dynamic-rgb', `${r}, ${g}, ${b}`);
     } catch (e) {
         console.warn("⚠️ Canvas Color Extraction Blocked (CORS or Render error)", e);
@@ -81,16 +80,25 @@ export function updatePlayerInfo(track) {
     elements.title.innerText = track.title;
     elements.artist.innerText = track.performer;
     
-    elements.cover.style.opacity = 0;
+    // 🔥 نمایش نام فرستنده آهنگ (مورد ۷)
+    if (elements.trackAdder && elements.addedByName) {
+        if (track.sender_name && track.sender_name !== "Unknown") {
+            elements.addedByName.innerText = track.sender_name;
+            elements.trackAdder.classList.remove('hidden');
+            elements.trackAdder.style.display = 'inline-flex'; // استفاده از flex برای چیدمان آیکون و متن
+        } else {
+            elements.trackAdder.classList.add('hidden');
+            elements.trackAdder.style.display = 'none';
+        }
+    }
     
-    // ⚠️ مهم: برای جلوگیری از خطای امنیتی CORS هنگام خواندن پیکسل‌های تصویر
+    elements.cover.style.opacity = 0;
     elements.cover.crossOrigin = "Anonymous"; 
     
     setTimeout(() => {
         elements.cover.src = `/cover/${track.file_unique_id}`;
         elements.cover.onload = () => { 
             elements.cover.style.opacity = 1; 
-            // اعمال تم رنگی بلافاصله پس از لود شدن کاور
             applyDynamicTheme(elements.cover);
         };
     }, 200);
@@ -120,6 +128,13 @@ export function renderPlaylist(tracks, loadTrackCallback) {
         const div = document.createElement('div');
         div.className = `track-item flex items-center gap-4 p-3 rounded-xl cursor-pointer hover:bg-white/5 transition border border-transparent group`;
         div.onclick = () => loadTrackCallback(i);
+        
+        // 🔥 افزودن تگِ نام فرستنده زیر نام خواننده در لیست پخش
+        let senderHtml = '';
+        if (track.sender_name && track.sender_name !== "Unknown") {
+            senderHtml = `<span class="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 ml-2"><i class="ri-user-smile-line"></i> ${track.sender_name}</span>`;
+        }
+
         div.innerHTML = `
             <div class="relative w-12 h-12 flex-shrink-0">
                 <img src="/cover/${track.file_unique_id}" class="w-full h-full rounded-lg object-cover bg-gray-800" loading="lazy" crossOrigin="Anonymous">
@@ -127,7 +142,7 @@ export function renderPlaylist(tracks, loadTrackCallback) {
             </div>
             <div class="flex-1 min-w-0">
                 <h4 class="text-sm font-semibold truncate text-gray-200 group-hover:text-white">${track.title}</h4>
-                <p class="text-xs text-gray-500 truncate">${track.performer}</p>
+                <p class="text-xs text-gray-500 truncate flex items-center">${track.performer} ${senderHtml}</p>
             </div>
             <span class="text-xs text-gray-600 font-mono">${formatTime(track.duration)}</span>
         `;
@@ -147,7 +162,6 @@ export function updateActiveItem(index) {
 }
 
 export function updateControlButtons() {
-    // Shuffle UI
     if (elements.btnShuffle) {
         if (state.shuffle) {
             elements.btnShuffle.classList.add('text-primary', 'relative');
@@ -157,7 +171,6 @@ export function updateControlButtons() {
             elements.btnShuffle.classList.add('text-gray-600');
         }
     }
-    // Repeat UI
     if (elements.btnRepeat) {
         const iconNormal = elements.btnRepeat.querySelector('.ri-repeat-2-line');
         const iconOne = elements.btnRepeat.querySelector('.ri-repeat-one-line');
