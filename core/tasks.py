@@ -9,7 +9,7 @@ import sqlite3
 import random
 import time
 from huey import SqliteHuey
-from telegram import Bot
+from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 
 from core.config import Config
@@ -34,11 +34,9 @@ yt_service = YouTubeService()
 def notify_web_bridge(data_dict):
     """
     ارسال پیام به کانتینر Web برای آپدیت کردن رابط کاربری تلویزیون‌ها 
-    (به عنوان مثال وقتی آهنگی به صف اضافه می‌شود).
     """
     try:
         url = "http://web:5000/internal/announce"
-        # فرمت استاندارد SSE
         sse_msg = f"data: {json.dumps(data_dict)}\n\n"
         requests.post(url, json={'message': sse_msg}, timeout=2)
     except Exception as e:
@@ -88,7 +86,6 @@ def download_and_process_track(video_id, title, artist, user_id, user_first_name
 
 async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None):
     path = None
-    # نمونه مستقل بات برای جلوگیری از تداخل Event Loop
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
@@ -108,8 +105,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive the track to cloud.")
             return
 
-        # 3. Store in Database (V4 Schema with Bitrate)
-        # fallback for quality if None
+        # 3. Store in Database (V4 Schema Support)
         actual_bitrate = int(quality) if quality else int(Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else 192)
 
         track_meta = {
@@ -142,10 +138,49 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             try: await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
             except: pass
 
-        # 5. Deliver File to User
+        # 5. Delivery Logic (V4 Collaborative Hub)
         user_caption = f"🎧 *{title}*\n👤 {artist}"
+        reply_markup = None
+        
         if session_token:
-            user_caption += "\n📡 *Added to Hub Queue*"
+            # پیدا کردن اطلاعات دقیق هاب
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
+                d_name = res[0] if res and res[0] else f"Hub-{session_token[:4]}"
+                hub_admin_id = res[1] if res else None
+
+            user_caption += f"\n📡 Added to: *{d_name}*"
+            
+            # تولید دکمه شیشه‌ای برای پلیر
+            base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+            reply_markup = InlineKeyboardMarkup([[
+                InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")
+            ]])
+
+            # استخراج ID آهنگ از دیتابیس
+            track_db_id = None
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
+                t_res = cur.fetchone()
+                if t_res: track_db_id = t_res[0]
+
+            if track_db_id:
+                internal_user_id = get_user_id(user_id)
+                safe_owner_id = hub_admin_id if hub_admin_id else internal_user_id
+                
+                bot_db_exec("""
+                    INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
+                    VALUES (?, ?, ?, ?)
+                """, (safe_owner_id, track_db_id, internal_user_id, session_token))
+
+                track_data = {
+                    'type': 'new_track',
+                    'title': title, 'performer': artist,
+                    'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
+                    'added_by': user_first_name, 'session_token': session_token,
+                    'sync_timestamp': time.time() 
+                }
+                notify_web_bridge(track_data)
         
         try:
             await local_bot.send_audio(
@@ -154,34 +189,11 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 caption=user_caption,
                 title=title,
                 performer=artist,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
             )
         except Exception as e:
             logger.error(f"Failed to deliver audio to user: {e}")
-
-        # 6. Process Hub Connection (Add to Live Queue)
-        if session_token:
-            track_db_id = None
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
-                res = cur.fetchone()
-                if res: track_db_id = res[0]
-
-            if track_db_id:
-                internal_user_id = get_user_id(user_id)
-                bot_db_exec("""
-                    INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
-                    VALUES (?, ?, ?, ?)
-                """, (internal_user_id, track_db_id, internal_user_id, session_token))
-
-                # Broadcast update to Live Players
-                track_data = {
-                    'title': title, 'performer': artist,
-                    'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
-                    'added_by': user_first_name, 'session_token': session_token,
-                    'sync_timestamp': time.time() # V4 NTP logic
-                }
-                notify_web_bridge(track_data)
 
     except Exception as e:
         logger.error(f"Worker Task Failed: {e}")
@@ -200,10 +212,6 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
 @huey.task()
 def process_spotify_playlist_item(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id, quality=None):
-    """
-    پردازشگر آیتم‌های پلی‌لیست:
-    ترافیک را مدیریت کرده و در صورت موجود بودن در دیتابیس (Cache Hit)، دانلود را بای‌پس می‌کند.
-    """
     logger.info(f"🔎 Playlist Task: {search_query}")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -217,10 +225,8 @@ def process_spotify_playlist_item(search_query, expected_title, expected_artist,
 async def _async_spotify_logic(search_query, expected_title, expected_artist, user_id, user_first_name, session_token, chat_id, quality=None):
     local_bot = Bot(token=Config.BOT_TOKEN)
     try:
-        # 1. Jitter (جلوگیری از بلاک شدن توسط یوتیوب در لیست‌های طولانی)
         await asyncio.sleep(random.uniform(1.0, 3.0))
 
-        # 2. Search YouTube Oracle
         results = yt_service.search(search_query)
         if not results:
             logger.warning(f"No YT match found for: {search_query}")
@@ -230,7 +236,6 @@ async def _async_spotify_logic(search_query, expected_title, expected_artist, us
         title = expected_title
         artist = expected_artist
 
-        # 3. Check DB Cache
         cached = None
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
@@ -238,31 +243,48 @@ async def _async_spotify_logic(search_query, expected_title, expected_artist, us
             cached = cur.fetchone()
 
         if cached:
-            user_caption = f"🎧 *{title}*\n👤 {artist}\n📡 *Added to Hub*" if session_token else f"🎧 *{title}*\n👤 {artist}"
-            try:
-                await local_bot.send_audio(
-                    chat_id=chat_id, audio=cached['file_id'], caption=user_caption,
-                    title=title, performer=artist, parse_mode=ParseMode.MARKDOWN
-                )
-            except Exception: pass
-
+            user_caption = f"🎧 *{title}*\n👤 {artist}"
+            reply_markup = None
+            
             if session_token:
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
+                    d_name = res[0] if res and res[0] else f"Hub-{session_token[:4]}"
+                    hub_admin_id = res[1] if res else None
+                    
+                user_caption += f"\n📡 Added to: *{d_name}*"
+                base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+                reply_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")
+                ]])
+                
                 internal_user_id = get_user_id(user_id)
+                safe_owner_id = hub_admin_id if hub_admin_id else internal_user_id
+                
                 bot_db_exec("""
                     INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
                     VALUES (?, ?, ?, ?)
-                """, (internal_user_id, cached['id'], internal_user_id, session_token))
+                """, (safe_owner_id, cached['id'], internal_user_id, session_token))
 
                 track_data = {
+                    'type': 'new_track',
                     'title': title, 'performer': artist,
                     'file_unique_id': cached['file_unique_id'], 'duration': cached['duration'],
                     'added_by': user_first_name, 'session_token': session_token,
                     'sync_timestamp': time.time()
                 }
                 notify_web_bridge(track_data)
+                
+            try:
+                await local_bot.send_audio(
+                    chat_id=chat_id, audio=cached['file_id'], caption=user_caption,
+                    title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup
+                )
+            except Exception: pass
             return
 
-        # 4. Cache Miss -> Trigger Full Download Protocol
+        # Cache Miss -> Trigger Full Download Protocol
         await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=None, quality=quality)
 
     except Exception as e:
