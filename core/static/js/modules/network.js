@@ -5,7 +5,7 @@ let sseConnection = null;
 let authConnection = null;
 
 // ==========================================
-// 🔐 Authentication & Session (Anti-Fragile V4)
+// 🔐 Authentication & Session
 // ==========================================
 
 function setupAuthSSE(callbacks) {
@@ -25,7 +25,6 @@ function setupAuthSSE(callbacks) {
 }
 
 export async function initAuth(callbacks) {
-    // 🔥 جلوگیری از ساخت سشن روح: اگر هاب در حالت انتظار است، توکن جدید نساز
     if (state.sessionToken && state.hubStatus === 'waiting') {
         console.log("[Network] Resuming existing waiting Hub:", state.sessionToken);
         callbacks.onQRReady(`${window.location.origin}/connect/${state.sessionToken}`);
@@ -43,7 +42,6 @@ export async function initAuth(callbacks) {
             state.hubStatus = 'waiting';
             localStorage.setItem('fanus_session_token', state.sessionToken);
             
-            // آپدیت کردن آدرس مرورگر به صورت بی‌صدا (بدون رفرش) برای قابلیت اشتراک‌گذاری
             if (!window.location.pathname.includes(state.sessionToken)) {
                 window.history.replaceState({}, '', `/live/${state.sessionToken}`);
             }
@@ -65,14 +63,12 @@ export async function validateSession(callbacks) {
         console.log(`[Network] Validating Hub: ${state.sessionToken}`);
         const res = await fetch(`/api/auth/check/${state.sessionToken}`);
         
-        // اگر هاب در دیتابیس وجود نداشت (پاک شده یا اشتباه است)
         if (res.status === 404) {
             console.warn("[Network] Hub not found. Resetting...");
             localStorage.removeItem('fanus_session_token');
             state.sessionToken = null;
             state.hubStatus = 'waiting';
             
-            // اگر کاربر در آدرس اشتباهی بود، او را به صفحه اصلی بفرست تا از نو شروع کند
             if (window.location.pathname !== '/') {
                 window.location.href = '/';
                 return;
@@ -88,7 +84,6 @@ export async function validateSession(callbacks) {
             callbacks.onLogin(data.admin);
         } else {
             console.log("[Network] Hub is Waiting for Admin.");
-            // هاب وجود دارد اما ادمین ندارد -> فقط QR را نشان بده و گوش کن
             initAuth(callbacks); 
         }
     } catch (e) { 
@@ -98,7 +93,7 @@ export async function validateSession(callbacks) {
 }
 
 // ==========================================
-// 📡 Real-time Sync (SSE)
+// 📡 Real-time Sync (SSE) & NTP Logic
 // ==========================================
 
 export function initControlSSE(callbacks) {
@@ -110,16 +105,30 @@ export function initControlSSE(callbacks) {
             const data = JSON.parse(e.data);
             if (data.session_token && data.session_token !== state.sessionToken) return;
             
-            // New Track added to queue
-            if (data.file_unique_id && !data.action) callbacks.onQueueUpdate();
+            // 🔥 V4.1: تفکیک سیگنال ترک جدید از فرمان‌ها
+            if (data.type === 'new_track') {
+                callbacks.onQueueUpdate();
+            }
+            // ساختار قدیمی برای سازگاری عقب‌رو
+            else if (data.file_unique_id && !data.action) {
+                 callbacks.onQueueUpdate();
+            }
             
-            // Remote Command received (Play, Pause, Next, etc.)
-            if (data.type === 'command') callbacks.onCommand(data);
+            // 🔥 V4.1: NTP Sync - دریافت فرمان زمان‌بندی شده
+            if (data.type === 'command') {
+                // کالیبره کردن ساعت کلاینت با سرور
+                if (data.server_now) {
+                    const localNow = Date.now() / 1000;
+                    // محاسبه اختلاف زمان کلاینت و سرور (با فرض قرینه بودن زمان رفت و برگشت شبکه)
+                    // در سناریوهای حرفه‌ای‌تر، RTT (Round Trip Time) هم لحاظ می‌شود، اما برای استریم کافیست
+                    state.serverTimeOffset = data.server_now - localNow;
+                }
+                callbacks.onCommand(data);
+            }
             
         } catch (err) {}
     };
 
-    // Auto-reconnect logic in case of SSE drops
     sseConnection.onerror = () => {
         console.warn("SSE Connection lost. Reconnecting...");
         sseConnection.close();
@@ -141,7 +150,6 @@ export async function fetchQueue() {
     }
 }
 
-// 🔥 V4: Fetch Live Hub State for Cold Starts
 export async function fetchHubState() {
     if (!state.sessionToken) return null;
     try {
@@ -184,7 +192,6 @@ export function markAsPlayed(trackId) {
 
 export function isNetworkFavorableForPreload() {
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    
     if (conn) {
         if (conn.saveData) return false;
         if (conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') return false;
@@ -194,15 +201,10 @@ export function isNetworkFavorableForPreload() {
 }
 
 export function preloadAssets(trackId) {
-    if (!isNetworkFavorableForPreload() || !trackId) {
-        return false; 
-    }
-
+    if (!isNetworkFavorableForPreload() || !trackId) return false; 
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.src = `/cover/${trackId}`;
-
     fetch(`/stream/lyrics/${trackId}`, { priority: 'low' }).catch(() => {});
-    
     return true; 
 }

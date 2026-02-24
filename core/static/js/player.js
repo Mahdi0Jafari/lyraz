@@ -1,6 +1,6 @@
 /**
- * Fanus Player - Main Controller (Live Hubs V4)
- * Features: State Recovery, NTP Sync, Dual Engine
+ * Fanus Player - Main Controller (Live Hubs V4.1)
+ * Features: PTP Sync, Idempotent Execution, Dual Engine
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
@@ -9,6 +9,8 @@ import * as Network from './modules/network.js';
 
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
+// تاریخچه اکشن‌های اجرا شده برای جلوگیری از اجرای تکراری
+const executedActions = new Set(); 
 
 // ==========================================
 // 🚀 INITIALIZATION (V4: State-Driven)
@@ -24,7 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         (playing) => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
-            // فقط زمانی ریپورت کن که اکشن کاربر باشد، نه ری‌سینک سیستم
+            // فقط زمانی ریپورت کن که سیستم در حال سینک خودکار نباشد
             if (!state.isSyncing) reportStatus(true); 
         }
     );
@@ -33,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupNetworkRecovery();
     UI.updateControlButtons();
 
-    // V4: اگر توکن تزریق شده داریم، اول وضعیت زنده را ریکاوری می‌کنیم
     if (state.sessionToken) {
         if (state.hubStatus === 'active') {
             await recoverHubState();
@@ -47,35 +48,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function recoverHubState() {
     console.log("🔄 Recovering Live Hub State...");
-    UI.unlockInterface({ name: 'Hub', device_display_name: 'Live Sync' }); // UI باز می‌شود
+    UI.unlockInterface({ name: 'Hub', device_display_name: 'Live Sync' }); 
     
-    // ۱. استخراج اطلاعات زنده از سرور
     const liveState = await Network.fetchHubState();
-    
-    // ۲. لود کردن کل لیست پخش
     await syncTracks(false);
     
-    // ۳. اتصال به سیستم رویدادهای زنده
     Network.initControlSSE({
         onQueueUpdate: () => syncTracks(),
         onCommand: processRemoteCommand
     });
 
-    // ۴. اعمال وضعیت روی پلیر (Cold Start Sync)
     if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
         const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
         
         if (idx !== -1) {
             console.log(`⏱ Syncing to track index ${idx} at second ${liveState.seek_position}`);
-            // فلگ isSyncing باعث می‌شود پلیر در حین پرش، استاتوس جدید به سرور نفرستد
             state.isSyncing = true; 
-            
             loadTrack(idx, liveState.is_playing, liveState.seek_position);
-            
             setTimeout(() => { state.isSyncing = false; }, 1000);
         }
     } else {
-        // اگر هیچ آهنگی در حال پخش نبود، اولین آهنگ را آماده کن اما پخش نکن
         if (state.tracks.length > 0) loadTrack(0, false);
     }
 }
@@ -140,7 +132,6 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     }
 
     if (startPos > 0) {
-        // برای جلوگیری از ارور The play() request was interrupted
         engines.active.currentTime = startPos;
     }
 
@@ -163,11 +154,9 @@ function preloadNextTrack() {
     if (nextIdx !== -1 && state.tracks[nextIdx]) {
         const nextTrack = state.tracks[nextIdx];
         const nextUrl = `/stream/${nextTrack.file_unique_id}`;
-        
         const shouldPreloadAudio = Network.preloadAssets(nextTrack.file_unique_id);
         
         if (!shouldPreloadAudio) return;
-
         if (!engines.buffer.src.includes(nextUrl)) {
             engines.buffer.src = nextUrl;
             engines.buffer.load(); 
@@ -206,7 +195,7 @@ function nextTrack() {
 }
 
 // ==========================================
-// 🎮 CONTROLS & COMMANDS
+// 🎮 CONTROLS, COMMANDS & NTP SYNC
 // ==========================================
 
 function togglePlay() {
@@ -222,14 +211,47 @@ function seekToTime(seconds) {
 }
 
 function processRemoteCommand(cmd) {
-    // V4: استفاده از sync_timestamp برای جبران تاخیر
-    state.isSyncing = true; // جلوگیری از لوپ بی‌نهایت ریپورت به سرور
+    // 🔥 Idempotency: جلوگیری از اجرای فرمان تکراری (مثل دابل Next)
+    if (cmd.action_id) {
+        if (executedActions.has(cmd.action_id)) {
+            console.log("Skipping duplicate action:", cmd.action_id);
+            return;
+        }
+        executedActions.add(cmd.action_id);
+        // تمیز کردن تاریخچه برای جلوگیری از نشت حافظه
+        if (executedActions.size > 50) {
+            const firstItem = executedActions.values().next().value;
+            executedActions.delete(firstItem);
+        }
+    }
+
+    // 🔥 Time-Shifted Execution (NTP Sync)
+    if (cmd.scheduled_at) {
+        const localNow = Date.now() / 1000;
+        // ساعت واقعی سرور با احتساب آفست کالیبره شده
+        const synchronizedNow = localNow + state.serverTimeOffset; 
+        
+        // چقدر باید صبر کنیم تا به زمان مقرر برسیم؟ (به میلی‌ثانیه)
+        const waitTimeMs = (cmd.scheduled_at - synchronizedNow) * 1000;
+        
+        // اگر زمان گذشته بود یا خیلی نزدیک بود، بلافاصله اجرا کن
+        const delay = Math.max(0, waitTimeMs);
+        
+        console.log(`Command ${cmd.action} scheduled in ${delay}ms`);
+        setTimeout(() => executeCommand(cmd), delay);
+    } else {
+        // Fallback برای دستورات بدون زمان‌بندی
+        executeCommand(cmd);
+    }
+}
+
+function executeCommand(cmd) {
+    state.isSyncing = true; // مسدود کردن ریپورت به سرور حین اجرای ریموت
     
     let targetTime = cmd.payload;
-    
-    // جبران تاخیر برای Seek (اگر سرور گفت برو ثانیه ۱۰ و پیام ۲ ثانیه تو راه بود، باید بری ثانیه ۱۲)
     if (cmd.action === 'seek' && cmd.sync_timestamp) {
-        const latency = (Date.now() / 1000) - cmd.sync_timestamp;
+         // جبران تاخیری که ممکن است از لحظه ارسال تا زمان مقرر اتفاق افتاده باشد
+        const latency = (Date.now() / 1000) - cmd.sync_timestamp + state.serverTimeOffset;
         if (latency > 0 && latency < 5 && state.isPlaying) {
              targetTime += latency;
         }
@@ -337,7 +359,7 @@ function setupUIControls() {
 
 function setupNetworkRecovery() {
     window.addEventListener('online', () => {
-        recoverHubState(); // V4: به جای فقط لود لیست، کل وضعیت را بازیابی کن
+        recoverHubState(); 
     });
 }
 
