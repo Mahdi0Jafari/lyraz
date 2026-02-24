@@ -41,7 +41,7 @@ def close_db(e=None):
 
 def init_db():
     """
-    ایجاد ساختار اولیه دیتابیس (Schema V4 - Live Hubs)
+    ایجاد ساختار اولیه دیتابیس (Schema V4.2 - Live Hubs)
     """
     db_folder = os.path.dirname(Config.DATABASE_URI)
     if db_folder and not os.path.exists(db_folder):
@@ -59,19 +59,19 @@ def init_db():
             c = conn.cursor()
             
             # 1. Users Table (RBAC Architecture)
-            # حذف current_session چون رابطه کاربر و هاب یک-به-چند شده است
+            # 🔥 بازگشت حیاتی current_session: این فیلد مشخص می‌کند آهنگ ارسالی کاربر باید به کدام هاب برود
             c.execute('''CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
                 first_name TEXT,
                 username TEXT,
                 role TEXT DEFAULT 'user',
+                current_session TEXT DEFAULT NULL,
                 daily_quota INTEGER DEFAULT 20,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
 
             # 2. Tracks Table (Global Audio Assets)
-            # اضافه شدن spotify_id و bitrate
             c.execute('''CREATE TABLE IF NOT EXISTS tracks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_unique_id TEXT UNIQUE,
@@ -102,7 +102,6 @@ def init_db():
             )''')
 
             # 4. Sessions Table (The Live Hub)
-            # تبدیل به ماشین وضعیت برای همگام‌سازی چندگانه
             c.execute('''CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 admin_id INTEGER,
@@ -157,7 +156,7 @@ def init_db():
             )''')
             
             conn.commit()
-            print("✅ Database Schema V4 Optimized & Ready (WAL + Foreign Keys Enabled)")
+            print("✅ Database Schema V4.2 Optimized & Ready (WAL + Foreign Keys + Session Routing)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")
