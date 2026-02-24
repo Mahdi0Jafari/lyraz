@@ -46,7 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args and args[0].startswith('session_'):
         token = args[0].split('_')[1]
         
-        # در معماری V4، توکن به عنوان سشن اکتیو آپدیت می‌شود
+        # در معماری V4.2، توکن در پروفایل کاربر ثبت می‌شود تا مسیر ارسال آهنگ مشخص شود
         update_user_session(user.id, token)
         is_new_admin = await activate_session_and_notify(token, user.id, user.first_name, context)
         
@@ -84,23 +84,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📡 *Live Sync:* Play music synchronously across multiple screens.\n\n"
         )
         
+        is_admin = False
         if current_token:
             sess = get_session_info(current_token)
             d_name = sess['device_name'] if sess and sess['device_name'] else "Unknown Hub"
-            welcome_msg += f"🟢 *Status:* Currently routing audio to *{d_name}*.\n\n👇 *Get started:* Use the menu below or send a music link."
+            internal_uid = get_user_id(user.id)
+            is_admin = sess['admin_id'] == internal_uid
+            
+            role_text = "(Admin)" if is_admin else "(Guest)"
+            welcome_msg += f"🟢 *Status:* Currently connected to *{d_name}* {role_text}.\n\n👇 *Get started:* Use the menu below or send a music link."
         else:
-            welcome_msg += "👇 *Get started:* Tap 'Open Web Player' to create your first Live Hub."
+            base_url = Config.BASE_URL if Config.BASE_URL else "the website"
+            welcome_msg += f"👇 *Get started:* Open [Fanus Web Player]({base_url}) on a screen and scan the QR code to create your first Live Hub."
 
         await update.message.reply_text(
             welcome_msg, 
             parse_mode=ParseMode.MARKDOWN, 
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
+            disable_web_page_preview=True
         )
         
         await update.message.reply_text(
             "⚡️ *Quick Actions:*",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=get_onboarding_keyboard(current_token)
+            reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin)
         )
 
 # ==========================================
@@ -237,6 +244,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Renaming Flow ---
     if 'renaming_token' in context.user_data:
         token = context.user_data['renaming_token']
+        # آپدیت نام هاب
         set_device_name(token, text)
         del context.user_data['renaming_token']
         await update.message.reply_text(f"✅ Hub successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
@@ -251,7 +259,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_spotify_link(update, context, text)
         return
 
-    # --- Search Fallback ---
+    # --- Search Fallback (اگر متن نه لینک بود و نه دکمه) ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
         results = yt_service.search(text)
@@ -278,22 +286,26 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     internal_uid = get_user_id(user.id)
     current_token = get_user_current_session(user.id)
     
+    # دریافت لیست هاب‌هایی که کاربر ادمین آنهاست
     sessions = get_active_sessions(internal_uid)
     session_list = [dict(s) for s in sessions]
     
+    # آیا هابی که کاربر الان به آن وصل است، در لیست هاب‌های خودش وجود دارد؟
     if current_token:
         is_owned = any(s['token'] == current_token for s in session_list)
         if not is_owned:
-            guest = get_session_info(current_token)
-            if guest:
-                fake = dict(guest)
-                fake['is_guest_entry'] = True
-                session_list.insert(0, fake)
+            # اگر ادمین نیست، یعنی به عنوان مهمان در یک هابِ دیگر است
+            guest_session = get_session_info(current_token)
+            if guest_session:
+                fake_session = dict(guest_session)
+                fake_session['is_guest_entry'] = True
+                # اضافه کردن هاب مهمان به بالای لیست
+                session_list.insert(0, fake_session)
 
     if not session_list:
         base_url = Config.BASE_URL if Config.BASE_URL else "the website"
         await update.message.reply_text(
-            f"❌ *No active Hubs found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
+            f"❌ *No connected Hubs found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True
         )
@@ -304,11 +316,14 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
         token = sess['token']
         d_name = sess['device_name'] or f"Hub-{token[:4]}"
         is_cur = (token == current_token)
-        label = f"👤 {d_name} (Guest Mode)" if sess.get('is_guest_entry') else f"📡 {d_name}"
+        
+        is_guest = sess.get('is_guest_entry', False)
+        is_admin = not is_guest
+        
+        label = f"👤 {d_name} (Guest Mode)" if is_guest else f"📡 {d_name}"
         if is_cur: label = f"🟢 {d_name} (Active Hub)"
         
-        # استفاده از کیبورد جدید که دکمه Live Player را دارد
-        await update.message.reply_text(label, reply_markup=get_smart_buttons(token, is_cur))
+        await update.message.reply_text(label, reply_markup=get_smart_buttons(token, is_cur, is_admin=is_admin))
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -316,30 +331,51 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = query.from_user
     
+    # تغییر هاب فعال کاربر
     if data.startswith("select_"):
-        target = data.split("_")[1]
-        update_user_session(user.id, target) # در دیتابیس V4 این last_active_at را آپدیت می‌کند
-        sess = get_session_info(target)
-        d_name = sess['device_name'] or f"Hub-{target[:4]}"
+        target_token = data.split("_")[1]
         
-        # آپدیت کردن پیام کیبورد برای نمایش وضعیت اکتیو
-        await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target, True))
+        # آپدیت پروفایل یوزر تا مقصد آهنگ‌های بعدی تغییر کند
+        update_user_session(user.id, target_token) 
+        
+        sess = get_session_info(target_token)
+        d_name = sess['device_name'] or f"Hub-{target_token[:4]}"
+        
+        internal_uid = get_user_id(user.id)
+        is_admin = sess['admin_id'] == internal_uid
+        
+        await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target_token, True, is_admin=is_admin))
         await context.bot.send_message(user.id, f"✅ Active Hub switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
 
+    # آپدیت منوی یک هاب خاص (برای رفرش کردن دکمه‌ها)
     elif data.startswith("manage_"):
         token = data.split("_")[1]
         current_token = get_user_current_session(user.id)
         is_cur = (token == current_token)
-        await query.edit_message_reply_markup(reply_markup=get_smart_buttons(token, is_cur))
+        
+        sess = get_session_info(token)
+        internal_uid = get_user_id(user.id)
+        is_admin = sess['admin_id'] == internal_uid
+        
+        await query.edit_message_reply_markup(reply_markup=get_smart_buttons(token, is_cur, is_admin=is_admin))
 
+    # تغییر نام هاب
     elif data.startswith("rename_"):
         token = data.split("_")[1]
         sess = get_session_info(token)
+        
+        # محدودیت امنیتی: فقط ادمین هاب می‌تواند نام آن را تغییر دهد
         if sess['admin_id'] != get_user_id(user.id):
             await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this Hub.")
             return
+            
         context.user_data['renaming_token'] = token
-        await context.bot.send_message(user.id, f"✍️ Enter a new name for `{sess['device_name'] or 'Hub'}`:", parse_mode=ParseMode.MARKDOWN, reply_markup=ForceReply(selective=True))
+        await context.bot.send_message(
+            user.id, 
+            f"✍️ Enter a new name for `{sess['device_name'] or 'Hub'}`:", 
+            parse_mode=ParseMode.MARKDOWN, 
+            reply_markup=ForceReply(selective=True)
+        )
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message.audio: return
