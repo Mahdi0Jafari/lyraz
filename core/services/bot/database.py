@@ -50,38 +50,40 @@ def get_user_role(telegram_id):
 
 def update_user_session(telegram_id, session_token):
     """
-    آپدیت کردن هاب فعال کاربر:
-    در V4 به جای ذخیره توکن در جدول یوزر، زمان آخرین استفاده (last_active_at) 
-    در جدول سشن‌ها بروزرسانی می‌شود.
+    🔥 آپدیت کردن هاب فعال کاربر (Collaborative Hub Logic):
+    هر کاربری (چه ادمین چه مهمان) که یک کد QR را اسکن کند،
+    این توکن در پروفایل شخصی او ثبت می‌شود تا ربات بداند
+    آهنگ‌های بعدیِ این کاربر باید به کدام هاب ارسال شود.
     """
     try:
-        internal_id = get_user_id(telegram_id)
-        if internal_id:
-            with get_db_connection() as conn:
-                conn.execute(
-                    "UPDATE sessions SET last_active_at = CURRENT_TIMESTAMP WHERE token = ? AND admin_id = ?", 
-                    (session_token, internal_id)
-                )
-                conn.commit()
+        with get_db_connection() as conn:
+            # ۱. ذخیره توکن در جدول یوزرها برای مسیردهی آهنگ‌ها
+            conn.execute(
+                "UPDATE users SET current_session = ? WHERE telegram_id = ?", 
+                (session_token, telegram_id)
+            )
+            # ۲. بروزرسانی زمان استفاده هاب (فارغ از اینکه چه کسی وصل شده)
+            conn.execute(
+                "UPDATE sessions SET last_active_at = CURRENT_TIMESTAMP WHERE token = ?", 
+                (session_token,)
+            )
+            conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Update Session Error: {e}")
 
 def get_user_current_session(telegram_id):
     """
-    دریافت توکن آخرین سشن فعال کاربر (بر اساس جدیدترین Timestamp)
+    🔥 دریافت هاب فعالِ این کاربر.
+    مهم: ما این را مستقیماً از پروفایل کاربر می‌خوانیم، نه از مالکیت هاب.
+    بنابراین اگر کاربر مهمان هم باشد، توکن هابی که در آن حضور دارد را برمی‌گرداند.
     """
     try:
         with get_db_connection() as conn:
-            query = """
-                SELECT s.token 
-                FROM sessions s
-                JOIN users u ON s.admin_id = u.id
-                WHERE u.telegram_id = ? AND s.status = 'active'
-                ORDER BY s.last_active_at DESC 
-                LIMIT 1
-            """
-            res = conn.execute(query, (telegram_id,)).fetchone()
-            return res['token'] if res else None
+            res = conn.execute(
+                "SELECT current_session FROM users WHERE telegram_id = ?", 
+                (telegram_id,)
+            ).fetchone()
+            return res['current_session'] if res else None
     except sqlite3.Error as e:
         logger.error(f"Get Current Session Error: {e}")
         return None
@@ -96,7 +98,7 @@ def get_session_info(token):
         return None
 
 def get_active_sessions(user_id):
-    """دریافت لیست هاب‌های فعال متعلق به یک کاربر (مرتب‌شده بر اساس زمان استفاده)"""
+    """دریافت لیست هاب‌های فعال متعلق به یک کاربر (که او ادمین آن‌هاست)"""
     try:
         with get_db_connection() as conn:
             return conn.execute("""
