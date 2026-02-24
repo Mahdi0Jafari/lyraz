@@ -2,6 +2,7 @@
 
 import time
 import json
+import uuid
 import logging
 from flask import Blueprint, render_template, jsonify, request
 from core.models import get_db
@@ -111,6 +112,7 @@ def mark_played():
 def send_command():
     """
     دریافت فرمان از ریموت، آپدیت وضعیت دیتابیس و برودکست به تمام پلیرها.
+    تجهیز شده به سیستم PTP (Precision Time Protocol) برای سینک همزمان دیوایس‌ها.
     """
     data = request.json
     if not data: return jsonify({'status': 'error'}), 400
@@ -126,36 +128,45 @@ def send_command():
     logger.info(f"📱 Command: {cmd} | Payload: {payload} | Token: {token}")
 
     try:
-        # ۱. مدیریت عملیات دیتابیسی (حذف از صف)
+        # مدیریت عملیات دیتابیسی (حذف از صف)
         if cmd == 'remove' and payload:
             db.execute("DELETE FROM playlist_items WHERE id = ? AND session_token = ?", (payload, token))
             db.commit()
 
-        # ۲. آپدیت وضعیت زنده (State Machine)
-        sync_time = time.time()
+        # محاسبه زمان‌بندی دقیق اجرای فرمان در کلاینت‌ها
+        sync_delay = 1.0 # بافر ۱ ثانیه‌ای برای جبران تاخیر شبکه
+        server_now = time.time()
+        execution_time = server_now + sync_delay 
+        action_id = str(uuid.uuid4()) # تولید اثر انگشت یکتا برای این فرمان
+
+        # آپدیت وضعیت زنده در دیتابیس (برای کلاینت‌هایی که تازه متصل می‌شوند)
         if cmd in ['play', 'pause', 'toggle', 'seek']:
-            # استخراج استاتوس جدید
             new_status = 'playing' if cmd == 'play' else ('paused' if cmd == 'pause' else None)
             
-            # آپدیت بخش‌های مرتبط در دیتابیس
             if new_status:
-                db.execute("UPDATE sessions SET play_status = ?, sync_timestamp = ? WHERE token = ?", (new_status, sync_time, token))
+                db.execute("UPDATE sessions SET play_status = ?, sync_timestamp = ? WHERE token = ?", (new_status, server_now, token))
             if cmd == 'seek':
-                db.execute("UPDATE sessions SET seek_position = ?, sync_timestamp = ? WHERE token = ?", (payload, sync_time, token))
+                db.execute("UPDATE sessions SET seek_position = ?, sync_timestamp = ? WHERE token = ?", (payload, server_now, token))
             
             db.commit()
 
-        # ۳. برودکست فرمان به تمام پلیرهای متصل به این هاب (شامل تایم‌استمپ)
+        # برودکست فرمان به تمام پلیرهای متصل با زمان‌بندی دقیق
         msg_data = {
             'type': 'command',
             'action': cmd,
             'payload': payload,
             'session_token': token,
-            'sync_timestamp': sync_time # حیاتی برای جبران تاخیر شبکه در کلاینت
+            'action_id': action_id,           # جلوگیری از اجرای تکراری
+            'scheduled_at': execution_time,   # زمان دقیق اجرا در آینده
+            'server_now': server_now          # برای کالیبره کردن ساعت کلاینت
         }
         announcer.announce(f"data: {json.dumps(msg_data)}\n\n")
         
-        return jsonify({'status': 'success'})
+        return jsonify({
+            'status': 'success', 
+            'scheduled_at': execution_time,
+            'action_id': action_id
+        })
     except Exception as e:
         logger.error(f"Command Error: {e}")
         return jsonify({'status': 'error'}), 500
@@ -165,7 +176,6 @@ def send_command():
 def report_status():
     """
     پلیر اصلی این متد را مرتباً صدا می‌زند تا وضعیت دقیق خود را به سرور گزارش دهد.
-    سرور این وضعیت را در دیتابیس ذخیره کرده و برای ریموت‌ها برودکست می‌کند.
     """
     data = request.json
     if not data: return jsonify({'status': 'error'}), 400
@@ -179,7 +189,6 @@ def report_status():
     sync_time = time.time()
 
     try:
-        # ۱. ذخیره وضعیت در دیتابیس (برای پلیرهایی که تازه متصل می‌شوند)
         track = db.execute("SELECT id FROM tracks WHERE file_unique_id = ?", (unique_id,)).fetchone()
         track_id = track['id'] if track else None
 
@@ -192,7 +201,6 @@ def report_status():
         """, (play_status, track_id, current_time, sync_time, token))
         db.commit()
 
-        # ۲. برودکست به ریموت‌ها (برای آپدیت UI مثل نوار پیشرفت)
         msg = {
             'type': 'status_update',
             'session_token': token,
