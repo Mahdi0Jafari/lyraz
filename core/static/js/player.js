@@ -1,6 +1,6 @@
 /**
- * Fanus Player - Main Controller (Live Hubs V4.1)
- * Features: PTP Sync, Idempotent Execution, Dual Engine
+ * Fanus Player - Main Controller (Live Hubs V4.4)
+ * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
 import { state, CONFIG } from './modules/state.js';
 import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
@@ -11,6 +11,9 @@ let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
 // تاریخچه اکشن‌های اجرا شده برای جلوگیری از اجرای تکراری
 const executedActions = new Set(); 
+
+// متغیرهای حیاتی برای جبران تاخیر شبکه
+let pendingSyncCommand = null;
 
 // ==========================================
 // 🚀 INITIALIZATION (V4: State-Driven)
@@ -26,6 +29,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         (playing) => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
+            
+            // 🔥 True PTP Sync: کالیبره کردن زمان بلافاصله پس از شروع پخش
+            if (playing && pendingSyncCommand) {
+                applyPreciseSync(pendingSyncCommand);
+                pendingSyncCommand = null;
+            }
+            
             // فقط زمانی ریپورت کن که سیستم در حال سینک خودکار نباشد
             if (!state.isSyncing) reportStatus(true); 
         }
@@ -64,6 +74,13 @@ async function recoverHubState() {
         if (idx !== -1) {
             console.log(`⏱ Syncing to track index ${idx} at second ${liveState.seek_position}`);
             state.isSyncing = true; 
+            
+            // شبیه‌سازی یک فرمان سینک برای ریکاور شدن
+            pendingSyncCommand = {
+                base_seek: liveState.seek_position,
+                server_now: liveState.server_time
+            };
+            
             loadTrack(idx, liveState.is_playing, liveState.seek_position);
             setTimeout(() => { state.isSyncing = false; }, 1000);
         }
@@ -122,7 +139,12 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
             swapEngines();
             setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { 
                 state.isPlaying = p; 
-                UI.updatePlayBtn(p); 
+                UI.updatePlayBtn(p);
+                
+                if (p && pendingSyncCommand) {
+                    applyPreciseSync(pendingSyncCommand);
+                    pendingSyncCommand = null;
+                }
                 if(!state.isSyncing) reportStatus(true);
             });
         } else {
@@ -211,60 +233,59 @@ function seekToTime(seconds) {
 }
 
 function processRemoteCommand(cmd) {
-    // 🔥 Idempotency: جلوگیری از اجرای فرمان تکراری (مثل دابل Next)
+    // جلوگیری از اجرای فرمان تکراری (Idempotency)
     if (cmd.action_id) {
-        if (executedActions.has(cmd.action_id)) {
-            console.log("Skipping duplicate action:", cmd.action_id);
-            return;
-        }
+        if (executedActions.has(cmd.action_id)) return;
         executedActions.add(cmd.action_id);
-        // تمیز کردن تاریخچه برای جلوگیری از نشت حافظه
         if (executedActions.size > 50) {
             const firstItem = executedActions.values().next().value;
             executedActions.delete(firstItem);
         }
     }
 
-    // 🔥 Time-Shifted Execution (NTP Sync)
-    if (cmd.scheduled_at) {
-        const localNow = Date.now() / 1000;
-        // ساعت واقعی سرور با احتساب آفست کالیبره شده
-        const synchronizedNow = localNow + state.serverTimeOffset; 
-        
-        // چقدر باید صبر کنیم تا به زمان مقرر برسیم؟ (به میلی‌ثانیه)
-        const waitTimeMs = (cmd.scheduled_at - synchronizedNow) * 1000;
-        
-        // اگر زمان گذشته بود یا خیلی نزدیک بود، بلافاصله اجرا کن
-        const delay = Math.max(0, waitTimeMs);
-        
-        console.log(`Command ${cmd.action} scheduled in ${delay}ms`);
-        setTimeout(() => executeCommand(cmd), delay);
-    } else {
-        // Fallback برای دستورات بدون زمان‌بندی
-        executeCommand(cmd);
+    // ذخیره موقت اطلاعات سینک برای جبران زمان پس از شروع موفق پخش
+    if (cmd.action === 'play' || cmd.action === 'seek' || cmd.action === 'jump') {
+        pendingSyncCommand = cmd;
     }
+
+    executeCommand(cmd);
 }
 
 function executeCommand(cmd) {
-    state.isSyncing = true; // مسدود کردن ریپورت به سرور حین اجرای ریموت
+    state.isSyncing = true; // مسدود کردن ریپورت تا پایان عملیات
     
-    let targetTime = cmd.payload;
-    if (cmd.action === 'seek' && cmd.sync_timestamp) {
-         // جبران تاخیری که ممکن است از لحظه ارسال تا زمان مقرر اتفاق افتاده باشد
-        const latency = (Date.now() / 1000) - cmd.sync_timestamp + state.serverTimeOffset;
-        if (latency > 0 && latency < 5 && state.isPlaying) {
-             targetTime += latency;
-        }
-    }
-
     switch(cmd.action) {
-        case 'play': if(!state.isPlaying) togglePlay(); break;
-        case 'pause': if(state.isPlaying) togglePlay(); break;
-        case 'toggle': togglePlay(); break;
-        case 'next': nextTrack(); break;
-        case 'prev': loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length); break;
-        case 'seek': seekToTime(targetTime); break;
-        case 'volume': engines.active.volume = cmd.payload / 100; break;
+        case 'play': 
+            if(!state.isPlaying) togglePlay(); 
+            // اگر در حال پخش است، فقط سینک زمان انجام شود
+            else if(pendingSyncCommand) {
+                applyPreciseSync(pendingSyncCommand);
+                pendingSyncCommand = null;
+            }
+            break;
+        case 'pause': 
+            if(state.isPlaying) togglePlay(); 
+            break;
+        case 'toggle': 
+            togglePlay(); 
+            break;
+        case 'next': 
+            nextTrack(); 
+            break;
+        case 'prev': 
+            loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length); 
+            break;
+        case 'seek': 
+            seekToTime(cmd.payload); 
+            // اگر در حال پخش است، فورا جبران تاخیر کن
+            if(state.isPlaying && pendingSyncCommand) {
+                applyPreciseSync(pendingSyncCommand);
+                pendingSyncCommand = null;
+            }
+            break;
+        case 'volume': 
+            engines.active.volume = cmd.payload / 100; 
+            break;
         case 'jump': 
             const idx = state.tracks.findIndex(t => t.file_unique_id === cmd.payload);
             if(idx !== -1) loadTrack(idx);
@@ -272,6 +293,27 @@ function executeCommand(cmd) {
     }
     
     setTimeout(() => { state.isSyncing = false; }, 500);
+}
+
+// 🔥 قلب تپنده سینک دقیق (Precision Time Correction)
+function applyPreciseSync(cmdData) {
+    if (!cmdData || !cmdData.server_now || cmdData.base_seek === undefined) return;
+    
+    const localNow = Date.now() / 1000;
+    // محاسبه زمان گذشته از لحظه صدور فرمان در سرور تا این لحظه (که آهنگ روی این مرورگر شروع به پخش کرده)
+    const timePassedSinceCommand = localNow - cmdData.server_now + state.serverTimeOffset;
+    
+    // اگر زمان گذشته منطقی بود (بیشتر از صفر و کمتر از 10 ثانیه)
+    if (timePassedSinceCommand > 0 && timePassedSinceCommand < 10) {
+        // زمان ایده‌آلی که آهنگ الان باید در آن باشد: (زمان ذخیره شده در دیتابیس + زمان سپری شده)
+        const idealTime = cmdData.base_seek + timePassedSinceCommand;
+        
+        // اگر اختلاف مرورگر با زمان ایده‌آل بیشتر از 0.2 ثانیه بود، آن را اصلاح کن (پرش نامرئی)
+        if (Math.abs(engines.active.currentTime - idealTime) > 0.2) {
+            console.log(`⏱ PTP Correcting: Current ${engines.active.currentTime.toFixed(2)}s -> Target ${idealTime.toFixed(2)}s`);
+            engines.active.currentTime = idealTime;
+        }
+    }
 }
 
 // ==========================================
@@ -285,6 +327,7 @@ function onTimeUpdate() {
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
+    // گزارش به سرور هر ۵ ثانیه
     if (currentSec !== lastReportedSecond && currentSec % 5 === 0 && (now - lastReportTimestamp > 4000)) {
         reportStatus();
         lastReportedSecond = currentSec;
