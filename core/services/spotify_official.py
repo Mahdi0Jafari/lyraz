@@ -73,6 +73,21 @@ class SpotifyScraperService:
         if not entity or 'trackList' not in entity:
             return None
             
+        # 🔥 استخراج نام و کاور آلبوم/پلی‌لیست برای نمایش در ربات تلگرام
+        playlist_name = entity.get('title') or entity.get('name') or f"Spotify {item_type.capitalize()}"
+        
+        cover_url = None
+        try:
+            # معماری JSON اسپاتیفای ممکن است متغیر باشد، بررسی تمام سناریوها
+            if 'coverArt' in entity and entity['coverArt'].get('sources'):
+                cover_url = entity['coverArt']['sources'][0].get('url')
+            elif 'image' in entity:
+                cover_url = entity['image']
+            elif 'thumbnailUrl' in entity:
+                cover_url = entity['thumbnailUrl']
+        except Exception:
+            pass
+
         tracks = []
         for track in entity['trackList'][:100]: # محدود به ۱۰۰ آهنگ اول
             title = track.get('title')
@@ -87,6 +102,8 @@ class SpotifyScraperService:
         if tracks:
             return {
                 "type": item_type,
+                "name": playlist_name,
+                "cover": cover_url,
                 "track_count": len(tracks),
                 "tracks": tracks
             }
