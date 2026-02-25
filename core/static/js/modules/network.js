@@ -10,7 +10,8 @@ let authConnection = null;
 
 function setupAuthSSE(callbacks) {
     if (authConnection) authConnection.close();
-    authConnection = new EventSource("/events");
+    // 🔥 اصلاح امنیتی: ارسال توکن در مسیر درخواست SSE
+    authConnection = new EventSource(`/api/events/${state.sessionToken}`);
     
     authConnection.onmessage = (e) => {
         try {
@@ -98,7 +99,8 @@ export async function validateSession(callbacks) {
 
 export function initControlSSE(callbacks) {
     if (sseConnection) sseConnection.close();
-    sseConnection = new EventSource("/events");
+    // 🔥 اصلاح امنیتی: ارسال توکن در مسیر درخواست SSE
+    sseConnection = new EventSource(`/api/events/${state.sessionToken}`);
     
     sseConnection.onmessage = (e) => {
         try {
@@ -119,8 +121,6 @@ export function initControlSSE(callbacks) {
                 // کالیبره کردن ساعت کلاینت با سرور
                 if (data.server_now) {
                     const localNow = Date.now() / 1000;
-                    // محاسبه اختلاف زمان کلاینت و سرور (با فرض قرینه بودن زمان رفت و برگشت شبکه)
-                    // در سناریوهای حرفه‌ای‌تر، RTT (Round Trip Time) هم لحاظ می‌شود، اما برای استریم کافیست
                     state.serverTimeOffset = data.server_now - localNow;
                 }
                 callbacks.onCommand(data);
