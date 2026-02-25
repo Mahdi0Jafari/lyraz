@@ -46,7 +46,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args and args[0].startswith('session_'):
         token = args[0].split('_')[1]
         
-        # در معماری V4.2، توکن در پروفایل کاربر ثبت می‌شود تا مسیر ارسال آهنگ مشخص شود
         update_user_session(user.id, token)
         is_new_admin = await activate_session_and_notify(token, user.id, user.first_name, context)
         
@@ -134,6 +133,7 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
+    # این پیام اولیه توسط Worker برای آپدیت پروگرس‌بار استفاده می‌شود
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
     sp_data = spotify_keyless.parse_link(url)
     
@@ -150,37 +150,38 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
             
         vid = results[0]['videoId']
-        # TODO in tasks: Save sp_data['id'] as spotify_id for zero-latency future hits
         await dispatch_to_huey(update, context, vid, sp_data['title'], sp_data['artist'], status_msg)
 
-    # --- Case 2: Playlist or Album ---
+    # --- Case 2: Playlist or Album (V4.5 Batch Process) ---
     elif sp_data['type'] in ['playlist', 'album']:
         tracks = sp_data['tracks']
+        playlist_name = sp_data.get('name', 'Spotify Collection')
+        cover_url = sp_data.get('cover')
+        
+        # پیام وضعیت اولیه که بعدا در tasks.py تبدیل به پروگرس بار می‌شود
         await status_msg.edit_text(
-            f"📥 Found *{len(tracks)}* tracks in this {sp_data['type']}.\nAdding to download queue...",
+            f"📥 Found *{len(tracks)}* tracks in *{playlist_name}*.\nInitializing download engine...",
             parse_mode=ParseMode.MARKDOWN
         )
-        try: await status_msg.delete()
-        except: pass
         
-        from core.tasks import process_spotify_playlist_item
+        from core.tasks import download_playlist_batch
         current_token = get_user_current_session(update.effective_user.id)
         role = get_user_role(update.effective_user.id)
         target_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
         
-        for track in tracks:
-            process_spotify_playlist_item(
-                search_query=track['search_query'],
-                expected_title=track['title'],
-                expected_artist=track['artist'],
-                user_id=update.effective_user.id,
-                user_first_name=update.effective_user.first_name,
-                session_token=current_token,
-                chat_id=update.effective_chat.id,
-                quality=target_quality
-            )
-            
-        await update.message.reply_text(f"✅ {len(tracks)} items have been successfully dispatched to the background worker.")
+        # ارسال تمام اطلاعات به تسک گروهی (شامل کاور، اسم و پیام اولیه)
+        download_playlist_batch(
+            tracks=tracks,
+            playlist_name=playlist_name,
+            cover_url=cover_url,
+            user_id=update.effective_user.id,
+            user_first_name=update.effective_user.first_name,
+            session_token=current_token,
+            chat_id=update.effective_chat.id,
+            message_id=status_msg.message_id, # ارسال ID این پیام برای آپدیت پروگرس‌بار
+            quality=target_quality
+        )
+
 
 async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg):
     from core.tasks import download_and_process_track
