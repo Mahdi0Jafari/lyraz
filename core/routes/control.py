@@ -128,43 +128,52 @@ def send_command():
     logger.info(f"📱 Command: {cmd} | Payload: {payload} | Token: {token}")
 
     try:
-        # مدیریت عملیات دیتابیسی (حذف از صف)
         if cmd == 'remove' and payload:
             db.execute("DELETE FROM playlist_items WHERE id = ? AND session_token = ?", (payload, token))
             db.commit()
 
-        # محاسبه زمان‌بندی دقیق اجرای فرمان در کلاینت‌ها
-        sync_delay = 1.0 # بافر ۱ ثانیه‌ای برای جبران تاخیر شبکه
+        # 🔥 PTP Sync Logic (اصلاح شده)
+        # سرور فقط زمان دقیق دریافت درخواست را ثبت می‌کند (بدون تاخیر مصنوعی)
         server_now = time.time()
-        execution_time = server_now + sync_delay 
-        action_id = str(uuid.uuid4()) # تولید اثر انگشت یکتا برای این فرمان
-
-        # آپدیت وضعیت زنده در دیتابیس (برای کلاینت‌هایی که تازه متصل می‌شوند)
+        action_id = str(uuid.uuid4()) 
+        
+        # استخراج وضعیت فعلی از دیتابیس برای محاسبه آفست کلاینت‌ها
+        current_session = db.execute("SELECT seek_position, play_status, sync_timestamp FROM sessions WHERE token = ?", (token,)).fetchone()
+        
+        # پیش‌فرض‌ها در صورت نبود اطلاعات
+        base_seek = current_session['seek_position'] if current_session else 0.0
+        
         if cmd in ['play', 'pause', 'toggle', 'seek']:
             new_status = 'playing' if cmd == 'play' else ('paused' if cmd == 'pause' else None)
             
+            # اگر فرمان پلی بود، محاسبه کن که از آخرین باری که وضعیت آپدیت شده (Pause بوده)، الان باید از چه ثانیه‌ای شروع کند
+            if cmd == 'play' and current_session and current_session['play_status'] == 'paused':
+                 pass # همان base_seek می‌ماند
+                 
             if new_status:
                 db.execute("UPDATE sessions SET play_status = ?, sync_timestamp = ? WHERE token = ?", (new_status, server_now, token))
+            
             if cmd == 'seek':
-                db.execute("UPDATE sessions SET seek_position = ?, sync_timestamp = ? WHERE token = ?", (payload, server_now, token))
+                # اگر فرمان Seek بود، payload همان ثانیه درخواستی است
+                base_seek = float(payload)
+                db.execute("UPDATE sessions SET seek_position = ?, sync_timestamp = ? WHERE token = ?", (base_seek, server_now, token))
             
             db.commit()
 
-        # برودکست فرمان به تمام پلیرهای متصل با زمان‌بندی دقیق
+        # برودکست فرمان با اطلاعات دقیق زمان و موقعیت آهنگ
         msg_data = {
             'type': 'command',
             'action': cmd,
-            'payload': payload,
+            'payload': payload,             # این مقداری است که کاربر فرستاده (مثلا ثانیه 15 برای seek)
+            'base_seek': base_seek,         # موقعیت تایید شده آهنگ در لحظه ثبت فرمان روی سرور
             'session_token': token,
-            'action_id': action_id,           # جلوگیری از اجرای تکراری
-            'scheduled_at': execution_time,   # زمان دقیق اجرا در آینده
-            'server_now': server_now          # برای کالیبره کردن ساعت کلاینت
+            'action_id': action_id,           
+            'server_now': server_now        # زمان دقیق سرور برای کالیبره کردن کلاینت‌ها
         }
         announcer.announce(f"data: {json.dumps(msg_data)}\n\n")
         
         return jsonify({
             'status': 'success', 
-            'scheduled_at': execution_time,
             'action_id': action_id
         })
     except Exception as e:
