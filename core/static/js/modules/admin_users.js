@@ -1,7 +1,7 @@
 // static/js/modules/admin_users.js
 
 /**
- * Fanus User Analytics Module
+ * Lyraz User Analytics Module
  * Handles interactions for the User Intelligence Grid and Broadcast System.
  */
 

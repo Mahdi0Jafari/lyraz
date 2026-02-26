@@ -1,4 +1,4 @@
-name: Fanus Player Production CI/CD
+name: Lyraz Player Production CI/CD
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest
 
             echo "🌐 Setting up Network..."
-            sudo docker network create fanus_network || true
+            sudo docker network create Lyraz_network || true
 
             # ---------------------------------------------------------
             # 🔥 بخش حیاتی: آزادسازی پورت 5001 به روش سامورایی! 🔥
@@ -85,16 +85,16 @@ jobs:
             fi
 
             # 2. پاک کردن کانتینرهای هم‌نام (محض اطمینان)
-            # اسم fanus_app مربوط به نسخه قدیمی است
-            sudo docker stop fanus_web fanus_bot fanus_worker fanus_app || true
-            sudo docker rm fanus_web fanus_bot fanus_worker fanus_app || true
+            # اسم Lyraz_app مربوط به نسخه قدیمی است
+            sudo docker stop Lyraz_web Lyraz_bot Lyraz_worker Lyraz_app || true
+            sudo docker rm Lyraz_web Lyraz_bot Lyraz_worker Lyraz_app || true
             # ---------------------------------------------------------
 
             echo "🔥 Starting WEB container..."
             sudo docker run -d \
-              --name fanus_web \
+              --name Lyraz_web \
               --restart always \
-              --network fanus_network \
+              --network Lyraz_network \
               --network-alias web \
               -p 5001:5000 \
               -v $DEPLOY_DIR/instance:/app/instance \
@@ -105,9 +105,9 @@ jobs:
 
             echo "🤖 Starting BOT container..."
             sudo docker run -d \
-              --name fanus_bot \
+              --name Lyraz_bot \
               --restart always \
-              --network fanus_network \
+              --network Lyraz_network \
               -v $DEPLOY_DIR/instance:/app/instance \
               -v $DEPLOY_DIR/logs:/app/logs \
               --env-file .env \
@@ -116,9 +116,9 @@ jobs:
 
             echo "👷 Starting WORKER container..."
             sudo docker run -d \
-              --name fanus_worker \
+              --name Lyraz_worker \
               --restart always \
-              --network fanus_network \
+              --network Lyraz_network \
               -v $DEPLOY_DIR/instance:/app/instance \
               -v $DEPLOY_DIR/logs:/app/logs \
               --env-file .env \

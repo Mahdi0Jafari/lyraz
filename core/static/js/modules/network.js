@@ -41,7 +41,7 @@ export async function initAuth(callbacks) {
         if (data.status === 'success') {
             state.sessionToken = data.token;
             state.hubStatus = 'waiting';
-            localStorage.setItem('fanus_session_token', state.sessionToken);
+            localStorage.setItem('Lyraz_session_token', state.sessionToken);
             
             if (!window.location.pathname.includes(state.sessionToken)) {
                 window.history.replaceState({}, '', `/live/${state.sessionToken}`);
@@ -66,7 +66,7 @@ export async function validateSession(callbacks) {
         
         if (res.status === 404) {
             console.warn("[Network] Hub not found. Resetting...");
-            localStorage.removeItem('fanus_session_token');
+            localStorage.removeItem('Lyraz_session_token');
             state.sessionToken = null;
             state.hubStatus = 'waiting';
             

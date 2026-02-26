@@ -1,5 +1,5 @@
 /**
- * Fanus Player - Main Controller (Live Hubs V4.4)
+ * Lyraz Player - Main Controller (Live Hubs V4.4)
  * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
 import { state, CONFIG } from './modules/state.js';
@@ -20,7 +20,7 @@ let pendingSyncCommand = null;
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("🚀 Fanus Live Hub Initializing...");
+    console.log("🚀 Lyraz Live Hub Initializing...");
     
     setupAudioListeners(
         onTimeUpdate,

@@ -27,4 +27,4 @@ errorlog = "-"
 loglevel = "info"
 
 # نام پروسه (برای نمایش در دستور top یا htop)
-proc_name = "fanus_player"
+proc_name = "Lyraz_player"

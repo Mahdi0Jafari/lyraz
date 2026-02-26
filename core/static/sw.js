@@ -1,9 +1,9 @@
 /**
- * Naqoos Service Worker (Enterprise Edition v2)
+ * Lyraz Service Worker (Enterprise Edition v2)
  * Optimized for Flaky Networks & Smart TVs
  */
 
-const CACHE_NAME = 'fanus-player-v2';
+const CACHE_NAME = 'Lyraz-player-v2';
 // فقط فایل‌های استاتیک که برای لود شدن ظاهر پلیر حیاتی هستند
 const ASSETS_TO_CACHE = [
     '/',

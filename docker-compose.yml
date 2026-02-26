@@ -7,7 +7,7 @@ services:
   # -------------------------------------------------------
   web:
     build: .
-    container_name: fanus_web_local
+    container_name: Lyraz_web_local
     restart: always
     # دستور اجرا مشابه سرور (با Gevent برای پایداری SSE)
     command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
@@ -26,7 +26,7 @@ services:
   # -------------------------------------------------------
   bot:
     build: .
-    container_name: fanus_bot_local
+    container_name: Lyraz_bot_local
     restart: always
     command: python bot_runner.py
     volumes:
@@ -41,7 +41,7 @@ services:
   # -------------------------------------------------------
   worker:
     build: .
-    container_name: fanus_worker_local
+    container_name: Lyraz_worker_local
     restart: always
     command: python worker.py
     volumes:

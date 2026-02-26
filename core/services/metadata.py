@@ -18,7 +18,7 @@ class MetadataOrchestrator:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'FanusMusicPlayer/5.0 (Enterprise Metadata Engine)'
+            'User-Agent': 'LyrazMusicPlayer/5.0 (Enterprise Metadata Engine)'
         })
 
     def _clean_string(self, text):
