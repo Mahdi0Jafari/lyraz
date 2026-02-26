@@ -49,7 +49,7 @@ jobs:
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
 
-            # فایل‌های محیطی
+            # تولید فایل‌های محیطی
             echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
             echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
             echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
@@ -57,8 +57,6 @@ jobs:
             echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
-            
-            # 🔥 کلیدهای جدید اسپاتیفای اضافه شدند
             echo "SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}" >> .env
             echo "SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}" >> .env
             
@@ -72,20 +70,24 @@ jobs:
             sudo docker network create Lyraz_network || true
 
             # ---------------------------------------------------------
-            # 🔥 بخش حیاتی: آزادسازی پورت 5001 به روش سامورایی! 🔥
+            # 🔥 بخش حیاتی: آزادسازی پورت‌ها به روش سامورایی! 🔥
             # ---------------------------------------------------------
-            echo "🛑 Killing ANYTHING on port 5001..."
+            echo "🛑 Killing ANYTHING on ports 5001 and 8443..."
             
-            # 1. پیدا کردن کانتینری که پورت 5001 را گرفته
-            OLD_CONTAINER=$(sudo docker ps -q --filter "publish=5001")
-            if [ ! -z "$OLD_CONTAINER" ]; then
-                echo "Found zombie container $OLD_CONTAINER on port 5001. Killing it..."
-                sudo docker stop $OLD_CONTAINER
-                sudo docker rm $OLD_CONTAINER
+            OLD_WEB=$(sudo docker ps -q --filter "publish=5001")
+            if [ ! -z "$OLD_WEB" ]; then
+                echo "Found zombie container $OLD_WEB on port 5001. Killing it..."
+                sudo docker stop $OLD_WEB
+                sudo docker rm $OLD_WEB
             fi
 
-            # 2. پاک کردن کانتینرهای هم‌نام (محض اطمینان)
-            # اسم Lyraz_app مربوط به نسخه قدیمی است
+            OLD_BOT=$(sudo docker ps -q --filter "publish=8443")
+            if [ ! -z "$OLD_BOT" ]; then
+                echo "Found zombie container $OLD_BOT on port 8443. Killing it..."
+                sudo docker stop $OLD_BOT
+                sudo docker rm $OLD_BOT
+            fi
+
             sudo docker stop Lyraz_web Lyraz_bot Lyraz_worker Lyraz_app || true
             sudo docker rm Lyraz_web Lyraz_bot Lyraz_worker Lyraz_app || true
             # ---------------------------------------------------------
@@ -103,11 +105,12 @@ jobs:
               ${{ secrets.DOCKER_USERNAME }}/musicplayer-web:latest \
               gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
 
-            echo "🤖 Starting BOT container..."
+            echo "🤖 Starting BOT container (Webhook Enabled)..."
             sudo docker run -d \
               --name Lyraz_bot \
               --restart always \
               --network Lyraz_network \
+              -p 8443:8443 \
               -v $DEPLOY_DIR/instance:/app/instance \
               -v $DEPLOY_DIR/logs:/app/logs \
               --env-file .env \

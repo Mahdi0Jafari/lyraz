@@ -1,5 +1,6 @@
 # core/services/bot/handlers.py
 
+import asyncio
 import uuid
 import re
 import logging
@@ -30,17 +31,21 @@ yt_service = YouTubeService()
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main Entry Point, Onboarding Hub & Deep Link Router"""
+    """Main Entry Point, Optimized for Zero-Latency"""
     user = update.effective_user
     args = context.args
-    
-    if update.effective_chat:
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    
-    if user:
+    if not user: return
+
+    # تجمیع عملیات دیتابیس اولیه برای جلوگیری از فریز شدن لوپ (I/O Optimization)
+    def init_db_ops():
         bot_db_exec("INSERT OR IGNORE INTO users (telegram_id, first_name, username) VALUES (?, ?, ?)", 
                    (user.id, user.first_name, user.username))
-    if not user: return
+        token = get_user_current_session(user.id)
+        session = get_session_info(token) if token else None
+        internal_uid = get_user_id(user.id)
+        return token, session, internal_uid
+
+    current_token, session, internal_uid = await asyncio.to_thread(init_db_ops)
 
     # ---------------------------------------------------------
     # Scenario 1: Connect via QR Code (Hub Connection)
@@ -48,14 +53,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args and args[0].startswith('session_'):
         token = args[0].split('_')[1]
         
-        update_user_session(user.id, token)
+        await asyncio.to_thread(update_user_session, user.id, token)
         is_new_admin = await activate_session_and_notify(token, user.id, user.first_name, context)
         
         if is_new_admin is None:
             await update.message.reply_text("❌ Invalid or Expired Hub Link.")
             return
 
-        session = get_session_info(token)
+        session = await asyncio.to_thread(get_session_info, token)
         d_name = session['device_name'] or f"Hub-{token[:4]}"
 
         if is_new_admin:
@@ -73,10 +78,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     # ---------------------------------------------------------
-    # 🔥 NEW: Scenario 2: Admin User Inspection (Deep Link) 🔥
+    # Scenario 2: Admin User Inspection (Deep Link)
     # ---------------------------------------------------------
     elif args and args[0].startswith('view_'):
-        # 🔥 اصلاح امنیتی: چک کردن مستقیم آیدی سخت‌افزاری از Config
         if user.id != Config.ADMIN_TELEGRAM_ID:
              logger.warning(f"⚠️ Unauthorized access attempt by {user.id} to view user logs.")
              await update.message.reply_text("⛔️ Access Denied. Master Admin ID mismatch.")
@@ -85,16 +89,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_telegram_id = args[0].replace('view_', '')
         
         try:
-            # ارسال کانتکت برای دور زدن محدودیت‌های تلگرام
             await context.bot.send_contact(
                 chat_id=user.id,
-                phone_number="+00000000000", # Dummy Number
+                phone_number="+00000000000",
                 first_name="Intelligence Report",
                 last_name=f"[ID: {target_telegram_id}]",
                 vcard=f"BEGIN:VCARD\nVERSION:3.0\nN:;{target_telegram_id};;;\nFN:User {target_telegram_id}\nTEL;TYPE=cell:+00000000000\nEND:VCARD"
             )
             
-            # ارسال لینک مستقیم (در صورتی که کانتکت کار نکرد)
             await update.message.reply_text(
                 f"🔍 *Lyraz Intelligence Panel*\n\n"
                 f"👤 Target ID: `{target_telegram_id}`\n\n"
@@ -109,8 +111,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Scenario 3: Normal Start (Welcome Message)
     # ---------------------------------------------------------
     else:
-        current_token = get_user_current_session(user.id)
-        
         welcome_msg = (
             f"👋 *Welcome to Lyraz V4, {user.first_name}!*\n"
             "Your centralized Live Audio infrastructure.\n\n"
@@ -121,11 +121,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         is_admin = False
-        if current_token:
-            sess = get_session_info(current_token)
-            d_name = sess['device_name'] if sess and sess['device_name'] else "Unknown Hub"
-            internal_uid = get_user_id(user.id)
-            is_admin = sess['admin_id'] == internal_uid
+        if current_token and session:
+            d_name = session['device_name'] or "Unknown Hub"
+            is_admin = (session['admin_id'] == internal_uid)
             
             role_text = "(Admin)" if is_admin else "(Guest)"
             welcome_msg += f"🟢 *Status:* Currently connected to *{d_name}* {role_text}.\n\n👇 *Get started:* Use the menu below or send a music link."
@@ -160,7 +158,8 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     status_msg = await update.message.reply_text("⏳ Processing YouTube track...")
     
     try:
-        results = yt_service.search(vid)
+        # جستجو در پس‌زمینه برای جلوگیری از بلاک شدن سایر کاربران
+        results = await asyncio.to_thread(yt_service.search, vid)
         title = results[0]['title'] if results else "YouTube Track"
         artist = results[0]['artists'][0]['name'] if results and results[0].get('artists') else "Unknown"
     except:
@@ -171,7 +170,9 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
-    sp_data = spotify_keyless.parse_link(url)
+    
+    # پردازش شبکه اسپاتیفای در پس‌زمینه
+    sp_data = await asyncio.to_thread(spotify_keyless.parse_link, url)
     
     if sp_data.get('status') == 'error':
         await status_msg.edit_text(f"❌ {sp_data.get('message')}")
@@ -180,7 +181,7 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- Case 1: Single Track ---
     if sp_data['type'] == 'track':
         await status_msg.edit_text(f"🔎 Matching *{sp_data['title']}* on global database...", parse_mode=ParseMode.MARKDOWN)
-        results = yt_service.search(sp_data['search_query'])
+        results = await asyncio.to_thread(yt_service.search, sp_data['search_query'])
         if not results:
             await status_msg.edit_text("❌ Could not find a match for this specific track.")
             return
@@ -200,8 +201,11 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         
         from core.tasks import download_playlist_batch
-        current_token = get_user_current_session(update.effective_user.id)
-        role = get_user_role(update.effective_user.id)
+        
+        def fetch_meta_sync():
+            return get_user_current_session(update.effective_user.id), get_user_role(update.effective_user.id)
+            
+        current_token, role = await asyncio.to_thread(fetch_meta_sync)
         target_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
         
         download_playlist_batch(
@@ -220,10 +224,16 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg):
     from core.tasks import download_and_process_track
     user = update.effective_user
-    current_token = get_user_current_session(user.id)
+    
+    def fetch_dispatch_meta():
+        c_token = get_user_current_session(user.id)
+        c_track = get_track_by_youtube_id(vid)
+        u_role = get_user_role(user.id)
+        return c_token, c_track, u_role
+
+    current_token, cached, role = await asyncio.to_thread(fetch_dispatch_meta)
     
     # 1. Check Cache Hit
-    cached = get_track_by_youtube_id(vid)
     if cached:
         try: await status_msg.delete()
         except: pass
@@ -231,10 +241,10 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         return
 
     # 2. RBAC Quality Check
-    role = get_user_role(user.id)
     download_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
 
     await status_msg.edit_text(f"⏳ *{title}* added to the queue...", parse_mode=ParseMode.MARKDOWN)
+    
     download_and_process_track(
         video_id=vid, title=title, artist=artist, 
         user_id=user.id, user_first_name=user.first_name, 
@@ -249,11 +259,11 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    if text == "📺 My Devices" or text == "📱 My Devices" or text == "📺 My Hubs": 
+    if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs"]: 
         await list_devices(update, context)
         return
         
-    if text == "📖 Setup Guide" or text == "❓ Help": 
+    if text in ["📖 Setup Guide", "❓ Help"]: 
         guide_text = (
             "🚀 *Quick Setup Guide (Live Hubs):*\n\n"
             "1️⃣ *Create a Hub:* Open the Web Player on any device. Scan the QR code.\n"
@@ -263,10 +273,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN)
         return
-        
 
     if text == "🔍 Search Music":
-        # استفاده از f-string برای تزریق داینامیک یوزرنیم ربات از کانفیگ
         bot_username = Config.BOT_USERNAME
         await update.message.reply_text(
             f"🔎 *How to Search:*\n"
@@ -286,7 +294,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Renaming Flow ---
     if 'renaming_token' in context.user_data:
         token = context.user_data['renaming_token']
-        set_device_name(token, text)
+        await asyncio.to_thread(set_device_name, token, text)
         del context.user_data['renaming_token']
         await update.message.reply_text(f"✅ Hub successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
         return
@@ -303,7 +311,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Search Fallback ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
-        results = yt_service.search(text)
+        results = await asyncio.to_thread(yt_service.search, text)
         if not results:
             await status_msg.edit_text("❌ No results found. Try a different keyword.")
             return
@@ -324,20 +332,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    internal_uid = get_user_id(user.id)
-    current_token = get_user_current_session(user.id)
     
-    sessions = get_active_sessions(internal_uid)
-    session_list = [dict(s) for s in sessions]
-    
-    if current_token:
-        is_owned = any(s['token'] == current_token for s in session_list)
-        if not is_owned:
-            guest_session = get_session_info(current_token)
-            if guest_session:
-                fake_session = dict(guest_session)
-                fake_session['is_guest_entry'] = True
-                session_list.insert(0, fake_session)
+    def fetch_devices_data():
+        internal_uid = get_user_id(user.id)
+        current_token = get_user_current_session(user.id)
+        sessions = get_active_sessions(internal_uid)
+        session_list = [dict(s) for s in sessions]
+        
+        if current_token:
+            is_owned = any(s['token'] == current_token for s in session_list)
+            if not is_owned:
+                guest_session = get_session_info(current_token)
+                if guest_session:
+                    fake_session = dict(guest_session)
+                    fake_session['is_guest_entry'] = True
+                    session_list.insert(0, fake_session)
+        return current_token, session_list
+
+    current_token, session_list = await asyncio.to_thread(fetch_devices_data)
 
     if not session_list:
         base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
@@ -368,31 +380,41 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = query.from_user
     
+    def process_callback_db(target_token, is_select=False):
+        if is_select:
+            update_user_session(user.id, target_token)
+            
+        c_token = get_user_current_session(user.id)
+        sess = get_session_info(target_token)
+        internal_uid = get_user_id(user.id)
+        is_admin = sess['admin_id'] == internal_uid if sess else False
+        d_name = sess['device_name'] or f"Hub-{target_token[:4]}" if sess else "Unknown"
+        return c_token, is_admin, d_name
+
     if data.startswith("select_"):
         target_token = data.split("_")[1]
-        update_user_session(user.id, target_token) 
-        sess = get_session_info(target_token)
-        d_name = sess['device_name'] or f"Hub-{target_token[:4]}"
-        internal_uid = get_user_id(user.id)
-        is_admin = sess['admin_id'] == internal_uid
+        _, is_admin, d_name = await asyncio.to_thread(process_callback_db, target_token, True)
         
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target_token, True, is_admin=is_admin))
         await context.bot.send_message(user.id, f"✅ Active Hub switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
 
     elif data.startswith("manage_"):
         token = data.split("_")[1]
-        current_token = get_user_current_session(user.id)
+        current_token, is_admin, _ = await asyncio.to_thread(process_callback_db, token, False)
         is_cur = (token == current_token)
-        sess = get_session_info(token)
-        internal_uid = get_user_id(user.id)
-        is_admin = sess['admin_id'] == internal_uid
         
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(token, is_cur, is_admin=is_admin))
 
     elif data.startswith("rename_"):
         token = data.split("_")[1]
-        sess = get_session_info(token)
-        if sess['admin_id'] != get_user_id(user.id):
+        
+        def check_admin():
+            sess = get_session_info(token)
+            return sess, sess['admin_id'] == get_user_id(user.id) if sess else False
+            
+        sess, is_admin = await asyncio.to_thread(check_admin)
+        
+        if not is_admin:
             await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this Hub.")
             return
             
@@ -419,7 +441,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def inline_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
     if not query: return
-    try:
+    
+    # اجرای کامل سرچ و ساخت نتیجه در پس‌زمینه (Zero-Lag Inline)
+    def run_inline_search():
         results = yt_service.search(query)
         articles = []
         for song in results:
@@ -433,6 +457,10 @@ async def inline_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
                 thumbnail_url=song.get('thumbnails', [{}])[-1].get('url'),
                 input_message_content=content
             ))
+        return articles
+
+    try:
+        articles = await asyncio.to_thread(run_inline_search)
         await context.bot.answer_inline_query(update.inline_query.id, articles, cache_time=0)
     except Exception as e:
         logger.error(f"Inline Search Error: {e}")
