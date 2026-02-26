@@ -70,6 +70,43 @@ def generate_progress_bar(current, total, length=12):
     bar = '█' * filled_length + '░' * (length - filled_length)
     return f"`[{bar}]` {int(percent * 100)}%"
 
+async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_name):
+    """
+    موتور انتشار خودکار (Auto-Broadcast Engine).
+    بررسی می‌کند که آیا در پنل ادمین انتشار خودکار روشن است یا خیر.
+    """
+    try:
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+            
+            if not settings or not settings['is_auto_broadcast_enabled'] or not settings['auto_broadcast_channel_id']:
+                return # انتشار خودکار خاموش است یا کانالی ست نشده
+                
+            channel_id = settings['auto_broadcast_channel_id']
+            base_caption = settings['default_caption'] or "{title} - {artist}"
+            
+            # پیدا کردن کپشن اختصاصی کانال (در صورت وجود)
+            channel_info = conn.execute("SELECT caption_template FROM channels WHERE chat_id = ?", (channel_id,)).fetchone()
+            if channel_info and channel_info['caption_template'] and channel_info['caption_template'].strip():
+                base_caption = channel_info['caption_template']
+                
+            # جایگذاری متغیرها
+            final_caption = base_caption.replace('{title}', title or 'Unknown')\
+                                        .replace('{artist}', artist or 'Unknown')\
+                                        .replace('{sender}', user_first_name or 'User')
+            
+            await local_bot.send_audio(
+                chat_id=channel_id,
+                audio=file_id,
+                caption=final_caption,
+                title=title,
+                performer=artist,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            logger.info(f"✅ Auto-Broadcast sent to {channel_id}: {title}")
+    except Exception as e:
+        logger.error(f"❌ Auto-Broadcast Engine Error: {e}")
 
 # ==========================================
 # 🎧 MAIN TASK: SINGLE TRACK DOWNLOAD
@@ -97,10 +134,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
-        # ۱. واکشی متادیتای غنی (کاور آیتونز + لیریک LRCLIB) قبل از دانلود
+        # ۱. واکشی متادیتای غنی
         rich_metadata = metadata_service.get_full_metadata(artist, title)
-        
-        # در صورت موفقیت، از نام‌های رسمی (Official) استفاده کن
         final_title = rich_metadata['title'] if rich_metadata.get('title') else title
         final_artist = rich_metadata['artist'] if rich_metadata.get('artist') else artist
 
@@ -112,7 +147,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
 
-        # ۳. آپلود به کانال تلگرام
+        # ۳. آپلود به کانال آرشیو خاموش (Storage)
         tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id)
         if not tg_audio:
             if message_id and not is_batch:
@@ -142,7 +177,6 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate']
         ))
         
-        # ذخیره لیریک در کش دیتابیس (برای سرعت بالاتر پلیر)
         if rich_metadata.get('lyrics'):
              try:
                  with sqlite3.connect(Config.DATABASE_URI) as conn:
@@ -190,7 +224,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     'sync_timestamp': time.time() 
                 })
         
-        # ۶. ارسال فایل صوتی به چت
+        # ۶. ارسال فایل صوتی به چت درخواست‌کننده
         user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
         try:
             await local_bot.send_audio(
@@ -199,7 +233,10 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 reply_markup=reply_markup
             )
         except Exception as e:
-            logger.error(f"Failed to deliver audio: {e}")
+            logger.error(f"Failed to deliver audio to user: {e}")
+
+        # ۷. 🔥 اجرای موتور Automation Rules 🔥
+        await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
 
         return track_meta
 
@@ -213,14 +250,11 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
 
 # ==========================================
-# 🗂 BATCH PLAYLIST PROCESSING (V4.7 Ultimate UX)
+# 🗂 BATCH PLAYLIST PROCESSING
 # ==========================================
 
 @huey.task()
 def download_playlist_batch(tracks, playlist_name, cover_url, user_id, user_first_name, session_token, chat_id, message_id, quality=None):
-    """
-    پردازشگر اصلی برای آلبوم‌ها و پلی‌لیست‌ها.
-    """
     logger.info(f"🗂 Starting Batch Download: {playlist_name} ({len(tracks)} tracks)")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -238,7 +272,6 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
     failed_count = 0
 
     try:
-        # ۱. ارسال کاور پلی‌لیست در هماااان لحظه اول
         if cover_url:
             try:
                 await local_bot.send_photo(
@@ -250,13 +283,11 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             except Exception as e:
                 logger.warning(f"Could not send cover photo: {e}")
 
-        # ۲. حلقه پردازش ترک‌ها
         for i, track_info in enumerate(tracks, 1):
             search_query = track_info['search_query']
             title = track_info['title']
             artist = track_info['artist']
 
-            # آپدیت پیام اولیه (message_id) به عنوان نوار پیشرفت - هر ۳ آهنگ یکبار برای جلوگیری از لیمیت شدن
             if i % 3 == 0 or i == 1:
                 try:
                     progress = generate_progress_bar(i, total)
@@ -271,7 +302,6 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             
             vid = results[0].get('videoId')
             
-            # بررسی کش
             cached = None
             with sqlite3.connect(Config.DATABASE_URI) as conn:
                 conn.row_factory = sqlite3.Row
@@ -317,19 +347,18 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 except Exception as e:
                     logger.error(f"Failed to deliver cached audio: {e}")
                     
+                # 🔥 اجرای موتور Automation برای آهنگ‌های کش شده نیز ضروری است
+                await process_auto_broadcast(local_bot, cached['file_id'], title, artist, user_first_name)
+                    
                 success_count += 1
             else:
-                # اجرای منطق دانلود اصلی (is_batch=True)
                 result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True)
-                
                 if result: success_count += 1
                 else: failed_count += 1
             
             await asyncio.sleep(random.uniform(1.0, 2.5))
 
-        # ۳. پایان پروسه: بهینه‌سازی UX
         try:
-            # الف) تبدیل پیام پروگرس‌بار به وضعیت اتمام
             await local_bot.edit_message_text(
                 chat_id=chat_id, 
                 message_id=message_id, 
@@ -340,7 +369,6 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             logger.error(f"Failed to update final progress bar: {e}")
 
         try:
-            # ب) ارسال یک پیام جدید در پایین چت جهت ایجاد نوتیفیکیشن
             final_text = f"🎉 *{playlist_name} Download Complete!*\n\n✅ Successfully added: {success_count}\n❌ Failed: {failed_count}"
             await local_bot.send_message(
                 chat_id=chat_id,
@@ -355,3 +383,44 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
     finally:
         try: await local_bot.initialize() ; await local_bot.shutdown()
         except: pass
+
+
+# ==========================================
+# 📣 ADMIN TOOLS: BULK BROADCASTING
+# ==========================================
+
+@huey.task()
+def send_bulk_message_task(target_telegram_ids, message_text):
+    logger.info(f"📣 Starting Bulk Broadcast to {len(target_telegram_ids)} users.")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(
+            _async_bulk_broadcast(target_telegram_ids, message_text)
+        )
+    finally:
+        loop.close()
+
+async def _async_bulk_broadcast(target_telegram_ids, message_text):
+    local_bot = Bot(token=Config.BOT_TOKEN)
+    success_count = 0
+    failed_count = 0
+    
+    for user_id in target_telegram_ids:
+        try:
+            await local_bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+            success_count += 1
+        except Exception as e:
+            logger.warning(f"[-] Broadcast failed for {user_id}: {e}")
+            failed_count += 1
+        
+        await asyncio.sleep(0.05)
+        
+    logger.info(f"✅ Broadcast Completed. Success: {success_count} | Failed: {failed_count}")
+    try: await local_bot.initialize() ; await local_bot.shutdown()
+    except: pass
