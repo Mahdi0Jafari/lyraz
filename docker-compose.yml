@@ -9,19 +9,15 @@ services:
     build: .
     container_name: Lyraz_web_local
     restart: always
-    # دستور اجرا مشابه سرور (با Gevent برای پایداری SSE)
     command: gunicorn --worker-class gevent --workers 1 --threads 100 --bind 0.0.0.0:5000 app:app
     ports:
-      # پورت ۵۰۰۱ مک وصل می‌شود به پورت ۵۰۰۰ کانتینر
-      # (پورت ۵۰۰۰ روی مک گاهی با AirPlay تداخل دارد، برای همین ۵۰۰۱ گذاشتیم)
       - "5001:5000"
     volumes:
-      # اتصال پوشه پروژه مک به پوشه اپلیکیشن داکر (برای تغییرات آنی کد)
       - .:/app
     env_file: .env
 
   # -------------------------------------------------------
-  # سرویس ۲: ربات تلگرام
+  # سرویس ۲: ربات تلگرام (مجهز به پورت Webhook)
   # مسئول دریافت پیام‌ها و تعامل با کاربر
   # -------------------------------------------------------
   bot:
@@ -29,6 +25,8 @@ services:
     container_name: Lyraz_bot_local
     restart: always
     command: python bot_runner.py
+    ports:
+      - "8443:8443"
     volumes:
       - .:/app
     env_file: .env
