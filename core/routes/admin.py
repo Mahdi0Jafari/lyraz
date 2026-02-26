@@ -104,6 +104,29 @@ def dashboard():
     )
 
 # ==========================================
+# 📈 SYSTEM MONITORING & LOGS
+# ==========================================
+
+@admin_bp.route('/api/admin/logs')
+def fetch_system_logs():
+    """
+    دریافت لاگ‌های سیستم برای نمایش در ترمینالِ زندهِ داشبورد
+    """
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    
+    log_type = request.args.get('type', 'web') # 'web', 'bot', or 'worker'
+    lines = request.args.get('lines', 200, type=int)
+    
+    # واکشی امن لاگ‌ها از ماژول تحلیلی
+    logs_content = admin_analytics.get_system_logs(log_type=log_type, lines=lines)
+    
+    return jsonify({
+        'status': 'success', 
+        'type': log_type,
+        'logs': logs_content
+    })
+
+# ==========================================
 # 👥 USER MANAGEMENT & ANALYTICS APIs
 # ==========================================
 
