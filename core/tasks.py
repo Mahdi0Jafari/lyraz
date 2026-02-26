@@ -15,6 +15,7 @@ from telegram.constants import ParseMode
 from core.config import Config
 from core.services.youtube import YouTubeService
 from core.services.bot.database import bot_db_exec, get_user_id
+from core.services.metadata import metadata_service
 
 logger = logging.getLogger("huey.consumer")
 
@@ -96,13 +97,23 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
-        path = await yt_service.download(video_id, quality=quality)
+        # ۱. واکشی متادیتای غنی (کاور آیتونز + لیریک LRCLIB) قبل از دانلود
+        rich_metadata = metadata_service.get_full_metadata(artist, title)
+        
+        # در صورت موفقیت، از نام‌های رسمی (Official) استفاده کن
+        final_title = rich_metadata['title'] if rich_metadata.get('title') else title
+        final_artist = rich_metadata['artist'] if rich_metadata.get('artist') else artist
+
+        # ۲. دانلود از یوتیوب و تزریق متادیتا با Mutagen
+        path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
+        
         if not path:
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
 
-        tg_audio = await upload_to_telegram(local_bot, path, title, artist, video_id)
+        # ۳. آپلود به کانال تلگرام
+        tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id)
         if not tg_audio:
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
@@ -110,10 +121,11 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
         actual_bitrate = int(quality) if quality else int(Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else 192)
 
+        # ۴. ذخیره در دیتابیس
         track_meta = {
             'file_unique_id': tg_audio.file_unique_id,
             'file_id': tg_audio.file_id,
-            'title': title, 'performer': artist,
+            'title': final_title, 'performer': final_artist,
             'duration': tg_audio.duration, 'file_size': tg_audio.file_size,
             'thumb_id': tg_audio.thumbnail.file_id if tg_audio.thumbnail else None,
             'youtube_id': video_id, 'bitrate': actual_bitrate
@@ -129,20 +141,29 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta['performer'], track_meta['duration'], track_meta['file_size'], 
             track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate']
         ))
+        
+        # ذخیره لیریک در کش دیتابیس (برای سرعت بالاتر پلیر)
+        if rich_metadata.get('lyrics'):
+             try:
+                 with sqlite3.connect(Config.DATABASE_URI) as conn:
+                     conn.execute("INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at) VALUES (?, ?, ?, ?)",
+                                (track_meta['file_unique_id'], rich_metadata['lyrics'], "lrclib", int(time.time())))
+                     conn.commit()
+             except: pass
 
-        # اگر دانلود تکی است، پیام "در حال جستجو/دانلود" را پاک کن تا فقط فایل صوتی بماند
         if message_id and not is_batch:
             try: await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
             except: pass
 
-        # --- Hub Injection ---
+        # ۵. تزریق به هاب
         reply_markup = None
         d_name = "Hub"
         if session_token:
             with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.row_factory = sqlite3.Row  
                 res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
-                d_name = res[0] if res and res[0] else f"Hub-{session_token[:4]}"
-                hub_admin_id = res[1] if res else None
+                d_name = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
+                hub_admin_id = res['admin_id'] if res else None
 
             base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
@@ -163,18 +184,18 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 """, (safe_owner_id, track_db_id, internal_user_id, session_token))
 
                 notify_web_bridge({
-                    'type': 'new_track', 'title': title, 'performer': artist,
+                    'type': 'new_track', 'title': final_title, 'performer': final_artist,
                     'file_unique_id': track_meta['file_unique_id'], 'duration': track_meta['duration'],
                     'added_by': user_first_name, 'session_token': session_token,
                     'sync_timestamp': time.time() 
                 })
         
-        # 🔥 ارسال فایل صوتی به چت کاربر (همیشه اجرا می‌شود، چه تکی چه در پلی‌لیست)
-        user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
+        # ۶. ارسال فایل صوتی به چت
+        user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
         try:
             await local_bot.send_audio(
                 chat_id=chat_id, audio=track_meta['file_id'], caption=user_caption,
-                title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                title=final_title, performer=final_artist, parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
         except Exception as e:
@@ -192,7 +213,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
 
 # ==========================================
-# 🗂 BATCH PLAYLIST PROCESSING (V4.5 UX)
+# 🗂 BATCH PLAYLIST PROCESSING (V4.7 Ultimate UX)
 # ==========================================
 
 @huey.task()
@@ -217,7 +238,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
     failed_count = 0
 
     try:
-        # ۱. ارسال کاور پلی‌لیست در هماااان لحظه اول (قبل از شروع حلقه دانلود)
+        # ۱. ارسال کاور پلی‌لیست در هماااان لحظه اول
         if cover_url:
             try:
                 await local_bot.send_photo(
@@ -235,8 +256,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             title = track_info['title']
             artist = track_info['artist']
 
-            # آپدیت پیام اولیه (message_id) به عنوان نوار پیشرفت
-            # هر ۳ آهنگ یکبار آپدیت می‌کنیم تا خطای تلگرام نگیریم (یا در آهنگ اول)
+            # آپدیت پیام اولیه (message_id) به عنوان نوار پیشرفت - هر ۳ آهنگ یکبار برای جلوگیری از لیمیت شدن
             if i % 3 == 0 or i == 1:
                 try:
                     progress = generate_progress_bar(i, total)
@@ -251,7 +271,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             
             vid = results[0].get('videoId')
             
-            # بررسی کش برای جلوگیری از دانلود مجدد
+            # بررسی کش
             cached = None
             with sqlite3.connect(Config.DATABASE_URI) as conn:
                 conn.row_factory = sqlite3.Row
@@ -259,12 +279,12 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 cached = cur.fetchone()
 
             if cached:
-                # ثبت در دیتابیس هاب
                 reply_markup = None
                 d_name = "Hub"
                 
                 if session_token:
                     with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        conn.row_factory = sqlite3.Row  
                         res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
                         d_name = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
                         hub_admin_id = res['admin_id'] if res else None
@@ -287,7 +307,6 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         'sync_timestamp': time.time()
                     })
                 
-                # 🔥 ارسال فایل کش شده به کاربر
                 user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
                 try:
                     await local_bot.send_audio(
@@ -300,20 +319,36 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     
                 success_count += 1
             else:
-                # اجرای منطق دانلود اصلی (is_batch=True تا فایل ارسال شود اما پروگرس بار اصلی پاک نشود)
+                # اجرای منطق دانلود اصلی (is_batch=True)
                 result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True)
                 
                 if result: success_count += 1
                 else: failed_count += 1
             
-            # فاصله استراتژیک برای جلوگیری از بن شدن توسط یوتیوب
             await asyncio.sleep(random.uniform(1.0, 2.5))
 
-        # ۳. آپدیت نهایی پیام پروگرس‌بار
-        final_text = f"🎉 *{playlist_name} Complete!*\n\n{generate_progress_bar(total, total)}\n✅ Added: {success_count}\n❌ Failed: {failed_count}"
+        # ۳. پایان پروسه: بهینه‌سازی UX
         try:
-            await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, parse_mode=ParseMode.MARKDOWN)
-        except: pass
+            # الف) تبدیل پیام پروگرس‌بار به وضعیت اتمام
+            await local_bot.edit_message_text(
+                chat_id=chat_id, 
+                message_id=message_id, 
+                text=f"🗂 *{playlist_name}*\n\n{generate_progress_bar(total, total)}\n✅ Processing finished. See summary below.", 
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to update final progress bar: {e}")
+
+        try:
+            # ب) ارسال یک پیام جدید در پایین چت جهت ایجاد نوتیفیکیشن
+            final_text = f"🎉 *{playlist_name} Download Complete!*\n\n✅ Successfully added: {success_count}\n❌ Failed: {failed_count}"
+            await local_bot.send_message(
+                chat_id=chat_id,
+                text=final_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to send final completion message: {e}")
 
     except Exception as e:
         logger.error(f"Batch Logic Error: {e}")

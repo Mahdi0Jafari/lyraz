@@ -8,6 +8,10 @@ import yt_dlp
 from ytmusicapi import YTMusic
 from core.config import Config
 
+# ایمپورت‌های مربوط به Mutagen برای تزریق متادیتا در سطح باینری
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3, APIC, USLT, TIT2, TPE1, error
+
 logger = logging.getLogger(__name__)
 
 class YouTubeService:
@@ -32,8 +36,61 @@ class YouTubeService:
             logger.error(f"YT Search Error: {e}")
             return []
 
-    # 🔥 پارامتر quality=None اینجا اضافه شد تا با tasks.py سازگار شود
-    async def download(self, video_id, quality=None):
+    def apply_metadata_to_file(self, file_path, metadata):
+        """
+        تزریق کاور، لیریک و مشخصات دقیق به هدر فایل MP3 با استفاده از ID3v2.
+        این کار باعث می‌شود فایل در تمامی پلیرهای آفلاین هویت کامل داشته باشد.
+        """
+        if not metadata:
+            return
+
+        try:
+            audio = MP3(file_path, ID3=ID3)
+            
+            # اگر فایل تگ ID3 نداشت، آن را بساز
+            try:
+                audio.add_tags()
+            except error:
+                pass  # تگ از قبل وجود دارد (توسط ffmpeg ساخته شده)
+
+            # ۱. اصلاح نام آهنگ و خواننده (جایگزینی نام یوتیوب با نام رسمی آیتونز)
+            if metadata.get('title'):
+                audio.tags.add(TIT2(encoding=3, text=metadata['title']))
+            if metadata.get('artist'):
+                audio.tags.add(TPE1(encoding=3, text=metadata['artist']))
+
+            # ۲. تزریق کاور با کیفیت (APIC)
+            if metadata.get('cover_bytes'):
+                audio.tags.add(
+                    APIC(
+                        encoding=3,  # UTF-8
+                        mime='image/jpeg',
+                        type=3,  # نوع 3 یعنی کاور جلوی آلبوم (Front Cover)
+                        desc=u'Cover',
+                        data=metadata['cover_bytes']
+                    )
+                )
+
+            # ۳. تزریق متن لیریک (USLT)
+            if metadata.get('lyrics'):
+                audio.tags.add(
+                    USLT(
+                        encoding=3,  # UTF-8 برای پشتیبانی کامل از فارسی
+                        lang=u'eng', # زبان (تثبیت‌شده روی eng یا und برای سازگاری بهتر)
+                        desc=u'Lyrics',
+                        text=metadata['lyrics']
+                    )
+                )
+
+            audio.save()
+            logger.info(f"[+] Metadata stitched successfully: {os.path.basename(file_path)}")
+            
+        except Exception as e:
+            logger.error(f"[-] Mutagen Stitching Error: {e}")
+
+
+    # 🔥 پارامتر metadata اضافه شد تا بعد از دانلود، تزریق انجام شود
+    async def download(self, video_id, quality=None, metadata=None):
         link = f"https://music.youtube.com/watch?v={video_id}"
         output_template = os.path.join(self.download_dir, '%(id)s.%(ext)s')
         final_path = os.path.join(self.download_dir, f"{video_id}.mp3")
@@ -43,9 +100,11 @@ class YouTubeService:
         
         logger.info(f"[*] Downloading: {link} | Quality: {target_quality}kbps")
 
-        # اگر فایل از قبل بود، همان را برگردان
+        # اگر فایل از قبل بود، فقط متادیتا را دوباره چک/تزریق کن و برگردان
         if os.path.exists(final_path):
             logger.info(f"[+] Cached: {final_path}")
+            if metadata:
+                self.apply_metadata_to_file(final_path, metadata)
             return final_path
 
         ydl_opts = {
@@ -88,8 +147,11 @@ class YouTubeService:
 
             downloaded_id = await asyncio.to_thread(run_download)
             
+            # اگر دانلود موفق بود، متادیتای غنی (کاور + لیریک) را به آن می‌دوزیم
             if downloaded_id and os.path.exists(final_path):
-                logger.info(f"[+] Success: {final_path}")
+                logger.info(f"[+] Success DL: {final_path}")
+                if metadata:
+                    self.apply_metadata_to_file(final_path, metadata)
                 return final_path
             
             logger.error("[-] Download failed internally (Check cookies)")
