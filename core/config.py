@@ -8,7 +8,7 @@ load_dotenv()
 
 class Config:
     # --- 1. تنظیمات امنیتی و هویت (Security & Identity) ---
-    SECRET_KEY = os.getenv('SECRET_KEY', 'fanus-default-secret-key')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'Lyraz-default-secret-key')
     ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin')
     
     # آیدی عددی تلگرام ادمین کل (Master Admin) برای دسترسی‌های حساس
@@ -17,7 +17,7 @@ class Config:
     
     # --- 2. تنظیمات تلگرام (Telegram Interface) ---
     BOT_TOKEN = os.getenv('BOT_TOKEN')
-    BOT_USERNAME = os.getenv('BOT_USERNAME', 'naqoosbot')
+    BOT_USERNAME = os.getenv('BOT_USERNAME', 'Lyrazbot')
     
     # آیدی کانال آرشیو موزیک (باید با -100 شروع شود)
     STORAGE_CHANNEL_ID = os.getenv('STORAGE_CHANNEL_ID')

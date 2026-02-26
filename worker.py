@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     print("\n" + "="*40)
-    print("👷 FANUS WORKER SERVICE INITIALIZED")
+    print("👷 Lyraz WORKER SERVICE INITIALIZED")
     print("🚀 Listening for tasks from: core.tasks")
     print("="*40 + "\n")
 

@@ -96,7 +96,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # ارسال لینک مستقیم (در صورتی که کانتکت کار نکرد)
             await update.message.reply_text(
-                f"🔍 *Fanus Intelligence Panel*\n\n"
+                f"🔍 *Lyraz Intelligence Panel*\n\n"
                 f"👤 Target ID: `{target_telegram_id}`\n\n"
                 f"👉 If the contact card above doesn't open the profile, try this strict link: [View Profile](tg://user?id={target_telegram_id})",
                 parse_mode=ParseMode.MARKDOWN
@@ -112,7 +112,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_token = get_user_current_session(user.id)
         
         welcome_msg = (
-            f"👋 *Welcome to Fanus V4, {user.first_name}!*\n"
+            f"👋 *Welcome to Lyraz V4, {user.first_name}!*\n"
             "Your centralized Live Audio infrastructure.\n\n"
             "🎼 *What can I do?*\n"
             "📥 *Download:* Paste a Spotify/YouTube link to archive tracks.\n"
@@ -131,7 +131,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome_msg += f"🟢 *Status:* Currently connected to *{d_name}* {role_text}.\n\n👇 *Get started:* Use the menu below or send a music link."
         else:
             base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
-            welcome_msg += f"👇 *Get started:* Open [Fanus Web Player]({base_url}) on a screen and scan the QR code to create your first Live Hub."
+            welcome_msg += f"👇 *Get started:* Open [Lyraz Web Player]({base_url}) on a screen and scan the QR code to create your first Live Hub."
 
         await update.message.reply_text(
             welcome_msg, 
@@ -342,7 +342,7 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not session_list:
         base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
         await update.message.reply_text(
-            f"❌ *No connected Hubs found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
+            f"❌ *No connected Hubs found.*\n\nOpen [Lyraz Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True
         )

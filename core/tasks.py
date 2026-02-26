@@ -21,7 +21,7 @@ logger = logging.getLogger("huey.consumer")
 
 # 1. Initialize Task Queue (Huey)
 huey = SqliteHuey(
-    name='fanus_tasks',
+    name='Lyraz_tasks',
     filename=os.path.join(Config.INSTANCE_PATH, 'queue.db')
 )
 

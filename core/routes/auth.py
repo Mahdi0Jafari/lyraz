@@ -27,7 +27,7 @@ def connect_landing(token):
     هدایت کاربر به ربات تلگرام به همراه توکن هاب.
     """
     # ساخت لینک عمیق (Deep Link) برای شروع ربات با توکن هاب
-    # مثال: https://t.me/FanusMusicBot?start=session_a7k9p2x
+    # مثال: https://t.me/LyrazMusicBot?start=session_a7k9p2x
     telegram_link = f"https://t.me/{Config.BOT_USERNAME}?start=session_{token}"
     
     return render_template('connect.html', telegram_link=telegram_link)

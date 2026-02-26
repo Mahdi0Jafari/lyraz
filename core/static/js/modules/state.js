@@ -9,7 +9,7 @@ export const CONFIG = {
  * 🔥 V4 ANTI-BUG LOGIC: Token Authority Hierarchy
  * 1. URL Path (/live/xxxxxxx) -> Absolute Master
  * 2. Server Injection (window.INJECTED_TOKEN) -> Context Master
- * 3. LocalStorage (fanus_session_token) -> Persistence Fallback
+ * 3. LocalStorage (Lyraz_session_token) -> Persistence Fallback
  */
 
 const getUrlToken = () => {
@@ -28,7 +28,7 @@ const getUrlToken = () => {
 };
 
 const urlToken = getUrlToken();
-const storageToken = localStorage.getItem('fanus_session_token');
+const storageToken = localStorage.getItem('Lyraz_session_token');
 
 // تعیین توکن نهایی بر اساس سلسله مراتب قدرت
 const resolvedToken = urlToken || window.INJECTED_TOKEN || storageToken;
@@ -36,7 +36,7 @@ const resolvedToken = urlToken || window.INJECTED_TOKEN || storageToken;
 // پایداری: اگر توکن جدیدی پیدا شده که در حافظه نیست، حافظه را بروزرسانی کن
 if (resolvedToken && resolvedToken !== storageToken) {
     console.log(`[State] Migrating session to: ${resolvedToken}`);
-    localStorage.setItem('fanus_session_token', resolvedToken);
+    localStorage.setItem('Lyraz_session_token', resolvedToken);
 }
 
 export const state = {
