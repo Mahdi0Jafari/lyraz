@@ -117,6 +117,11 @@
                 <span class="hidden lg:block text-sm font-medium">Device Manager</span>
             </button>
 
+            <button onclick="switchTab('users')" id="nav-users" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <span class="material-symbols-outlined icon text-[24px] group-hover:text-white transition-colors">supervised_user_circle</span>
+                <span class="hidden lg:block text-sm font-medium">User Analytics</span>
+            </button>
+
             <button onclick="switchTab('automation')" id="nav-automation" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <span class="material-symbols-outlined icon text-[24px] group-hover:text-white transition-colors">smart_toy</span>
                 <span class="hidden lg:block text-sm font-medium">Automation</span>
@@ -291,6 +296,10 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <div id="tab-users" class="hidden animate-in fade-in duration-300">
+                {% include 'admin/components/users_tab.html' %}
             </div>
 
             <div id="tab-automation" class="hidden max-w-4xl mx-auto space-y-8 animate-in zoom-in-95 duration-300">
@@ -485,5 +494,21 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/admin_users.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // چک می‌کنیم اگر در URL پارامتری برای باز نگه داشتن یک تب خاص وجود دارد
+            const urlParams = new URLSearchParams(window.location.search);
+            const activeTab = urlParams.get('active_tab');
+            
+            if(activeTab) {
+                // اگر مثلاً بعد از صفحه‌بندی یا سرچ رفرش شد، تب همونجا بمونه
+                if(typeof switchTab === 'function') {
+                    switchTab(activeTab);
+                }
+            }
+        });
+    </script>
 </body>
 </html>

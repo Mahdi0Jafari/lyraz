@@ -3,6 +3,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
 from core.models import get_db
 from core.config import Config
+from core.services.admin_service import admin_analytics  # تزریق سرویس تحلیلی
 import requests
 import math
 
@@ -42,15 +43,18 @@ def dashboard():
         db.commit()
         settings = db.execute("SELECT * FROM settings WHERE id = 1").fetchone()
 
-    # 2. آمار
+    # 2. آمار اصلی (Hero Stats)
     total_tracks = db.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     total_channels = db.execute("SELECT COUNT(*) FROM channels WHERE is_active = 1").fetchone()[0]
     total_devices = db.execute("SELECT COUNT(*) FROM sessions WHERE status = 'active'").fetchone()[0]
+    
+    # گرفتن آمار تحلیلی مربوط به کاربران از سرویس جدید
+    user_stats = admin_analytics.get_dashboard_summary()
 
     # 3. لیست کانال‌ها
     channels = db.execute("SELECT * FROM channels ORDER BY is_active DESC, title ASC").fetchall()
     
-    # 4. لیست دیوایس‌ها (همراه با کانال متصل و نام صاحب)
+    # 4. لیست دیوایس‌ها
     devices = db.execute("""
         SELECT s.*, u.first_name as owner_name, c.title as channel_name 
         FROM sessions s
@@ -77,6 +81,12 @@ def dashboard():
 
     total_pages = math.ceil(count_res / per_page)
 
+    # 6. لیست کاربران (واکشی از سرویس تحلیل)
+    users_page = request.args.get('u_page', 1, type=int)
+    users_search = request.args.get('u_q', '')
+    users_sort = request.args.get('sort', 'tracks')
+    users_data = admin_analytics.get_users_analytics(page=users_page, per_page=50, search_query=users_search, sort_by=users_sort)
+
     return render_template(
         'admin.html', 
         tracks=tracks, 
@@ -84,12 +94,69 @@ def dashboard():
         devices=devices,
         settings=settings,
         stats={'tracks': total_tracks, 'channels': total_channels, 'devices': total_devices},
+        user_stats=user_stats,
+        users_data=users_data,
         page=page, 
         total_pages=total_pages,
-        search_query=search_query
+        search_query=search_query,
+        users_search=users_search,
+        users_sort=users_sort
     )
 
-# --- Broadcast Logic ---
+# ==========================================
+# 👥 USER MANAGEMENT & ANALYTICS APIs
+# ==========================================
+
+@admin_bp.route('/api/admin/users/update_status', methods=['POST'])
+def update_user_status():
+    """تغییر نقش (User/Pro/Admin) یا مسدودسازی (Ban) کاربر"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json
+    
+    target_id = data.get('user_id')
+    action = data.get('action') # 'role' or 'ban'
+    value = data.get('value')
+    
+    if not target_id or not action:
+        return jsonify({'status': 'error', 'message': 'Missing parameters'})
+        
+    success = admin_analytics.update_user_status(target_id, action, value)
+    
+    if success:
+        return jsonify({'status': 'success'})
+    return jsonify({'status': 'error', 'message': 'Database update failed'})
+
+@admin_bp.route('/api/admin/users/broadcast', methods=['POST'])
+def broadcast_to_users():
+    """ارسال پیام گروهی به کاربران (انتقال به Background Task)"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json
+    
+    message_text = data.get('message')
+    selection_type = data.get('type', 'all') # 'all' or 'specific'
+    specific_ids = data.get('user_ids', [])
+    
+    if not message_text:
+        return jsonify({'status': 'error', 'message': 'Message text is empty'})
+        
+    target_telegram_ids = admin_analytics.get_target_telegram_ids(selection_type, specific_ids)
+    
+    if not target_telegram_ids:
+        return jsonify({'status': 'error', 'message': 'No eligible users found'})
+
+    # فراخوانی Task پس‌زمینه برای جلوگیری از بلاک شدن سرور
+    try:
+        from core.tasks import send_bulk_message_task
+        send_bulk_message_task(target_telegram_ids, message_text)
+        return jsonify({'status': 'success', 'count': len(target_telegram_ids)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+# ==========================================
+# 📻 BROADCAST & MUSIC APIs
+# ==========================================
+
 @admin_bp.route('/api/admin/broadcast', methods=['POST'])
 def broadcast_track():
     if not is_admin(): return jsonify({'status': 'error'}), 403
@@ -109,11 +176,11 @@ def bulk_broadcast():
 
     db = get_db()
     
-    # 1. دریافت اطلاعات کانال (برای تمپلیت اختصاصی)
+    # 1. دریافت اطلاعات کانال
     channel_info = db.execute("SELECT caption_template FROM channels WHERE chat_id = ?", (channel_id,)).fetchone()
     channel_specific_template = channel_info['caption_template'] if channel_info else None
     
-    # 2. دریافت تنظیمات پیش‌فرض (گلوبال)
+    # 2. دریافت تنظیمات پیش‌فرض
     settings = db.execute("SELECT default_caption FROM settings WHERE id = 1").fetchone()
     global_default = settings['default_caption'] if settings else "{title} - {artist}"
 
@@ -132,8 +199,7 @@ def bulk_broadcast():
     success_count = 0
     
     for track in tracks_to_send:
-        # 🔥 اولویت‌بندی کپشن: 
-        # ۱. دستی > ۲. اختصاصی کانال > ۳. پیش‌فرض سیستم
+        # اولویت‌بندی کپشن
         if manual_caption and manual_caption.strip():
             base_template = manual_caption
         elif channel_specific_template and channel_specific_template.strip():
@@ -141,7 +207,6 @@ def bulk_broadcast():
         else:
             base_template = global_default
         
-        # جایگذاری متغیرها
         title = track['title'] or 'Unknown'
         artist = track['performer'] or 'Unknown'
         sender_name = "Admin Panel"
@@ -149,7 +214,6 @@ def bulk_broadcast():
         final_caption = base_template.replace('{title}', title)\
                                      .replace('{artist}', artist)\
                                      .replace('{sender}', sender_name)
-        
         try:
             resp = requests.post(url, data={'chat_id': channel_id, 'audio': track['file_id'], 'caption': final_caption})
             if resp.status_code == 200: success_count += 1
@@ -157,25 +221,25 @@ def bulk_broadcast():
 
     return jsonify({'status': 'success', 'count': success_count})
 
-# --- Device Management API ---
+
+# ==========================================
+# ⚙️ SYSTEM & DEVICE APIs
+# ==========================================
+
 @admin_bp.route('/api/admin/device/link', methods=['POST'])
 def link_device_channel():
-    """اتصال یک دیوایس به یک کانال خاص"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     data = request.json
     token = data.get('token')
-    channel_id = data.get('channel_id')
-    target_channel = channel_id if channel_id else None
+    target_channel = data.get('channel_id') or None
     
     db = get_db()
     db.execute("UPDATE sessions SET linked_channel_id = ? WHERE token = ?", (target_channel, token))
     db.commit()
     return jsonify({'status': 'success'})
 
-# --- Settings API ---
 @admin_bp.route('/api/admin/settings/update', methods=['POST'])
 def update_settings():
-    """بروزرسانی تنظیمات گلوبال (پیش‌فرض)"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     data = request.json
     db = get_db()
@@ -184,8 +248,6 @@ def update_settings():
                (data.get('channel_id'), data.get('caption'), is_enabled))
     db.commit()
     return jsonify({'status': 'success'})
-
-# --- Channel Management APIs ---
 
 @admin_bp.route('/api/admin/channels/add', methods=['POST'])
 def add_channel():
@@ -206,16 +268,11 @@ def delete_channel():
     db.commit()
     return jsonify({'status': 'success'})
 
-# --- 🔥 Channel Custom Rules (Caption Template) API ---
 @admin_bp.route('/api/admin/channels/update_template', methods=['POST'])
 def update_channel_template():
-    """ذخیره کپشن اختصاصی برای هر کانال"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     data = request.json
-    chat_id = data.get('chat_id')
-    template = data.get('template')
-    
     db = get_db()
-    db.execute("UPDATE channels SET caption_template = ? WHERE chat_id = ?", (template, chat_id))
+    db.execute("UPDATE channels SET caption_template = ? WHERE chat_id = ?", (data.get('template'), data.get('chat_id')))
     db.commit()
     return jsonify({'status': 'success'})

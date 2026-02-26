@@ -1,0 +1,221 @@
+<div class="space-y-6">
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="glass-panel p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-all duration-500"></div>
+            <div class="size-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-primary shadow-inner">
+                <span class="material-symbols-outlined text-[28px]">group</span>
+            </div>
+            <div>
+                <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Total Audience</p>
+                <h3 class="text-3xl font-bold text-white tracking-tight">{{ user_stats.total_users }}</h3>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
+            <div class="size-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-400 shadow-inner">
+                <span class="material-symbols-outlined text-[28px]">monitoring</span>
+            </div>
+            <div>
+                <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Conversion Rate</p>
+                <h3 class="text-3xl font-bold text-white tracking-tight">{{ user_stats.conversion_rate }}<span class="text-lg text-gray-500">%</span></h3>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl flex items-center gap-4 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-green-500/10 rounded-full blur-2xl group-hover:bg-green-500/20 transition-all duration-500"></div>
+            <div class="size-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-green-400 shadow-inner">
+                <span class="material-symbols-outlined text-[28px]">vital_signs</span>
+            </div>
+            <div>
+                <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Active Today</p>
+                <h3 class="text-3xl font-bold text-white tracking-tight">{{ user_stats.active_today }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row gap-4 justify-between items-center glass-panel p-2 pl-4 rounded-2xl">
+        <form action="/admin" method="get" class="flex items-center gap-3 w-full md:w-auto">
+            <input type="hidden" name="active_tab" value="users">
+            
+            <div class="relative">
+                <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-500 text-[18px]">search</span>
+                <input type="text" name="u_q" value="{{ users_search }}" placeholder="Search ID, Name..." 
+                       class="glass-input h-10 pl-9 pr-4 rounded-xl text-sm w-full md:w-64">
+            </div>
+            
+            <select name="sort" onchange="this.form.submit()" class="glass-input h-10 px-3 rounded-xl text-sm appearance-none cursor-pointer">
+                <option value="tracks" {% if users_sort == 'tracks' %}selected{% endif %}>Highest Contribution</option>
+                <option value="recent" {% if users_sort == 'recent' %}selected{% endif %}>Recently Active</option>
+                <option value="storage" {% if users_sort == 'storage' %}selected{% endif %}>Highest Bandwidth</option>
+            </select>
+        </form>
+
+        <div class="flex items-center gap-2">
+            <button onclick="openUserBroadcastModal('all')" class="bg-white/10 hover:bg-primary/20 hover:text-primary text-white text-sm font-bold h-10 px-4 rounded-xl transition-colors border border-white/5 hover:border-primary/30 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px]">campaign</span>
+                Global Announce
+            </button>
+        </div>
+    </div>
+
+    <div class="glass-panel rounded-2xl overflow-hidden border border-white/5">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse whitespace-nowrap">
+                <thead class="bg-black/40 border-b border-white/5 text-gray-400 text-xs uppercase tracking-wider font-semibold">
+                    <tr>
+                        <th class="px-6 py-4 w-12 text-center">
+                            <input type="checkbox" onchange="toggleAllUsers(this)" class="custom-checkbox">
+                        </th>
+                        <th class="px-6 py-4">Identity</th>
+                        <th class="px-6 py-4 text-center">Engagement</th>
+                        <th class="px-6 py-4 text-center">Impact (MB)</th>
+                        <th class="px-6 py-4 text-center">Access Role</th>
+                        <th class="px-6 py-4 text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for u in users_data.users %}
+                    <tr class="hover:bg-white/5 transition-colors group {% if u.is_banned %}opacity-50 grayscale hover:grayscale-0{% endif %}">
+                        <td class="px-6 py-4 text-center">
+                            <input type="checkbox" value="{{ u.telegram_id }}" class="user-checkbox custom-checkbox" onchange="updateUserSelection()">
+                        </td>
+                        
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="relative size-10 rounded-full bg-gradient-to-tr from-gray-800 to-gray-600 flex items-center justify-center text-white border border-white/10 shadow-lg">
+                                    <span class="material-symbols-outlined text-[20px]">{% if u.is_banned %}block{% else %}person{% endif %}</span>
+                                    {% if u.is_power_user and not u.is_banned %}
+                                    <div class="absolute -top-1 -right-1 size-4 bg-black rounded-full flex items-center justify-center" title="Power User">
+                                        <span class="material-symbols-outlined text-[12px] text-blue-400">diamond</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    <a href="https://t.me/{{ config.BOT_USERNAME }}?start=view_{{ u.telegram_id }}" 
+                                    target="_blank" 
+                                    class="text-white font-bold text-sm hover:text-primary transition inline-flex items-center gap-1">
+                                     {{ u.first_name }}
+                                     <span class="material-symbols-outlined text-[14px]">smart_toy</span> 
+                                     </a>
+                                    <div class="text-[11px] text-gray-500 font-mono tracking-wide">
+                                        {{ '@' ~ u.username if u.username else 'No_ID' }} | {{ u.telegram_id }}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <div class="flex flex-col items-center">
+                                <span class="text-sm font-bold text-white">{{ u.total_tracks }} <span class="text-xs text-gray-500 font-normal">Tracks</span></span>
+                                <span class="text-[10px] text-gray-500 bg-black/30 px-2 py-0.5 rounded mt-1">{{ u.hubs_connected }} Hubs</span>
+                            </div>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <div class="inline-flex items-center gap-1.5 {% if u.storage_mb > 500 %}text-red-400{% elif u.storage_mb > 100 %}text-yellow-400{% else %}text-gray-400{% endif %}">
+                                <span class="material-symbols-outlined text-[16px]">sd_storage</span>
+                                <span class="text-sm font-bold font-mono">{{ u.storage_mb }}</span>
+                            </div>
+                            <div class="text-[10px] text-gray-600 mt-1" title="Last Active">{{ u.last_activity[:16] if u.last_activity else 'Never' }}</div>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <select onchange="updateUserRole({{ u.id }}, this.value)" class="glass-input h-8 px-2 rounded-lg text-xs appearance-none cursor-pointer text-center w-24 focus:ring-1 focus:ring-primary/50 transition-colors {% if u.role == 'admin' %}text-primary border-primary/30{% elif u.role == 'pro' %}text-blue-400 border-blue-400/30{% endif %}">
+                                <option value="user" class="text-white" {% if u.role == 'user' %}selected{% endif %}>User</option>
+                                <option value="pro" class="text-blue-400" {% if u.role == 'pro' %}selected{% endif %}>Pro</option>
+                                <option value="admin" class="text-primary" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+                            </select>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="openUserBroadcastModal('specific', ['{{ u.telegram_id }}'])" class="size-8 rounded-lg bg-white/5 hover:bg-primary/20 text-gray-400 hover:text-primary transition-colors flex items-center justify-center" title="Direct Message">
+                                    <span class="material-symbols-outlined text-[18px]">chat</span>
+                                </button>
+                                
+                                <button onclick="toggleUserBan({{ u.id }}, {% if u.is_banned %}0{% else %}1{% endif %})" 
+                                        class="size-8 rounded-lg flex items-center justify-center transition-colors {% if u.is_banned %}bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/40{% else %}bg-white/5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 border border-transparent hover:border-red-500/30{% endif %}" 
+                                        title="{% if u.is_banned %}Unban User{% else %}Ban User{% endif %}">
+                                    <span class="material-symbols-outlined text-[18px]">{% if u.is_banned %}lock_open{% else %}block{% endif %}</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center">
+                            <span class="material-symbols-outlined text-gray-600 text-4xl mb-2">person_search</span>
+                            <p class="text-gray-500 text-sm">No users found in the database.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="p-4 border-t border-white/5 bg-black/20 flex justify-between items-center">
+            <span class="text-xs text-gray-500">Page {{ users_data.current_page }} of {{ users_data.total_pages }} ({{ users_data.total_records }} Users)</span>
+            <div class="flex gap-2">
+                {% if users_data.current_page > 1 %}
+                <a href="/admin?active_tab=users&u_page={{ users_data.current_page - 1 }}&u_q={{ users_search }}&sort={{ users_sort }}" class="px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs text-white transition-colors">Previous</a>
+                {% endif %}
+                {% if users_data.current_page < users_data.total_pages %}
+                <a href="/admin?active_tab=users&u_page={{ users_data.current_page + 1 }}&u_q={{ users_search }}&sort={{ users_sort }}" class="px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 text-xs text-white transition-colors">Next</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div id="users-floating-bar" class="floating-bar fixed bottom-8 left-1/2 z-50 transition-transform">
+        <div class="glass-panel rounded-full p-2 pl-6 flex items-center gap-6 shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-primary/30">
+            <div class="flex items-center gap-3">
+                <div class="size-6 rounded-full bg-primary flex items-center justify-center text-black font-bold text-xs" id="users-selected-count">0</div>
+                <span class="text-sm font-bold text-white">Users Selected</span>
+            </div>
+            
+            <div class="h-8 w-px bg-white/10"></div>
+            
+            <button onclick="openUserBroadcastModal('selected')" class="bg-primary hover:bg-[#0be02f] text-black px-6 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px]">campaign</span>
+                Broadcast Message
+            </button>
+        </div>
+    </div>
+
+    <div id="user-broadcast-modal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="closeUserBroadcastModal()"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg p-4">
+            <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl">
+                <div class="p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-xl font-bold text-white">Compose Message</h3>
+                            <p id="ub-modal-desc" class="text-xs text-gray-400 mt-1">Send a direct Telegram message.</p>
+                        </div>
+                        <div class="size-10 rounded-full bg-primary/20 text-primary flex items-center justify-center">
+                            <span class="material-symbols-outlined">send</span>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="ub-type" value="all">
+                    <input type="hidden" id="ub-specific-ids" value="">
+
+                    <div class="space-y-4">
+                        <textarea id="ub-message-text" rows="5" class="glass-input w-full rounded-xl p-4 text-sm resize-none focus:ring-2 focus:ring-primary/50" placeholder="Type your announcement here... (Markdown supported)"></textarea>
+                        
+                        <div class="flex justify-end gap-3 pt-2">
+                            <button onclick="closeUserBroadcastModal()" class="px-5 py-2.5 rounded-xl border border-white/10 text-white text-sm hover:bg-white/5 transition-colors">Cancel</button>
+                            <button onclick="confirmUserBroadcast()" id="ub-send-btn" class="bg-primary hover:bg-[#0be02f] text-black px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(13,242,51,0.2)] flex items-center gap-2">
+                                <span>Send to Target</span>
+                                <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>

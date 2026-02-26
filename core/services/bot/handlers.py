@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 yt_service = YouTubeService()
 
 # ==========================================
-# 🚀 CORE COMMANDS (V4 Live Hubs)
+# 🚀 CORE COMMANDS (V4 Live Hubs & Deep Links)
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main Entry Point & Onboarding Hub"""
+    """Main Entry Point, Onboarding Hub & Deep Link Router"""
     user = update.effective_user
     args = context.args
     
@@ -42,7 +42,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    (user.id, user.first_name, user.username))
     if not user: return
 
-    # --- Scenario 1: Connect via QR Code (Hub Connection) ---
+    # ---------------------------------------------------------
+    # Scenario 1: Connect via QR Code (Hub Connection)
+    # ---------------------------------------------------------
     if args and args[0].startswith('session_'):
         token = args[0].split('_')[1]
         
@@ -70,8 +72,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN
             )
 
+    # ---------------------------------------------------------
+    # 🔥 NEW: Scenario 2: Admin User Inspection (Deep Link) 🔥
+    # ---------------------------------------------------------
+    elif args and args[0].startswith('view_'):
+        # 🔥 اصلاح امنیتی: چک کردن مستقیم آیدی سخت‌افزاری از Config
+        if user.id != Config.ADMIN_TELEGRAM_ID:
+             logger.warning(f"⚠️ Unauthorized access attempt by {user.id} to view user logs.")
+             await update.message.reply_text("⛔️ Access Denied. Master Admin ID mismatch.")
+             return
+
+        target_telegram_id = args[0].replace('view_', '')
+        
+        try:
+            # ارسال کانتکت برای دور زدن محدودیت‌های تلگرام
+            await context.bot.send_contact(
+                chat_id=user.id,
+                phone_number="+00000000000", # Dummy Number
+                first_name="Intelligence Report",
+                last_name=f"[ID: {target_telegram_id}]",
+                vcard=f"BEGIN:VCARD\nVERSION:3.0\nN:;{target_telegram_id};;;\nFN:User {target_telegram_id}\nTEL;TYPE=cell:+00000000000\nEND:VCARD"
+            )
+            
+            # ارسال لینک مستقیم (در صورتی که کانتکت کار نکرد)
+            await update.message.reply_text(
+                f"🔍 *Fanus Intelligence Panel*\n\n"
+                f"👤 Target ID: `{target_telegram_id}`\n\n"
+                f"👉 If the contact card above doesn't open the profile, try this strict link: [View Profile](tg://user?id={target_telegram_id})",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Failed to extract user via bot: {e}")
+            await update.message.reply_text(f"❌ Error generating Intelligence Report: {e}")
+
+    # ---------------------------------------------------------
+    # Scenario 3: Normal Start (Welcome Message)
+    # ---------------------------------------------------------
     else:
-        # --- Scenario 2: Normal Start ---
         current_token = get_user_current_session(user.id)
         
         welcome_msg = (
@@ -93,7 +130,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             role_text = "(Admin)" if is_admin else "(Guest)"
             welcome_msg += f"🟢 *Status:* Currently connected to *{d_name}* {role_text}.\n\n👇 *Get started:* Use the menu below or send a music link."
         else:
-            base_url = Config.BASE_URL if Config.BASE_URL else "the website"
+            base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
             welcome_msg += f"👇 *Get started:* Open [Fanus Web Player]({base_url}) on a screen and scan the QR code to create your first Live Hub."
 
         await update.message.reply_text(
@@ -133,7 +170,6 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    # این پیام اولیه توسط Worker برای آپدیت پروگرس‌بار استفاده می‌شود
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
     sp_data = spotify_keyless.parse_link(url)
     
@@ -158,7 +194,6 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         playlist_name = sp_data.get('name', 'Spotify Collection')
         cover_url = sp_data.get('cover')
         
-        # پیام وضعیت اولیه که بعدا در tasks.py تبدیل به پروگرس بار می‌شود
         await status_msg.edit_text(
             f"📥 Found *{len(tracks)}* tracks in *{playlist_name}*.\nInitializing download engine...",
             parse_mode=ParseMode.MARKDOWN
@@ -169,7 +204,6 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         role = get_user_role(update.effective_user.id)
         target_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
         
-        # ارسال تمام اطلاعات به تسک گروهی (شامل کاور، اسم و پیام اولیه)
         download_playlist_batch(
             tracks=tracks,
             playlist_name=playlist_name,
@@ -178,7 +212,7 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_first_name=update.effective_user.first_name,
             session_token=current_token,
             chat_id=update.effective_chat.id,
-            message_id=status_msg.message_id, # ارسال ID این پیام برای آپدیت پروگرس‌بار
+            message_id=status_msg.message_id,
             quality=target_quality
         )
 
@@ -230,11 +264,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN)
         return
         
+
     if text == "🔍 Search Music":
+        # استفاده از f-string برای تزریق داینامیک یوزرنیم ربات از کانفیگ
+        bot_username = Config.BOT_USERNAME
         await update.message.reply_text(
-            "🔎 *How to Search:*\nSimply type `@naqoosbot [song name]` right here in the chat, or tap the button below!",
+            f"🔎 *How to Search:*\n"
+            f"Simply type `@{bot_username} [song name]` right here in the chat, "
+            f"or tap the button below!",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]])
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]
+            ])
         )
         return
         
@@ -245,7 +286,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Renaming Flow ---
     if 'renaming_token' in context.user_data:
         token = context.user_data['renaming_token']
-        # آپدیت نام هاب
         set_device_name(token, text)
         del context.user_data['renaming_token']
         await update.message.reply_text(f"✅ Hub successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
@@ -260,7 +300,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_spotify_link(update, context, text)
         return
 
-    # --- Search Fallback (اگر متن نه لینک بود و نه دکمه) ---
+    # --- Search Fallback ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
         results = yt_service.search(text)
@@ -287,24 +327,20 @@ async def list_devices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     internal_uid = get_user_id(user.id)
     current_token = get_user_current_session(user.id)
     
-    # دریافت لیست هاب‌هایی که کاربر ادمین آنهاست
     sessions = get_active_sessions(internal_uid)
     session_list = [dict(s) for s in sessions]
     
-    # آیا هابی که کاربر الان به آن وصل است، در لیست هاب‌های خودش وجود دارد؟
     if current_token:
         is_owned = any(s['token'] == current_token for s in session_list)
         if not is_owned:
-            # اگر ادمین نیست، یعنی به عنوان مهمان در یک هابِ دیگر است
             guest_session = get_session_info(current_token)
             if guest_session:
                 fake_session = dict(guest_session)
                 fake_session['is_guest_entry'] = True
-                # اضافه کردن هاب مهمان به بالای لیست
                 session_list.insert(0, fake_session)
 
     if not session_list:
-        base_url = Config.BASE_URL if Config.BASE_URL else "the website"
+        base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
         await update.message.reply_text(
             f"❌ *No connected Hubs found.*\n\nOpen [Fanus Web Player]({base_url}) on your TV/PC and scan the QR code to create one.",
             parse_mode=ParseMode.MARKDOWN,
@@ -332,40 +368,30 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user = query.from_user
     
-    # تغییر هاب فعال کاربر
     if data.startswith("select_"):
         target_token = data.split("_")[1]
-        
-        # آپدیت پروفایل یوزر تا مقصد آهنگ‌های بعدی تغییر کند
         update_user_session(user.id, target_token) 
-        
         sess = get_session_info(target_token)
         d_name = sess['device_name'] or f"Hub-{target_token[:4]}"
-        
         internal_uid = get_user_id(user.id)
         is_admin = sess['admin_id'] == internal_uid
         
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(target_token, True, is_admin=is_admin))
         await context.bot.send_message(user.id, f"✅ Active Hub switched to: *{d_name}*", parse_mode=ParseMode.MARKDOWN)
 
-    # آپدیت منوی یک هاب خاص (برای رفرش کردن دکمه‌ها)
     elif data.startswith("manage_"):
         token = data.split("_")[1]
         current_token = get_user_current_session(user.id)
         is_cur = (token == current_token)
-        
         sess = get_session_info(token)
         internal_uid = get_user_id(user.id)
         is_admin = sess['admin_id'] == internal_uid
         
         await query.edit_message_reply_markup(reply_markup=get_smart_buttons(token, is_cur, is_admin=is_admin))
 
-    # تغییر نام هاب
     elif data.startswith("rename_"):
         token = data.split("_")[1]
         sess = get_session_info(token)
-        
-        # محدودیت امنیتی: فقط ادمین هاب می‌تواند نام آن را تغییر دهد
         if sess['admin_id'] != get_user_id(user.id):
             await context.bot.send_message(user.id, "⛔️ Access Denied. You are not the administrator of this Hub.")
             return
