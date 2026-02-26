@@ -1,12 +1,17 @@
 # core/routes/admin.py
 
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
+import os
+import time
+import math
+import requests
+import logging
+from collections import deque
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, Response
 from core.models import get_db
 from core.config import Config
-from core.services.admin_service import admin_analytics  # تزریق سرویس تحلیلی
-import requests
-import math
+from core.services.admin_service import admin_analytics
 
+logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 def is_admin():
@@ -79,7 +84,7 @@ def dashboard():
         tracks = db.execute("SELECT * FROM tracks ORDER BY id DESC LIMIT ? OFFSET ?", (per_page, offset)).fetchall()
         count_res = total_tracks
 
-    total_pages = math.ceil(count_res / per_page)
+    total_pages = math.ceil(count_res / per_page) if per_page else 1
 
     # 6. لیست کاربران (واکشی از سرویس تحلیل)
     users_page = request.args.get('u_page', 1, type=int)
@@ -104,27 +109,62 @@ def dashboard():
     )
 
 # ==========================================
-# 📈 SYSTEM MONITORING & LOGS
+# 📈 SYSTEM MONITORING & LOGS (Real-time SSE)
 # ==========================================
 
-@admin_bp.route('/api/admin/logs')
-def fetch_system_logs():
+@admin_bp.route('/api/admin/logs/stream/<log_type>')
+def stream_logs_sse(log_type):
     """
-    دریافت لاگ‌های سیستم برای نمایش در ترمینالِ زندهِ داشبورد
+    استریم زنده (Live Stream) لاگ‌ها با استفاده از معماری Server-Sent Events.
+    مانند دستور tail -f در لینوکس عمل می‌کند.
     """
-    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
-    
-    log_type = request.args.get('type', 'web') # 'web', 'bot', or 'worker'
-    lines = request.args.get('lines', 200, type=int)
-    
-    # واکشی امن لاگ‌ها از ماژول تحلیلی
-    logs_content = admin_analytics.get_system_logs(log_type=log_type, lines=lines)
-    
-    return jsonify({
-        'status': 'success', 
-        'type': log_type,
-        'logs': logs_content
+    if not is_admin(): return "Unauthorized", 403
+
+    def generate():
+        log_files = {
+            'web': 'web.log', 
+            'bot': 'bot.log', 
+            'worker': 'worker.log'
+        }
+        filename = log_files.get(log_type, 'web.log')
+        # محاسبه مسیر مطلق فایل لاگ (مشابه core/logger.py)
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        path = os.path.join(base_dir, 'logs', filename)
+        
+        if not os.path.exists(path):
+            yield f"data: [SYSTEM] Waiting for {filename} to be created...\n\n"
+            # منتظر می‌مانیم تا فایل ساخته شود
+            while not os.path.exists(path):
+                time.sleep(2)
+            yield f"data: [SYSTEM] File {filename} created. Starting stream...\n\n"
+
+        with open(path, 'r', encoding='utf-8') as f:
+            # 1. خواندن ۱۰۰ خط آخر (Historical Context)
+            initial_lines = deque(f, maxlen=100)
+            for line in initial_lines:
+                # حذف کاراکترهای خطرناک برای امنیت SSE
+                safe_line = line.strip().replace('\n', ' ')
+                if safe_line:
+                    yield f"data: {safe_line}\n\n"
+            
+            # 2. رفتن به حالت انتظار برای خطوط جدید (Real-time Streaming)
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(0.5) # نیم ثانیه وقفه برای جلوگیری از مصرف CPU
+                    continue
+                
+                safe_line = line.strip().replace('\n', ' ')
+                if safe_line:
+                    yield f"data: {safe_line}\n\n"
+
+    # تنظیم هدرها برای جلوگیری از بافرینگ در Nginx و مرورگر
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no', 
+        'Connection': 'keep-alive'
     })
+
 
 # ==========================================
 # 👥 USER MANAGEMENT & ANALYTICS APIs
@@ -132,7 +172,6 @@ def fetch_system_logs():
 
 @admin_bp.route('/api/admin/users/update_status', methods=['POST'])
 def update_user_status():
-    """تغییر نقش (User/Pro/Admin) یا مسدودسازی (Ban) کاربر"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     data = request.json
     
@@ -151,12 +190,11 @@ def update_user_status():
 
 @admin_bp.route('/api/admin/users/broadcast', methods=['POST'])
 def broadcast_to_users():
-    """ارسال پیام گروهی به کاربران (انتقال به Background Task)"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     data = request.json
     
     message_text = data.get('message')
-    selection_type = data.get('type', 'all') # 'all' or 'specific'
+    selection_type = data.get('type', 'all') 
     specific_ids = data.get('user_ids', [])
     
     if not message_text:
@@ -167,7 +205,6 @@ def broadcast_to_users():
     if not target_telegram_ids:
         return jsonify({'status': 'error', 'message': 'No eligible users found'})
 
-    # فراخوانی Task پس‌زمینه برای جلوگیری از بلاک شدن سرور
     try:
         from core.tasks import send_bulk_message_task
         send_bulk_message_task(target_telegram_ids, message_text)
@@ -199,11 +236,9 @@ def bulk_broadcast():
 
     db = get_db()
     
-    # 1. دریافت اطلاعات کانال
     channel_info = db.execute("SELECT caption_template FROM channels WHERE chat_id = ?", (channel_id,)).fetchone()
     channel_specific_template = channel_info['caption_template'] if channel_info else None
     
-    # 2. دریافت تنظیمات پیش‌فرض
     settings = db.execute("SELECT default_caption FROM settings WHERE id = 1").fetchone()
     global_default = settings['default_caption'] if settings else "{title} - {artist}"
 
@@ -222,7 +257,6 @@ def bulk_broadcast():
     success_count = 0
     
     for track in tracks_to_send:
-        # اولویت‌بندی کپشن
         if manual_caption and manual_caption.strip():
             base_template = manual_caption
         elif channel_specific_template and channel_specific_template.strip():
