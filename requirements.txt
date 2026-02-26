@@ -9,3 +9,7 @@ gevent
 huey
 requests
 spotipy
+mutagen
+Pillow
+certifi
+aiohttp
