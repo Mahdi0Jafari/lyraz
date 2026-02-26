@@ -1,20 +1,12 @@
 # app.py
 import os
-import logging
 import sys
 import signal
 from core import create_app 
+from core.logger import setup_logger
 
-# تنظیمات لاگینگ با چگالی اطلاعات بالا (IQ 170+ Logging)
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - [%(levelname)s] - WEB_HUB - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-logger = logging.getLogger(__name__)
+# 🔥 اتصال به سیستم لاگینگ متمرکز (ذخیره در web.log)
+logger = setup_logger('WEB_HUB', 'web.log')
 
 # ایجاد اپلیکیشن با ساختار فکتوری
 app = create_app()

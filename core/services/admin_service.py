@@ -1,14 +1,16 @@
 # core/services/admin_service.py
 
+import os
 import logging
+from collections import deque
 from core.models import get_db
 
 logger = logging.getLogger(__name__)
 
 class AdminAnalyticsService:
     """
-    مغز متفکر تحلیل اکوسیستم کاربران.
-    این کلاس تمام کوئری‌های پیچیده (Join های سنگین) را از روت‌ها مخفی می‌کند.
+    مغز متفکر تحلیل اکوسیستم کاربران و سیستم مانیتورینگ متمرکز.
+    این کلاس تمام کوئری‌های پیچیده (Join های سنگین) و I/O های سیستم را از روت‌ها مخفی می‌کند.
     """
     def __init__(self):
         # بررسی اسکیما در اینجا (زمان Import) انجام نمی‌شود تا خطای Application Context نگیریم.
@@ -37,6 +39,39 @@ class AdminAnalyticsService:
         
         # پس از یک بار بررسی موفق، فلگ را تغییر می‌دهیم تا کوئری‌های اضافی به دیتابیس زده نشود
         self._schema_checked = True
+
+    # ==========================================
+    # 📊 SYSTEM LOGGING ENGINE
+    # ==========================================
+    
+    def get_system_logs(self, log_type='web', lines=150):
+        """
+        خواندن بهینه‌ی انتهای فایل‌های لاگ تولید شده توسط کانتینرهای داکر.
+        استفاده از deque برای جلوگیری از بارگذاری فایل‌های حجیم در حافظه رم.
+        """
+        log_files = {
+            'web': 'web.log',
+            'bot': 'bot.log',
+            'worker': 'worker.log'
+        }
+        
+        filename = log_files.get(log_type, 'web.log')
+        path = os.path.join(os.getcwd(), 'logs', filename)
+        
+        if not os.path.exists(path):
+            return f"⚠️ System Initializing... Log file [{filename}] is empty or has not been created yet."
+            
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                last_lines = deque(f, maxlen=lines)
+                return "".join(last_lines)
+        except Exception as e:
+            logger.error(f"Error reading log file {path}: {e}")
+            return f"❌ Critical Error reading log file: {str(e)}"
+
+    # ==========================================
+    # 👥 USER ANALYTICS ENGINE
+    # ==========================================
 
     def get_dashboard_summary(self):
         """محاسبه آمار حیاتی (Hero Stats) برای هدر داشبورد"""

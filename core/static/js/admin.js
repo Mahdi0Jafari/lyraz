@@ -3,8 +3,8 @@ let isBulkMode = false;
 
 // --- 1. TABS SYSTEM ---
 function switchTab(tabName) {
-    // 🔥 تب 'users' به آرایه اضافه شد تا توسط سیستم شناخته شود
-    const tabs = ['library', 'automation', 'channels', 'devices', 'users'];
+    // 🔥 تب 'logs' به آرایه اضافه شد تا توسط سیستم شناخته شود
+    const tabs = ['library', 'automation', 'channels', 'devices', 'users', 'logs'];
     
     // Hide all tabs
     tabs.forEach(t => {
@@ -27,7 +27,8 @@ function switchTab(tabName) {
         'automation': 'Automation Rules', 
         'channels': 'Channel Manager',
         'devices': 'Device Manager',
-        'users': 'Intelligence & Users'
+        'users': 'Intelligence & Users',
+        'logs': 'System Telemetry' // 🔥 عنوان تب لاگ‌ها
     };
     const pageTitle = document.getElementById('page-title');
     if(pageTitle && titles[tabName]) {

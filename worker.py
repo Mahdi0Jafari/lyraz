@@ -1,6 +1,4 @@
 # worker.py
-
-import logging
 import sys
 import os
 
@@ -9,21 +7,16 @@ sys.path.append(os.getcwd())
 
 from huey.consumer import Consumer
 from core.tasks import huey
+from core.logger import setup_logger
 
-# تنظیمات لاگینگ (نمایش در لاگ‌های داکر)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [WORKER] - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-logger = logging.getLogger(__name__)
+# 🔥 اتصال به سیستم لاگینگ متمرکز (ذخیره در worker.log)
+logger = setup_logger('WORKER', 'worker.log')
 
 if __name__ == "__main__":
-    print("\n" + "="*40)
-    print("👷 Lyraz WORKER SERVICE INITIALIZED")
-    print("🚀 Listening for tasks from: core.tasks")
-    print("="*40 + "\n")
+    logger.info("\n" + "="*40)
+    logger.info("👷 Lyraz WORKER SERVICE INITIALIZED")
+    logger.info("🚀 Listening for tasks from: core.tasks")
+    logger.info("="*40 + "\n")
 
     try:
         # تنظیمات مصرف‌کننده (Consumer)
@@ -36,6 +29,6 @@ if __name__ == "__main__":
         consumer.run()
         
     except KeyboardInterrupt:
-        print("🛑 Worker Stopped manually.")
+        logger.warning("🛑 Worker Stopped manually.")
     except Exception as e:
         logger.error(f"💀 Worker Crashed: {e}", exc_info=True)

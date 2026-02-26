@@ -1,0 +1,151 @@
+<div class="flex flex-col h-[calc(100vh-140px)] w-full">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4 shrink-0 glass-panel p-3 rounded-2xl">
+        <div class="flex gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5 w-full md:w-auto">
+            <button onclick="changeLogSource('web', this)" class="log-tab-btn flex-1 md:flex-none active px-5 py-2 bg-white/10 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm">
+                <span class="material-symbols-outlined text-[16px] text-blue-400">language</span> Web Hub
+            </button>
+            <button onclick="changeLogSource('bot', this)" class="log-tab-btn flex-1 md:flex-none px-5 py-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[16px] text-green-400">smart_toy</span> Bot Engine
+            </button>
+            <button onclick="changeLogSource('worker', this)" class="log-tab-btn flex-1 md:flex-none px-5 py-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[16px] text-yellow-400">engineering</span> Worker
+            </button>
+        </div>
+        
+        <div class="flex items-center gap-4 w-full md:w-auto justify-end">
+            <div class="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-xl border border-white/5">
+                <div class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="auto-scroll-toggle" class="sr-only peer" checked>
+                    <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                </div>
+                <span class="text-xs text-gray-400 font-medium select-none">Auto-Scroll</span>
+            </div>
+            
+            <button onclick="fetchLogs(true)" class="size-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-black transition-colors shadow-[0_0_15px_rgba(13,242,51,0.15)]">
+                <span class="material-symbols-outlined text-[20px]" id="refresh-icon">refresh</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="flex-1 glass-panel rounded-2xl border border-white/10 relative overflow-hidden flex flex-col bg-[#050505] shadow-2xl">
+        <div class="h-10 bg-[#121212] border-b border-white/5 flex items-center px-4 justify-between shrink-0">
+            <div class="flex items-center gap-2">
+                <div class="size-3 rounded-full bg-red-500/80 border border-red-500"></div>
+                <div class="size-3 rounded-full bg-yellow-500/80 border border-yellow-500"></div>
+                <div class="size-3 rounded-full bg-green-500/80 border border-green-500"></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="size-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_#0df233]"></span>
+                <span class="text-[10px] font-mono text-gray-400 tracking-widest uppercase" id="log-terminal-title">LIVE / WEB HUB</span>
+            </div>
+            <div class="w-16"></div> </div>
+        
+        <pre id="terminal-output" class="flex-1 overflow-y-auto p-5 font-mono text-[12px] leading-relaxed text-gray-300 custom-scroll whitespace-pre-wrap break-words selection:bg-primary/30 select-text"></pre>
+    </div>
+</div>
+
+<style>
+    /* استایل اختصاصی اسکرول‌بار ترمینال */
+    #terminal-output::-webkit-scrollbar { width: 8px; }
+    #terminal-output::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+    #terminal-output::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; border: 2px solid #050505; }
+    #terminal-output::-webkit-scrollbar-thumb:hover { background: rgba(13, 242, 51, 0.5); }
+</style>
+
+<script>
+    let currentLogSource = 'web';
+    let logInterval = null;
+    let isFetching = false;
+
+    const terminalTitleMap = {
+        'web': 'WEB HUB (GUNICORN)',
+        'bot': 'TELEGRAM BOT ENGINE',
+        'worker': 'HUEY BACKGROUND WORKER'
+    };
+
+    function changeLogSource(source, btnEl) {
+        currentLogSource = source;
+        document.getElementById('log-terminal-title').innerText = `LIVE / ${terminalTitleMap[source]}`;
+        
+        // آپدیت ظاهر تب‌ها
+        document.querySelectorAll('.log-tab-btn').forEach(el => {
+            el.classList.remove('bg-white/10', 'text-white', 'shadow-sm');
+            el.classList.add('text-gray-400');
+        });
+        btnEl.classList.remove('text-gray-400');
+        btnEl.classList.add('bg-white/10', 'text-white', 'shadow-sm');
+        
+        // پاک کردن موقت صفحه برای القای حس بارگذاری
+        document.getElementById('terminal-output').innerHTML = '<span class="text-gray-600">Connecting to stream...</span>';
+        
+        fetchLogs(true);
+    }
+
+    function formatLogColors(text) {
+        // موتور پردازش رنگ (Regex Engine)
+        if (!text) return '<span class="text-gray-600">No logs available.</span>';
+        
+        return text
+            .replace(/</g, "&lt;").replace(/>/g, "&gt;") // جلوگیری از XSS
+            .replace(/\[ERROR\]/g, '<span class="text-red-500 font-extrabold bg-red-500/10 px-1 rounded">[ERROR]</span>')
+            .replace(/\[WARNING\]/g, '<span class="text-yellow-400 font-bold bg-yellow-400/10 px-1 rounded">[WARNING]</span>')
+            .replace(/\[INFO\]/g, '<span class="text-blue-400 font-bold">[INFO]</span>')
+            .replace(/(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})/g, '<span class="text-gray-500">$1</span>') // Timestamp
+            .replace(/Exception|Traceback|Error:/gi, '<span class="text-red-400 underline decoration-red-500/50 decoration-dashed">$&</span>')
+            .replace(/(['"])(.*?)\1/g, '<span class="text-green-300">$&</span>'); // Strings
+    }
+
+    async function fetchLogs(manual = false) {
+        if (isFetching) return;
+        isFetching = true;
+        
+        const refreshIcon = document.getElementById('refresh-icon');
+        if (manual) refreshIcon.classList.add('animate-spin');
+
+        try {
+            const res = await fetch(`/api/admin/logs?type=${currentLogSource}&lines=300`);
+            const data = await res.json();
+            
+            const terminal = document.getElementById('terminal-output');
+            
+            if (data.status === 'success') {
+                terminal.innerHTML = formatLogColors(data.logs);
+                
+                // هندلینگ اسکرول خودکار
+                if (document.getElementById('auto-scroll-toggle').checked) {
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+            } else {
+                terminal.innerHTML = `<span class="text-red-500">Failed to load logs: ${data.message || 'Unknown error'}</span>`;
+            }
+        } catch (e) {
+            console.error("Log fetch error", e);
+        } finally {
+            isFetching = false;
+            if (manual) setTimeout(() => refreshIcon.classList.remove('animate-spin'), 500);
+        }
+    }
+
+    // اتصال به سیستم تب‌های اصلی پنل
+    // منتظر می‌مانیم تا DOM و اسکریپت‌های اصلی لود شوند
+    document.addEventListener('DOMContentLoaded', () => {
+        const originalSwitchTab = window.switchTab;
+        
+        if (typeof originalSwitchTab === 'function') {
+            window.switchTab = function(tabName) {
+                originalSwitchTab(tabName);
+                
+                // کنترل هوشمند مصرف منابع: فقط وقتی تب لاگ باز است، رفرش انجام شود
+                if (tabName === 'logs') {
+                    fetchLogs(true);
+                    if (!logInterval) logInterval = setInterval(() => fetchLogs(false), 3000); 
+                } else {
+                    if (logInterval) {
+                        clearInterval(logInterval);
+                        logInterval = null;
+                    }
+                }
+            };
+        }
+    });
+</script>

@@ -131,6 +131,11 @@
                 <span class="material-symbols-outlined icon text-[24px] group-hover:text-white transition-colors">hub</span>
                 <span class="hidden lg:block text-sm font-medium">Channel Rules</span>
             </button>
+
+            <button onclick="switchTab('logs')" id="nav-logs" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <span class="material-symbols-outlined icon text-[24px] group-hover:text-white transition-colors">terminal</span>
+                <span class="hidden lg:block text-sm font-medium">System Logs</span>
+            </button>
         </nav>
 
         <div class="p-4 border-t border-white/5">
@@ -424,6 +429,10 @@
                     </div>
                     {% endfor %}
                 </div>
+            </div>
+
+            <div id="tab-logs" class="hidden animate-in fade-in duration-300 h-full">
+                {% include 'admin/components/logs_tab.html' %}
             </div>
 
         </div>

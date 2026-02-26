@@ -1,22 +1,18 @@
 # bot_runner.py
-import logging
 import sys
 import asyncio
 from core.services.bot import run_bot_service
+from core.logger import setup_logger
 
-# تنظیمات لاگ اختصاصی ربات
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [BOT_CONTAINER] - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# 🔥 اتصال به سیستم لاگینگ متمرکز (ذخیره در bot.log)
+logger = setup_logger('BOT_SERVICE', 'bot.log')
 
 if __name__ == "__main__":
-    print("🚀 Starting Dedicated Bot Container...")
+    logger.info("🚀 Starting Dedicated Bot Container...")
     try:
         # اجرای لوپ اصلی ربات
         run_bot_service()
     except KeyboardInterrupt:
-        print("🛑 Bot Service Stopped by User.")
+        logger.warning("🛑 Bot Service Stopped by User.")
     except Exception as e:
-        print(f"💀 Bot Service Crashed: {e}")
+        logger.error(f"💀 Bot Service Crashed: {e}", exc_info=True)
