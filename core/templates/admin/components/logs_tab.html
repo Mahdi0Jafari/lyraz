@@ -21,7 +21,7 @@
                 <span class="text-xs text-gray-400 font-medium select-none">Auto-Scroll</span>
             </div>
             
-            <button onclick="fetchLogs(true)" class="size-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-black transition-colors shadow-[0_0_15px_rgba(13,242,51,0.15)]">
+            <button onclick="manualRefresh()" class="size-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-black transition-colors shadow-[0_0_15px_rgba(13,242,51,0.15)]" title="Reconnect Stream">
                 <span class="material-symbols-outlined text-[20px]" id="refresh-icon">refresh</span>
             </button>
         </div>
@@ -50,12 +50,20 @@
     #terminal-output::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
     #terminal-output::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; border: 2px solid #050505; }
     #terminal-output::-webkit-scrollbar-thumb:hover { background: rgba(13, 242, 51, 0.5); }
+    
+    .log-line {
+        padding: 2px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+    .log-line:hover {
+        background-color: rgba(255,255,255,0.02);
+    }
 </style>
 
 <script>
     let currentLogSource = 'web';
-    let logInterval = null;
-    let isFetching = false;
+    let logEventSource = null;
+    const MAX_LOG_LINES = 500; // جلوگیری از انفجار حافظه مرورگر
 
     const terminalTitleMap = {
         'web': 'WEB HUB (GUNICORN)',
@@ -75,16 +83,13 @@
         btnEl.classList.remove('text-gray-400');
         btnEl.classList.add('bg-white/10', 'text-white', 'shadow-sm');
         
-        // پاک کردن موقت صفحه برای القای حس بارگذاری
-        document.getElementById('terminal-output').innerHTML = '<span class="text-gray-600">Connecting to stream...</span>';
-        
-        fetchLogs(true);
+        startLogStream();
     }
 
     function formatLogColors(text) {
-        // موتور پردازش رنگ (Regex Engine)
-        if (!text) return '<span class="text-gray-600">No logs available.</span>';
+        if (!text) return '';
         
+        // موتور پردازش رنگ (Regex Engine)
         return text
             .replace(/</g, "&lt;").replace(/>/g, "&gt;") // جلوگیری از XSS
             .replace(/\[ERROR\]/g, '<span class="text-red-500 font-extrabold bg-red-500/10 px-1 rounded">[ERROR]</span>')
@@ -95,39 +100,58 @@
             .replace(/(['"])(.*?)\1/g, '<span class="text-green-300">$&</span>'); // Strings
     }
 
-    async function fetchLogs(manual = false) {
-        if (isFetching) return;
-        isFetching = true;
+    function startLogStream() {
+        const terminal = document.getElementById('terminal-output');
         
-        const refreshIcon = document.getElementById('refresh-icon');
-        if (manual) refreshIcon.classList.add('animate-spin');
-
-        try {
-            const res = await fetch(`/api/admin/logs?type=${currentLogSource}&lines=300`);
-            const data = await res.json();
-            
-            const terminal = document.getElementById('terminal-output');
-            
-            if (data.status === 'success') {
-                terminal.innerHTML = formatLogColors(data.logs);
-                
-                // هندلینگ اسکرول خودکار
-                if (document.getElementById('auto-scroll-toggle').checked) {
-                    terminal.scrollTop = terminal.scrollHeight;
-                }
-            } else {
-                terminal.innerHTML = `<span class="text-red-500">Failed to load logs: ${data.message || 'Unknown error'}</span>`;
-            }
-        } catch (e) {
-            console.error("Log fetch error", e);
-        } finally {
-            isFetching = false;
-            if (manual) setTimeout(() => refreshIcon.classList.remove('animate-spin'), 500);
+        // بستن اتصال قبلی در صورت وجود
+        if (logEventSource) {
+            logEventSource.close();
+            logEventSource = null;
         }
+
+        terminal.innerHTML = `<div class="text-primary/50 italic mb-2">[SYSTEM] Establishing secure SSE connection to ${currentLogSource} stream...</div>`;
+        
+        // ایجاد اتصال زنده جدید (SSE)
+        logEventSource = new EventSource(`/api/admin/logs/stream/${currentLogSource}`);
+
+        logEventSource.onmessage = function(event) {
+            if (!event.data) return;
+
+            // ساخت یک اِلمان جدید برای هر خط لاگ
+            const lineEl = document.createElement('div');
+            lineEl.className = 'log-line';
+            lineEl.innerHTML = formatLogColors(event.data);
+            
+            terminal.appendChild(lineEl);
+
+            // مدیریت اسکرول خودکار
+            if (document.getElementById('auto-scroll-toggle').checked) {
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            // الگوریتم هرس (Pruning) برای حفظ پرفورمنس مرورگر
+            while (terminal.childNodes.length > MAX_LOG_LINES) {
+                terminal.removeChild(terminal.firstChild);
+            }
+        };
+
+        logEventSource.onerror = function() {
+            const errEl = document.createElement('div');
+            errEl.className = 'text-red-500 italic mt-2';
+            errEl.innerText = "[SYSTEM] Connection lost. Reconnecting...";
+            terminal.appendChild(errEl);
+            if (document.getElementById('auto-scroll-toggle').checked) terminal.scrollTop = terminal.scrollHeight;
+        };
+    }
+
+    function manualRefresh() {
+        const icon = document.getElementById('refresh-icon');
+        icon.classList.add('animate-spin');
+        startLogStream();
+        setTimeout(() => icon.classList.remove('animate-spin'), 1000);
     }
 
     // اتصال به سیستم تب‌های اصلی پنل
-    // منتظر می‌مانیم تا DOM و اسکریپت‌های اصلی لود شوند
     document.addEventListener('DOMContentLoaded', () => {
         const originalSwitchTab = window.switchTab;
         
@@ -135,17 +159,22 @@
             window.switchTab = function(tabName) {
                 originalSwitchTab(tabName);
                 
-                // کنترل هوشمند مصرف منابع: فقط وقتی تب لاگ باز است، رفرش انجام شود
+                // کنترل هوشمند سوکت: فقط وقتی تب لاگ باز است، استریم برقرار باشد
                 if (tabName === 'logs') {
-                    fetchLogs(true);
-                    if (!logInterval) logInterval = setInterval(() => fetchLogs(false), 3000); 
+                    startLogStream();
                 } else {
-                    if (logInterval) {
-                        clearInterval(logInterval);
-                        logInterval = null;
+                    if (logEventSource) {
+                        logEventSource.close();
+                        logEventSource = null;
                     }
                 }
             };
+            
+            // اگر کاربر مستقیماً با آدرس /admin?active_tab=logs وارد شد، استریم را فعال کن
+            const urlParams = new URLSearchParams(window.location.search);
+            if(urlParams.get('active_tab') === 'logs') {
+                startLogStream();
+            }
         }
     });
 </script>
