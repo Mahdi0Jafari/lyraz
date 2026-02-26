@@ -29,7 +29,6 @@ signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
 
 
-
 if __name__ == '__main__':
     # این بخش فقط در حالت توسعه (Development) اجرا می‌شود
     logger.warning("🛠 Running in DEVELOPMENT mode (Flask Server).")
