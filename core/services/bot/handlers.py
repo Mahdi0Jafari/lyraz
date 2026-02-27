@@ -278,7 +278,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_username = Config.BOT_USERNAME
         await update.message.reply_text(
             f"🔎 *How to Search:*\n"
-            f"Simply type `@{bot_username} [song name]` right here in the chat, "
+            f"Simply type `@{bot_username} [song name/lyric]` right here in the chat, "
             f"or tap the button below!",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
