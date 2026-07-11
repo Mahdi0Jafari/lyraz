@@ -45,7 +45,7 @@ jobs:
             set -e
             echo "🚀 STARTING DEPLOYMENT..."
 
-            export DEPLOY_DIR="/home/ubuntu/deploy"
+            export DEPLOY_DIR="/home/pachim/lyraz"
             mkdir -p $DEPLOY_DIR/instance $DEPLOY_DIR/logs
             sudo chown -R $USER:$USER $DEPLOY_DIR
             cd $DEPLOY_DIR
