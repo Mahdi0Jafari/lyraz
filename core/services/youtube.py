@@ -126,16 +126,9 @@ class YouTubeService:
             logger.error(f"[-] Mutagen Stitching Error: {e}")
 
 
-    # 🔥 پارامتر metadata اضافه شد تا بعد از دانلود، تزریق انجام شود
     async def download(self, video_id, quality=None, metadata=None):
-        link = f"https://music.youtube.com/watch?v={video_id}"
-        output_template = os.path.join(self.download_dir, '%(id)s.%(ext)s')
-        final_path = os.path.join(self.download_dir, f"{video_id}.mp3")
-
-        # تعیین کیفیت نهایی: اگر به تابع پاس داده شده بود همان، وگرنه مقدار پیش‌فرض کانفیگ
         target_quality = str(quality) if quality else str(Config.AUDIO_QUALITY)
-        
-        logger.info(f"[*] Downloading: {link} | Quality: {target_quality}kbps")
+        final_path = os.path.join(self.download_dir, f"{video_id}.mp3")
 
         # اگر فایل از قبل بود، فقط متادیتا را دوباره چک/تزریق کن و برگردان
         if os.path.exists(final_path):
@@ -144,68 +137,59 @@ class YouTubeService:
                 self.apply_metadata_to_file(final_path, metadata)
             return final_path
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': output_template,
-            'quiet': True,
-            'no_warnings': True,
-            'ignoreerrors': True, # جلوگیری از کرش اگر فرمت نبود
-            'nocheckcertificate': True,
-            'geo_bypass': True,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'ios', 'web_creator', 'mweb', 'default']
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-            },
-            'postprocessors': [
-                {'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                # تزریق متغیر کیفیت به موتور FFmpeg
-                'preferredquality': target_quality, 
-                },
-                {'key': 'FFmpegMetadata','add_metadata': True},
-            ],
-        }
+        # ۱. آماده‌سازی منابع دانلود (لینک مستقیم یوتیوب -> جستجوی ساندکلاد -> جستجوی یوتیوب)
+        search_query = f"{metadata.get('artist', '')} {metadata.get('title', '')}".strip() if metadata else ""
+        sources = [f"https://www.youtube.com/watch?v={video_id}"]
+        if search_query and search_query != "Unknown Artist Unknown Track":
+            sources.append(f"scsearch:{search_query}")
+            sources.append(f"ytsearch:{search_query}")
 
-        # اعمال مسیر ffmpeg
-        if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
-            ydl_opts['ffmpeg_location'] = self.ffmpeg_path
+        logger.info(f"[*] Starting Multi-Source Download for [{video_id}] | Quality: {target_quality}kbps")
 
-        # لود کردن کوکی از فایل (حیاتی برای رفع ارور Sign in)
-        if os.path.exists(Config.YT_COOKIES_PATH):
-            ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
-            logger.info(f"🍪 Cookies loaded: {Config.YT_COOKIES_PATH}")
-        else:
-            logger.warning("⚠️ No cookies.txt found! YouTube might block this.")
+        for source in sources:
+            output_template = os.path.join(self.download_dir, f"{video_id}.%(ext)s")
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': output_template,
+                'quiet': True,
+                'no_warnings': True,
+                'ignoreerrors': True,
+                'nocheckcertificate': True,
+                'geo_bypass': True,
+                'postprocessors': [
+                    {
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': target_quality,
+                    },
+                    {'key': 'FFmpegMetadata', 'add_metadata': True},
+                ],
+            }
 
-        try:
-            def run_download():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(link, download=True)
-                    # رفع باگ NoneType: اگر دانلود شکست خورد، None برگردان
-                    if not info:
-                        return None
-                    return info.get('id')
+            if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
+                ydl_opts['ffmpeg_location'] = self.ffmpeg_path
 
-            downloaded_id = await asyncio.to_thread(run_download)
-            
-            # اگر دانلود موفق بود، متادیتای غنی (کاور + لیریک) را به آن می‌دوزیم
-            if downloaded_id and os.path.exists(final_path):
-                logger.info(f"[+] Success DL: {final_path}")
-                if metadata:
-                    self.apply_metadata_to_file(final_path, metadata)
-                return final_path
-            
-            logger.error("[-] Download failed internally (Check cookies)")
-            return None
+            # لود کردن کوکی‌ها برای یوتیوب
+            if os.path.exists(Config.YT_COOKIES_PATH) and not source.startswith('scsearch'):
+                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
 
-        except Exception as e:
-            logger.error(f"YT Critical Error: {e}")
-            return None
+            try:
+                def run_dl(src=source, opts=ydl_opts):
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        return ydl.extract_info(src, download=True)
+
+                info = await asyncio.to_thread(run_dl)
+                if info and os.path.exists(final_path):
+                    logger.info(f"[+] Successfully downloaded via [{source}]: {final_path}")
+                    if metadata:
+                        self.apply_metadata_to_file(final_path, metadata)
+                    return final_path
+            except Exception as e:
+                logger.warning(f"[-] Source failed [{source}]: {e}")
+                continue
+
+        logger.error(f"[-] All download sources exhausted for: {video_id}")
+        return None
 
     def cleanup(self, file_path):
         try:
