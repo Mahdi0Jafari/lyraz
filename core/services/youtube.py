@@ -115,6 +115,15 @@ class YouTubeService:
             'ignoreerrors': True, # جلوگیری از کرش اگر فرمت نبود
             'nocheckcertificate': True,
             'geo_bypass': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web_creator', 'mweb', 'default']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
             'postprocessors': [
                 {'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
