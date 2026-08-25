@@ -318,7 +318,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         vid = results[0]['videoId']
         title = results[0]['title']
-        artist = results[0]['artists'][0]['name'] if results[0].get('artists') else "Unknown"
+        raw_artist = results[0]['artists'][0]['name'] if results[0].get('artists') else "Unknown"
+        artist = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip() or "Unknown"
         
         await dispatch_to_huey(update, context, vid, title, artist, status_msg)
         
@@ -450,10 +451,12 @@ async def inline_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
             vid = song.get('videoId')
             cached = get_track_by_youtube_id(vid)
             prefix = "✅ " if cached else ""
-            content = InputTextMessageContent(f"/dl {vid} | {song.get('title')} :: {song.get('artists', [{}])[0].get('name')}")
+            raw_art = song.get('artists', [{}])[0].get('name', 'Unknown')
+            clean_art = re.sub(r'\s*-\s*Topic$', '', raw_art, flags=re.IGNORECASE).strip() or "Unknown"
+            content = InputTextMessageContent(f"/dl {vid} | {song.get('title')} :: {clean_art}")
             articles.append(InlineQueryResultArticle(
                 id=str(uuid.uuid4()), title=f"{prefix}{song.get('title')}",
-                description=f"{song.get('artists', [{}])[0].get('name')}",
+                description=f"{clean_art}",
                 thumbnail_url=song.get('thumbnails', [{}])[-1].get('url'),
                 input_message_content=content
             ))

@@ -21,14 +21,33 @@ class MetadataOrchestrator:
             'User-Agent': 'LyrazMusicPlayer/5.0 (Enterprise Metadata Engine)'
         })
 
-    def _clean_string(self, text):
+    def clean_artist(self, text):
+        """حذف عباراتی نظیر - Topic و پرانتزهای اضافی از نام خواننده"""
+        if not text:
+            return ""
+        # حذف پسوند متداول چنل‌های اتوماتیک یوتیوب (مانند Hiphopologist - Topic)
+        artist = re.sub(r'\s*-\s*Topic$', '', text, flags=re.IGNORECASE)
+        artist = re.sub(r'[\(\[].*?[\)\]]', '', artist).strip()
+        return artist.strip()
+
+    def clean_title(self, text):
         """حذف عبارات اضافی مثل (Official Video) یا [Lyrics] برای جستجوی دقیق‌تر"""
-        if not text: return ""
-        return re.sub(r'[\(\[].*?[\)\]]', '', text).strip()
+        if not text:
+            return ""
+        patterns = [
+            r'\s*[\(\[]\s*(official\s*(music\s*)?video|official\s*audio|lyric\s*video|audio|video|lyrics|visualizer|remastered|hq|hd|4k)\s*[\)\]]',
+            r'\s*[\(\[]\s*(feat|ft|prod|prod\s*by)\.?\s+.*?[\)\]]',
+            r'\s*[\(\[].*?[\)\]]'
+        ]
+        cleaned = text
+        for p in patterns:
+            cleaned = re.sub(p, '', cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
 
     def _similarity(self, a, b):
-        """محاسبه شباهت دو رشته برای پیدا کردن دقیق‌ترین لیریک"""
-        if not a or not b: return 0.0
+        """محاسبه شباهت دو رشته برای پیدا کردن دقیق‌ترین تطابق"""
+        if not a or not b:
+            return 0.0
         return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
     def _optimize_cover(self, image_bytes):
@@ -54,15 +73,23 @@ class MetadataOrchestrator:
             return None
 
     def fetch_itunes_data(self, artist, title):
-        """استخراج شناسنامه رسمی آهنگ و کاور باکیفیت از اپل با بررسی دقیق شباهت"""
-        clean_artist = self._clean_string(artist)
-        clean_title = self._clean_string(title)
+        """
+        استخراج شناسنامه رسمی آهنگ و کاور باکیفیت از اپل با بررسی دقیق شباهت.
+        تنها در صورتی که خواننده و عنوان هر دو تطابق بالای معتبر داشته باشند استفاده می‌شود.
+        """
+        clean_art = self.clean_artist(artist)
+        clean_tit = self.clean_title(title)
         
-        if not clean_title or clean_title.lower() in ['unknown track', 'youtube track', 'video']:
+        if not clean_tit or clean_tit.lower() in ['unknown track', 'youtube track', 'video']:
             return None
 
-        has_artist = bool(clean_artist and clean_artist.lower() not in ['unknown', 'unknown artist'])
-        query_str = f"{clean_artist} {clean_title}" if has_artist else clean_title
+        has_artist = bool(clean_art and clean_art.lower() not in ['unknown', 'unknown artist'])
+        
+        # اگر خواننده نامشخص است، هرگز از آیتونز بازنویسی نکن تا آهنگ‌های تصادفی با نام مشابه جایگزین نشوند
+        if not has_artist:
+            return None
+
+        query_str = f"{clean_art} {clean_tit}"
 
         try:
             query = urllib.parse.quote(query_str)
@@ -73,14 +100,11 @@ class MetadataOrchestrator:
                 t_name = track.get('trackName', '')
                 a_name = track.get('artistName', '')
                 
-                t_sim = self._similarity(t_name, clean_title)
-                a_sim = self._similarity(a_name, clean_artist) if has_artist else 1.0
+                t_sim = self._similarity(self.clean_title(t_name), clean_tit)
+                a_sim = self._similarity(self.clean_artist(a_name), clean_art)
                 
-                # اگر خواننده مشخص بود، باید هم نام آهنگ و هم خواننده همخوانی داشته باشند
-                if has_artist:
-                    is_match = (t_sim >= 0.55 and a_sim >= 0.40) or (t_sim >= 0.85 and a_sim >= 0.30)
-                else:
-                    is_match = (t_sim >= 0.75)
+                # تطابق سخت‌گیرانه: نام آهنگ و خواننده هر دو باید با اطمینان بالا همخوانی داشته باشند
+                is_match = (t_sim >= 0.75 and a_sim >= 0.70) or (t_sim >= 0.90 and a_sim >= 0.50)
                 
                 if is_match:
                     cover_url = track.get('artworkUrl100', '').replace('100x100bb', '600x600bb')
@@ -102,22 +126,25 @@ class MetadataOrchestrator:
 
     def fetch_lyrics(self, artist, title, duration=None):
         """جستجوی دقیق متن هماهنگ‌شده (Synced LRC) از LRCLIB"""
-        search_artist = self._clean_string(artist)
-        search_title = self._clean_string(title)
+        search_artist = self.clean_artist(artist)
+        search_title = self.clean_title(title)
         
-        queries = [f"{search_artist} {search_title}"]
-        if len(search_title) > 3: 
+        queries = []
+        if search_artist and search_artist.lower() not in ['unknown', 'unknown artist']:
+            queries.append(f"{search_artist} {search_title}")
+        if len(search_title) > 2: 
             queries.append(search_title)
 
         candidates = []
         for q in queries:
             try:
-                res = self.session.get("https://lrclib.net/api/search", params={'q': q}, timeout=10)
+                res = self.session.get("https://lrclib.net/api/search", params={'q': q}, timeout=6)
                 if res.status_code == 200:
                     results = res.json()
                     if results:
                         candidates.extend(results)
-                        if q == queries[0]: break 
+                        if q == queries[0]:
+                            break 
             except Exception as e:
                 logger.warning(f"LRCLIB Fetch Error: {e}")
                 continue 
@@ -134,11 +161,12 @@ class MetadataOrchestrator:
             if duration and time_diff > 5: 
                 continue 
 
-            t_sim = self._similarity(cand['trackName'], search_title)
-            a_sim = self._similarity(cand['artistName'], search_artist)
+            t_sim = self._similarity(self.clean_title(cand.get('trackName', '')), search_title)
+            a_sim = self._similarity(self.clean_artist(cand.get('artistName', '')), search_artist) if search_artist else 0.5
             
             score = (t_sim * 3.0) + (a_sim * 2.0)
-            if time_diff <= 2: score += 2.0
+            if time_diff <= 2:
+                score += 2.0
 
             if score > highest_score:
                 highest_score = score
@@ -154,15 +182,18 @@ class MetadataOrchestrator:
         نقطه ورود اصلی برای دریافت پکیج کامل اطلاعات آهنگ.
         یک دیکشنری تمیز، آماده برای تزریق (Injection) توسط Mutagen برمی‌گرداند.
         """
+        cleaned_artist = self.clean_artist(raw_artist) or raw_artist or 'Unknown Artist'
+        cleaned_title = raw_title or 'Unknown Track'
+
         metadata = {
-            'title': self._clean_string(raw_title) or raw_title,
-            'artist': self._clean_string(raw_artist) or raw_artist,
+            'title': cleaned_title,
+            'artist': cleaned_artist,
             'cover_bytes': None,
             'lyrics': None
         }
 
         # ۱. استخراج دیتای مرجع از آیتونز (تنها در صورت تطابق قطعی نام و خواننده)
-        itunes_data = self.fetch_itunes_data(metadata['artist'], metadata['title'])
+        itunes_data = self.fetch_itunes_data(cleaned_artist, cleaned_title)
         if itunes_data:
             metadata['title'] = itunes_data['title']
             metadata['artist'] = itunes_data['artist']

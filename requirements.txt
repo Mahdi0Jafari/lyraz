@@ -13,3 +13,4 @@ mutagen
 Pillow
 certifi
 aiohttp
+bgutil-ytdlp-pot-provider
