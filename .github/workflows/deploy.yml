@@ -33,24 +33,23 @@ jobs:
               # 3. Create instance and logs folder
               mkdir -p instance logs instance/yt_cache
               
-              # 4. Inject Secrets into .env safely (Heredoc avoids bash quote issues)
-              cat << "EOF_ENV" > .env
-SECRET_KEY=${{ secrets.SECRET_KEY }}
-BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-BOT_USERNAME=${{ secrets.BOT_USERNAME }}
-ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-BASE_URL=${{ secrets.BASE_URL }}
-DB_NAME=database.db
-STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}
-AUDIO_QUALITY=${{ secrets.AUDIO_QUALITY }}
-ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}
-MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}
-EOF_ENV
+              # 4. Inject Secrets into .env
+              echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
+              echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
+              echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
+              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}" >> .env
+              echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
+              echo "DB_NAME=database.db" >> .env
+              echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
+              echo "AUDIO_QUALITY=320" >> .env
+              echo "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}" >> .env
+              echo "MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}" >> .env
               
               # 5. Inject YouTube cookies safely
-              cat << "EOF_COOKIES" > instance/cookies.txt
-${{ secrets.YT_COOKIES }}
-EOF_COOKIES
+              cat << "  EOF_COOKIES" > instance/cookies.txt
+              ${{ secrets.YT_COOKIES }}
+              EOF_COOKIES
+              sed -i "s/^[ \t]*//" instance/cookies.txt
               chmod 644 instance/cookies.txt
               
               COMMIT_MSG="${{ github.event.head_commit.message }}"
