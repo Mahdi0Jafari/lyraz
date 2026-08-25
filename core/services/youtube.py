@@ -36,6 +36,43 @@ class YouTubeService:
             logger.error(f"YT Search Error: {e}")
             return []
 
+    def get_video_info(self, video_id):
+        """
+        دریافت مستقیم و دقیق مشخصات ویدیو/موزیک بدون سرچ اشتباه هش
+        """
+        try:
+            song = self.yt.get_song(video_id)
+            if song and 'videoDetails' in song:
+                details = song['videoDetails']
+                title = details.get('title', 'Unknown Track')
+                author = details.get('author', 'Unknown Artist')
+                return {'title': title, 'artist': author, 'videoId': video_id}
+        except Exception as e:
+            logger.warning(f"YT get_song info failed: {e}")
+
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+            }
+            if os.path.exists(Config.YT_COOKIES_PATH):
+                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                if info:
+                    title = info.get('title', 'Unknown Track')
+                    artist = info.get('artist') or info.get('uploader') or info.get('channel') or 'Unknown Artist'
+                    if ' - ' in title and artist in ['Unknown Artist', info.get('uploader'), info.get('channel')]:
+                        parts = title.split(' - ', 1)
+                        artist = parts[0].strip()
+                        title = parts[1].strip()
+                    return {'title': title, 'artist': artist, 'videoId': video_id}
+        except Exception as e:
+            logger.error(f"yt_dlp get_video_info error: {e}")
+
+        return {'title': 'YouTube Track', 'artist': 'Unknown Artist', 'videoId': video_id}
+
     def apply_metadata_to_file(self, file_path, metadata):
         """
         تزریق کاور، لیریک و مشخصات دقیق به هدر فایل MP3 با استفاده از ID3v2.
