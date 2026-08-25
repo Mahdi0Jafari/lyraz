@@ -61,38 +61,42 @@ class MetadataOrchestrator:
         if not clean_title or clean_title.lower() in ['unknown track', 'youtube track', 'video']:
             return None
 
-        search_terms = []
-        if clean_artist and clean_artist.lower() not in ['unknown', 'unknown artist']:
-            search_terms.append(f"{clean_artist} {clean_title}")
-        search_terms.append(clean_title)
+        has_artist = bool(clean_artist and clean_artist.lower() not in ['unknown', 'unknown artist'])
+        query_str = f"{clean_artist} {clean_title}" if has_artist else clean_title
 
-        for q in search_terms:
-            try:
-                query = urllib.parse.quote(q)
-                url = f"https://itunes.apple.com/search?term={query}&media=music&entity=song&limit=5"
-                res = self.session.get(url, timeout=5).json()
+        try:
+            query = urllib.parse.quote(query_str)
+            url = f"https://itunes.apple.com/search?term={query}&media=music&entity=song&limit=5"
+            res = self.session.get(url, timeout=5).json()
+            
+            for track in res.get('results', []):
+                t_name = track.get('trackName', '')
+                a_name = track.get('artistName', '')
                 
-                for track in res.get('results', []):
-                    t_name = track.get('trackName', '')
-                    a_name = track.get('artistName', '')
-                    
-                    t_sim = self._similarity(t_name, clean_title)
-                    # اگر شباهت نام آهنگ معتبر بود (حداقل ۴۵٪)
-                    if t_sim >= 0.45:
-                        cover_url = track.get('artworkUrl100', '').replace('100x100bb', '600x600bb')
-                        img_res = self.session.get(cover_url, timeout=5) if cover_url else None
-                        cover_bytes = None
-                        if img_res and img_res.status_code == 200:
-                            cover_bytes = self._optimize_cover(img_res.content)
+                t_sim = self._similarity(t_name, clean_title)
+                a_sim = self._similarity(a_name, clean_artist) if has_artist else 1.0
+                
+                # اگر خواننده مشخص بود، باید هم نام آهنگ و هم خواننده همخوانی داشته باشند
+                if has_artist:
+                    is_match = (t_sim >= 0.55 and a_sim >= 0.40) or (t_sim >= 0.85 and a_sim >= 0.30)
+                else:
+                    is_match = (t_sim >= 0.75)
+                
+                if is_match:
+                    cover_url = track.get('artworkUrl100', '').replace('100x100bb', '600x600bb')
+                    img_res = self.session.get(cover_url, timeout=5) if cover_url else None
+                    cover_bytes = None
+                    if img_res and img_res.status_code == 200:
+                        cover_bytes = self._optimize_cover(img_res.content)
 
-                        return {
-                            'artist': a_name,
-                            'title': t_name,
-                            'cover_url': cover_url,
-                            'cover_bytes': cover_bytes
-                        }
-            except Exception as e:
-                logger.warning(f"iTunes Fetch Error: {e}")
+                    return {
+                        'artist': a_name,
+                        'title': t_name,
+                        'cover_url': cover_url,
+                        'cover_bytes': cover_bytes
+                    }
+        except Exception as e:
+            logger.warning(f"iTunes Fetch Error: {e}")
 
         return None
 
@@ -145,7 +149,7 @@ class MetadataOrchestrator:
             return best_match.get('syncedLyrics') or best_match.get('plainLyrics')
         return None
 
-    def get_full_metadata(self, raw_artist, raw_title, duration=None):
+    def get_full_metadata(self, raw_artist, raw_title, duration=None, thumbnail_url=None):
         """
         نقطه ورود اصلی برای دریافت پکیج کامل اطلاعات آهنگ.
         یک دیکشنری تمیز، آماده برای تزریق (Injection) توسط Mutagen برمی‌گرداند.
@@ -157,14 +161,23 @@ class MetadataOrchestrator:
             'lyrics': None
         }
 
-        # ۱. استخراج دیتای مرجع از آیتونز
+        # ۱. استخراج دیتای مرجع از آیتونز (تنها در صورت تطابق قطعی نام و خواننده)
         itunes_data = self.fetch_itunes_data(metadata['artist'], metadata['title'])
         if itunes_data:
             metadata['title'] = itunes_data['title']
             metadata['artist'] = itunes_data['artist']
             metadata['cover_bytes'] = itunes_data['cover_bytes']
 
-        # ۲. استخراج لیریک با استفاده از نام‌های اصلاح شده
+        # ۲. در صورتی که آهنگ در آیتونز نبود، کاور باکیفیت ویدیوی اصلی را لود کن
+        if not metadata['cover_bytes'] and thumbnail_url:
+            try:
+                img_res = self.session.get(thumbnail_url, timeout=5)
+                if img_res.status_code == 200:
+                    metadata['cover_bytes'] = self._optimize_cover(img_res.content)
+            except Exception as e:
+                logger.warning(f"Thumbnail Cover Error: {e}")
+
+        # ۳. استخراج لیریک با استفاده از نام‌های واقعی
         lyrics = self.fetch_lyrics(metadata['artist'], metadata['title'], duration)
         if lyrics:
             metadata['lyrics'] = lyrics
