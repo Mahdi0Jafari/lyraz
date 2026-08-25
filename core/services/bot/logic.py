@@ -141,8 +141,8 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
     status = await update.message.reply_text(f"📥 Downloading *{title}*...", parse_mode=ParseMode.MARKDOWN)
     # await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
     
-    # Download is heavy I/O -> thread it!
-    path = await asyncio.to_thread(yt_service.download, video_id)
+    # yt_service.download is already async
+    path = await yt_service.download(video_id)
     
     if path:
         try:

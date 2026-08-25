@@ -1,0 +1,68 @@
+name: Deploy Lyraz to Production
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S bash -c '
+              # 1. Create project directory on server
+              mkdir -p /home/pachim/lyraz
+              cd /home/pachim/lyraz
+              
+              # 2. Clone or Update repository
+              if [ -d ".git" ]; then
+                git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+                git fetch origin main
+                git reset --hard origin/main
+              else
+                git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+              fi
+              
+              # 3. Inject Secrets into .env
+              echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env
+              echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" >> .env
+              echo "BOT_USERNAME=${{ secrets.BOT_USERNAME }}" >> .env
+              echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}" >> .env
+              echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env
+              echo "DB_NAME=${{ secrets.DB_NAME || 'database.db' }}" >> .env
+              echo "STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}" >> .env
+              echo "AUDIO_QUALITY=${{ secrets.AUDIO_QUALITY || '320' }}" >> .env
+              echo "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}" >> .env
+              echo "MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}" >> .env
+              
+              # 4. Create instance and logs folder to avoid host permission issues
+              mkdir -p instance logs instance/yt_cache
+              
+              # Inject YouTube cookies if secret is set
+              if [ -n "${{ secrets.YT_COOKIES }}" ]; then
+                printf "%s" "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
+                chmod 644 instance/cookies.txt
+              fi
+              
+              COMMIT_MSG="${{ github.event.head_commit.message }}"
+              if [ -f "CLEAR_DB_FLAG" ] || [[ "$COMMIT_MSG" == *"[clear-db]"* ]]; then
+                echo "Clear DB signal received! Stopping containers and wiping instance folder..."
+                docker compose down || true
+                rm -rf instance/*.db instance/queue.db* instance/yt_cache/*
+              fi
+              
+              # 5. Build and start containers with zero-downtime approach
+              docker compose up -d --build
+              
+              # 6. Clean up old unused images to save disk space
+              docker image prune -f
+              
+              docker compose ps
+            '
