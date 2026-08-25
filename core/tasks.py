@@ -134,8 +134,9 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
-        # ۱. واکشی متادیتای غنی
-        rich_metadata = metadata_service.get_full_metadata(artist, title)
+        # ۱. واکشی متادیتای غنی با کاور رزرو یوتیوب
+        yt_thumb = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg" if video_id else None
+        rich_metadata = metadata_service.get_full_metadata(artist, title, thumbnail_url=yt_thumb)
         final_title = rich_metadata['title'] if rich_metadata.get('title') else title
         final_artist = rich_metadata['artist'] if rich_metadata.get('artist') else artist
 
