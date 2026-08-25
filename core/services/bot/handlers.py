@@ -158,12 +158,12 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     status_msg = await update.message.reply_text("⏳ Processing YouTube track...")
     
     try:
-        # جستجو در پس‌زمینه برای جلوگیری از بلاک شدن سایر کاربران
-        results = await asyncio.to_thread(yt_service.search, vid)
-        title = results[0]['title'] if results else "YouTube Track"
-        artist = results[0]['artists'][0]['name'] if results and results[0].get('artists') else "Unknown"
+        # دریافت مستقیم اطلاعات ترک به جای سرچ اشتباه روی هش ویدیو
+        info = await asyncio.to_thread(yt_service.get_video_info, vid)
+        title = info.get('title', 'YouTube Track')
+        artist = info.get('artist', 'Unknown Artist')
     except:
-        title, artist = "Unknown Track", "Unknown Artist"
+        title, artist = "YouTube Track", "Unknown Artist"
 
     await dispatch_to_huey(update, context, vid, title, artist, status_msg)
 
