@@ -182,29 +182,71 @@ def audio(unique_id):
         return "Stream Failed", 500
 
 
+DEFAULT_COVER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="100%" stop-color="#09090b"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="600" rx="32" fill="url(#g)"/>
+  <circle cx="300" cy="300" r="140" fill="#27272a" opacity="0.6"/>
+  <path d="M260 210v180c0 16.5-13.5 30-30 30s-30-13.5-30-30 13.5-30 30-30c5.3 0 10.3 1.4 14.6 3.8V250l110-25v145c0 16.5-13.5 30-30 30s-30-13.5-30-30 13.5-30 30-30c5.3 0 10.3 1.4 14.6 3.8V195L260 210z" fill="#0df233"/>
+</svg>"""
+
+COVER_CACHE = {}
+
 @stream_bp.route('/cover/<unique_id>')
 def get_cover(unique_id):
     """
-    سرویس ارائه کاور. ابتدا از سرویس متادیتا کاور باکیفیت می‌خواهد.
-    اگر نبود، از عکس پیش‌فرض تلگرام (thumb_id) استفاده می‌کند.
+    سرویس هوشمند ارائه کاور مجهز به کش حافظه، هدرهای CORS و فال‌بک لوکال SVG
     """
+    if unique_id in COVER_CACHE:
+        cached_url = COVER_CACHE[unique_id]
+        if cached_url:
+            resp = redirect(cached_url)
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
+
     db = get_db()
     track = db.execute("SELECT thumb_id, title, performer FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
-    default_cover = "https://placehold.co/600x600/121212/333?text=No+Cover&font=roboto"
     
-    if not track: return redirect(default_cover)
+    if not track:
+        return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=86400'
+        })
 
-    # استفاده از سرویس مرکزی
-    itunes_data = metadata_service.fetch_itunes_data(track['performer'], track['title'])
-    if itunes_data and itunes_data.get('cover_url'):
-        return redirect(itunes_data['cover_url'])
+    # 1. کاور رسمی باکیفیت از iTunes
+    try:
+        itunes_data = metadata_service.fetch_itunes_data(track['performer'], track['title'])
+        if itunes_data and itunes_data.get('cover_url'):
+            COVER_CACHE[unique_id] = itunes_data['cover_url']
+            resp = redirect(itunes_data['cover_url'])
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
+    except Exception as e:
+        logger.warning(f"iTunes fetch cover error: {e}")
 
-    # Fallback به تامنیل یوتیوب (ذخیره شده در تلگرام)
+    # 2. Fallback به تامنیل تلگرام
     if track['thumb_id']:
-        link = get_tg_link(track['thumb_id'])
-        if link: return redirect(link)
-        
-    return redirect(default_cover)
+        try:
+            link = get_tg_link(track['thumb_id'])
+            if link:
+                COVER_CACHE[unique_id] = link
+                resp = redirect(link)
+                resp.headers['Access-Control-Allow-Origin'] = '*'
+                resp.headers['Cache-Control'] = 'public, max-age=86400'
+                return resp
+        except Exception:
+            pass
+
+    return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400'
+    })
 
 
 @stream_bp.route('/stream/lyrics/<unique_id>')
