@@ -14,7 +14,6 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
-          password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S bash -c '
               # 1. Create project directory on server
@@ -45,13 +44,6 @@ jobs:
               echo "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}" >> .env
               echo "MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}" >> .env
               
-              # 5. Inject YouTube cookies safely
-              cat << "  EOF_COOKIES" > instance/cookies.txt
-              ${{ secrets.YT_COOKIES }}
-              EOF_COOKIES
-              sed -i "s/^[ \t]*//" instance/cookies.txt
-              chmod 644 instance/cookies.txt
-              
               COMMIT_MSG="${{ github.event.head_commit.message }}"
               if [ -f "CLEAR_DB_FLAG" ] || [[ "$COMMIT_MSG" == *"[clear-db]"* ]]; then
                 echo "Clear DB signal received! Stopping containers and wiping instance folder..."
@@ -59,10 +51,10 @@ jobs:
                 rm -rf instance/*.db instance/queue.db* instance/yt_cache/*
               fi
               
-              # 6. Build and start containers
+              # 5. Build and start containers
               docker compose up -d --build
               
-              # 7. Clean up old unused images
+              # 6. Clean up old unused images
               docker image prune -f
               
               docker compose ps
