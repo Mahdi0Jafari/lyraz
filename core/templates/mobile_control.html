@@ -65,7 +65,7 @@
 
     <section class="px-6 py-6 flex flex-col items-center justify-center gap-6 shrink-0 border-b border-white/5">
         <div class="w-48 h-48 bg-surface rounded-2xl shadow-2xl overflow-hidden relative group border border-white/10 transition-all duration-500">
-            <img id="current-cover" src="https://placehold.co/400x400/222/222?text=Music" class="w-full h-full object-cover transition-opacity duration-300">
+            <img id="current-cover" src="/cover/default" class="w-full h-full object-cover transition-opacity duration-300">
         </div>
 
         <div class="text-center w-full px-4 space-y-1">
@@ -298,7 +298,7 @@
 
         // SSE Sync
         function initSSE() {
-            const eventSource = new EventSource("/events");
+            const eventSource = new EventSource(`/api/events/${SESSION_TOKEN}`);
             eventSource.onmessage = (e) => {
                 const data = JSON.parse(e.data);
                 if (data.session_token && data.session_token !== SESSION_TOKEN) return;

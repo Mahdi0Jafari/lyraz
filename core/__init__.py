@@ -61,18 +61,25 @@ def create_app():
             # ایجاد صف اختصاصی برای این کلاینت
             messages = announcer.listen()
             try:
+                # ارسال سیگنال اولیه به محض برقراری اتصال برای فلاش شدن بافر کلادفلر
+                yield ": connected\n\n"
                 while True:
-                    # دریافت پیام‌های برودکست شده (مانند دستورات ریموت یا ترک‌های جدید)
-                    msg = messages.get()
-                    yield msg
+                    try:
+                        # دریافت پیام با تایم‌اوت ۱۵ ثانیه
+                        msg = messages.get(timeout=15)
+                        yield msg
+                    except Exception:
+                        # ارسال سیگنال Keep-Alive پینگ برای جلوگیری از قطع شدن اتصال توسط کلادفلر و Nginx
+                        yield ": ping\n\n"
             except GeneratorExit:
                 # مدیریت خروج کلاینت و آزاد کردن صف در حافظه
-                pass
+                announcer.unlisten(messages)
 
         # تنظیم هدرهای استاندارد برای استریم زنده و جلوگیری از بافرینگ توسط Nginx/Cloudflare
         return Response(stream(), mimetype='text/event-stream', headers={
-            'Cache-Control': 'no-cache',
+            'Cache-Control': 'no-cache, no-transform',
             'X-Accel-Buffering': 'no',
+            'Content-Type': 'text/event-stream',
             'Connection': 'keep-alive'
         })
 

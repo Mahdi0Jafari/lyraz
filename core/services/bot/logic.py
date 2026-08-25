@@ -336,7 +336,8 @@ async def handle_broadcast(context, user, file_id, meta, session):
     # DB calls inside threaded function
     def fetch_bc_data():
         settings = get_settings()
-        target_channel_id = session.get('linked_channel_id')
+        session_dict = dict(session) if session else {}
+        target_channel_id = session_dict.get('linked_channel_id')
         channel_tmpl = None
         
         if target_channel_id:
