@@ -1,6 +1,7 @@
 # core/tasks.py
 
 import os
+import io
 import json
 import logging
 import asyncio
@@ -41,20 +42,22 @@ def notify_web_bridge(data_dict):
     except Exception as e:
         logger.error(f"Bridge notification failed: {e}")
 
-async def upload_to_telegram(local_bot, file_path, title, artist, video_id):
-    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID"""
+async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None):
+    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل"""
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
 
     try:
         with open(file_path, 'rb') as f:
             caption = f"YT: {video_id}\nTitle: {title}"
+            thumb = io.BytesIO(cover_bytes) if cover_bytes else None
             sent_msg = await local_bot.send_audio(
                 chat_id=Config.STORAGE_CHANNEL_ID,
                 audio=f,
                 title=title,
                 performer=artist,
                 caption=caption,
+                thumbnail=thumb,
                 read_timeout=300,
                 write_timeout=300
             )
@@ -148,8 +151,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
 
-        # ۳. آپلود به کانال آرشیو خاموش (Storage)
-        tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id)
+        # ۳. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل
+        tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
         if not tg_audio:
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
