@@ -210,7 +210,7 @@ def get_cover(unique_id):
             return resp
 
     db = get_db()
-    track = db.execute("SELECT thumb_id, title, performer FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+    track = db.execute("SELECT thumb_id, title, performer, youtube_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
     
     if not track:
         return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
@@ -242,6 +242,15 @@ def get_cover(unique_id):
                 return resp
         except Exception:
             pass
+
+    # 3. Fallback به تصویر مستقیم و باکیفیت ویدیوی یوتیوب
+    if track['youtube_id']:
+        yt_cover = f"https://i.ytimg.com/vi/{track['youtube_id']}/hqdefault.jpg"
+        COVER_CACHE[unique_id] = yt_cover
+        resp = redirect(yt_cover)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Cache-Control'] = 'public, max-age=86400'
+        return resp
 
     return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
         'Access-Control-Allow-Origin': '*',
