@@ -44,6 +44,10 @@ jobs:
               echo "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}" >> .env
               echo "MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}" >> .env
               
+              # 5. Inject YouTube Cookies from GitHub Secrets safely
+              echo "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
+              chmod 444 instance/cookies.txt 2>/dev/null || true
+              
               COMMIT_MSG="${{ github.event.head_commit.message }}"
               if [ -f "CLEAR_DB_FLAG" ] || [[ "$COMMIT_MSG" == *"[clear-db]"* ]]; then
                 echo "Clear DB signal received! Stopping containers and wiping instance folder..."
@@ -51,10 +55,10 @@ jobs:
                 rm -rf instance/*.db instance/queue.db* instance/yt_cache/*
               fi
               
-              # 5. Build and start containers
+              # 6. Build and start containers
               docker compose up -d --build
               
-              # 6. Clean up old unused images
+              # 7. Clean up old unused images
               docker image prune -f
               
               docker compose ps
