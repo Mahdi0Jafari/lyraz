@@ -1,9 +1,11 @@
 # core/services/youtube.py
 
 import os
+import re
 import shutil
 import asyncio
 import logging
+import requests
 import yt_dlp
 from ytmusicapi import YTMusic
 from core.config import Config
@@ -29,6 +31,13 @@ class YouTubeService:
         self.yt = YTMusic()
         self.ffmpeg_path = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg" or "/opt/homebrew/bin/ffmpeg"
 
+    def clean_artist_name(self, artist):
+        """حذف پسوند متداول - Topic از کانال‌های اتوماتیک یوتیوب"""
+        if not artist:
+            return "Unknown Artist"
+        artist = re.sub(r'\s*-\s*Topic$', '', artist, flags=re.IGNORECASE).strip()
+        return artist if artist else "Unknown Artist"
+
     def search(self, query):
         try:
             return self.yt.search(query, filter="songs", limit=10)
@@ -38,23 +47,50 @@ class YouTubeService:
 
     def get_video_info(self, video_id):
         """
-        دریافت مستقیم و دقیق مشخصات ویدیو/موزیک بدون سرچ اشتباه هش
+        دریافت مستقیم و دقیق مشخصات ویدیو/موزیک با استراتژی چندمرحله‌ای (oEmbed -> YTMusic -> yt_dlp)
         """
+        # ۱. استراتژی اول: استفاده از YouTube oEmbed (سریع‌ترین و ۱۰۰٪ بدون بلاک آی‌پی یا خطای بات)
+        try:
+            oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+            res = requests.get(oembed_url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                title = data.get('title', 'Unknown Track')
+                author = self.clean_artist_name(data.get('author_name', 'Unknown Artist'))
+                
+                # اگر نام ویدیو به صورت Artist - Title بود و نام کانال عمومی/تاپیک بود
+                if ' - ' in title and (author in ['Unknown Artist', 'YouTube Track'] or 'topic' in author.lower() or 'records' in author.lower() or 'music' in author.lower()):
+                    parts = title.split(' - ', 1)
+                    if len(parts) == 2 and len(parts[0].strip()) > 0 and len(parts[1].strip()) > 0:
+                        author = parts[0].strip()
+                        title = parts[1].strip()
+                        
+                return {'title': title, 'artist': author, 'videoId': video_id}
+        except Exception as e:
+            logger.warning(f"YouTube oEmbed failed: {e}")
+
+        # ۲. استراتژی دوم: YTMusic
         try:
             song = self.yt.get_song(video_id)
             if song and 'videoDetails' in song:
                 details = song['videoDetails']
                 title = details.get('title', 'Unknown Track')
-                author = details.get('author', 'Unknown Artist')
+                author = self.clean_artist_name(details.get('author', 'Unknown Artist'))
                 return {'title': title, 'artist': author, 'videoId': video_id}
         except Exception as e:
             logger.warning(f"YT get_song info failed: {e}")
 
+        # ۳. استراتژی سوم: yt_dlp
         try:
             ydl_opts = {
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': True,
+                'extractor_args': {
+                    'youtubepot-bgutilhttp': {
+                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                    }
+                }
             }
             if os.path.exists(Config.YT_COOKIES_PATH):
                 ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
@@ -62,7 +98,8 @@ class YouTubeService:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
                 if info:
                     title = info.get('title', 'Unknown Track')
-                    artist = info.get('artist') or info.get('uploader') or info.get('channel') or 'Unknown Artist'
+                    raw_artist = info.get('artist') or info.get('uploader') or info.get('channel') or 'Unknown Artist'
+                    artist = self.clean_artist_name(raw_artist)
                     if ' - ' in title and artist in ['Unknown Artist', info.get('uploader'), info.get('channel')]:
                         parts = title.split(' - ', 1)
                         artist = parts[0].strip()
@@ -90,7 +127,7 @@ class YouTubeService:
             except error:
                 pass  # تگ از قبل وجود دارد (توسط ffmpeg ساخته شده)
 
-            # ۱. اصلاح نام آهنگ و خواننده (جایگزینی نام یوتیوب با نام رسمی آیتونز)
+            # ۱. اصلاح نام آهنگ و خواننده
             if metadata.get('title'):
                 audio.tags.add(TIT2(encoding=3, text=metadata['title']))
             if metadata.get('artist'):
@@ -138,11 +175,17 @@ class YouTubeService:
             return final_path
 
         # ۱. آماده‌سازی منابع دانلود (لینک مستقیم یوتیوب -> جستجوی ساندکلاد -> جستجوی یوتیوب)
-        search_query = f"{metadata.get('artist', '')} {metadata.get('title', '')}".strip() if metadata else ""
+        raw_artist = metadata.get('artist', '') if metadata else ''
+        raw_title = metadata.get('title', '') if metadata else ''
+        clean_art = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip()
+        search_query = f"{clean_art} {raw_title}".strip()
+        if search_query in ['Unknown Artist Unknown Track', 'Unknown Artist YouTube Track', 'Unknown Track']:
+            search_query = ""
+
         sources = [f"https://www.youtube.com/watch?v={video_id}"]
-        if search_query and search_query != "Unknown Artist Unknown Track":
-            sources.append(f"scsearch:{search_query}")
-            sources.append(f"ytsearch:{search_query}")
+        if search_query:
+            sources.append(f"scsearch1:{search_query}")
+            sources.append(f"ytsearch1:{search_query}")
 
         logger.info(f"[*] Starting Multi-Source Download for [{video_id}] | Quality: {target_quality}kbps")
 
@@ -156,6 +199,11 @@ class YouTubeService:
                 'ignoreerrors': True,
                 'nocheckcertificate': True,
                 'geo_bypass': True,
+                'extractor_args': {
+                    'youtubepot-bgutilhttp': {
+                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                    }
+                },
                 'postprocessors': [
                     {
                         'key': 'FFmpegExtractAudio',

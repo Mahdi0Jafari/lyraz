@@ -43,3 +43,13 @@ services:
     env_file: .env
     depends_on:
       - web
+
+  # -------------------------------------------------------
+  # سرویس ۴: پرووایدر توکن یوتیوب (PO Token Provider)
+  # -------------------------------------------------------
+  pot:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    container_name: Lyraz_pot
+    restart: unless-stopped
+    ports:
+      - "4416:4416"
