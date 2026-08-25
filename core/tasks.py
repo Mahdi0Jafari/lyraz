@@ -173,7 +173,15 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         sql = """
             INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(youtube_id) DO UPDATE SET file_id=excluded.file_id, bitrate=excluded.bitrate
+            ON CONFLICT(youtube_id) DO UPDATE SET 
+                file_unique_id=excluded.file_unique_id,
+                file_id=excluded.file_id,
+                title=excluded.title,
+                performer=excluded.performer,
+                duration=excluded.duration,
+                file_size=excluded.file_size,
+                thumb_id=excluded.thumb_id,
+                bitrate=excluded.bitrate
         """
         bot_db_exec(sql, (
             track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
