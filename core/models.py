@@ -84,12 +84,19 @@ def init_db():
                 youtube_id TEXT UNIQUE,
                 spotify_id TEXT UNIQUE,
                 bitrate INTEGER DEFAULT 192,
+                storage_message_id INTEGER DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+            try:
+                c.execute('ALTER TABLE tracks ADD COLUMN storage_message_id INTEGER DEFAULT NULL;')
+            except Exception:
+                pass
+
             # ایندکس‌های حیاتی برای کش کردن و مپینگ سریع
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_unique ON tracks(file_unique_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_youtube ON tracks(youtube_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_spotify ON tracks(spotify_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_storage_msg ON tracks(storage_message_id);')
             
             # 3. Channels Table
             c.execute('''CREATE TABLE IF NOT EXISTS channels (

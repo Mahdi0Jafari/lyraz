@@ -93,8 +93,8 @@ def get_hub_state(token):
 # 🗃️ CACHE HELPERS
 # ==========================================
 
-def get_tg_link(file_id):
-    """دریافت لینک مستقیم دانلود از سرورهای تلگرام"""
+def get_tg_link(file_id, track_row=None):
+    """دریافت لینک مستقیم دانلود از سرورهای تلگرام با قابلیت خودترمیمی در صورت تغییر توکن"""
     current_time = time.time()
     
     if file_id in LINK_CACHE:
@@ -112,6 +112,35 @@ def get_tg_link(file_id):
             download_url = f"https://api.telegram.org/file/bot{Config.BOT_TOKEN}/{file_path}"
             LINK_CACHE[file_id] = {'url': download_url, 'expire': current_time + CACHE_DURATION}
             return download_url
+        elif not res.get('ok') and track_row:
+            storage_msg_id = track_row['storage_message_id'] if ('storage_message_id' in track_row.keys() and track_row['storage_message_id']) else None
+            if storage_msg_id and Config.STORAGE_CHANNEL_ID:
+                logger.warning(f"Telegram getFile failed for {file_id}. Attempting self-heal via storage msg {storage_msg_id}...")
+                fwd_url = f"https://api.telegram.org/bot{Config.BOT_TOKEN}/forwardMessage"
+                fwd_res = http_session.post(
+                    fwd_url,
+                    json={
+                        "chat_id": Config.STORAGE_CHANNEL_ID,
+                        "from_chat_id": Config.STORAGE_CHANNEL_ID,
+                        "message_id": storage_msg_id
+                    },
+                    timeout=5.0
+                ).json()
+                if fwd_res.get('ok'):
+                    new_audio = fwd_res['result'].get('audio')
+                    if new_audio:
+                        new_file_id = new_audio['file_id']
+                        db = get_db()
+                        db.execute("UPDATE tracks SET file_id=? WHERE id=?", (new_file_id, track_row['id']))
+                        db.commit()
+                        try:
+                            http_session.post(
+                                f"https://api.telegram.org/bot{Config.BOT_TOKEN}/deleteMessage",
+                                json={"chat_id": Config.STORAGE_CHANNEL_ID, "message_id": fwd_res['result']['message_id']},
+                                timeout=3.0
+                            )
+                        except Exception: pass
+                        return get_tg_link(new_file_id)
     except Exception as e:
         logger.error(f"Telegram API Error: {e}")
     return None
@@ -126,9 +155,9 @@ def warmup_link(unique_id):
     """Pre-fetch Endpoint"""
     try:
         db = get_db()
-        track = db.execute("SELECT file_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+        track = db.execute("SELECT id, file_id, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
         if track:
-            link = get_tg_link(track['file_id'])
+            link = get_tg_link(track['file_id'], track_row=track)
             if link:
                 return jsonify({"status": "warmed", "unique_id": unique_id})
         return jsonify({"status": "failed"}), 404
@@ -140,11 +169,11 @@ def warmup_link(unique_id):
 def audio(unique_id):
     """Real-time Streaming Endpoint"""
     db = get_db()
-    track = db.execute("SELECT file_id, file_size FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+    track = db.execute("SELECT id, file_id, file_size, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
 
     if not track: return "Track Not Found", 404
     
-    link = get_tg_link(track['file_id'])
+    link = get_tg_link(track['file_id'], track_row=track)
     if not link: return "Link Error", 500
 
     headers = {}
