@@ -59,7 +59,13 @@ async def activate_session_and_notify(session_token, user_id, user_first_name, c
         internal_user_id = get_user_id(user_id)
         session = get_session_info(session_token)
         if not session:
-            return None, False, None
+            # 🔥 Auto-Provision: اگر دیتابیس پاک شده باشد یا سشن منقضی شده باشد، هاب را بلافاصله ایجاد می‌کند
+            bot_db_exec(
+                "INSERT OR REPLACE INTO sessions (token, admin_id, status) VALUES (?, ?, 'active')", 
+                (session_token, internal_user_id)
+            )
+            session = get_session_info(session_token)
+            return session, True, internal_user_id
             
         is_new_admin = False
         
