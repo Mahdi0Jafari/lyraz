@@ -196,7 +196,7 @@ class YouTubeService:
         for source in sources:
             output_template = os.path.join(self.download_dir, f"{video_id}.%(ext)s")
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'ba/ba*',
                 'outtmpl': output_template,
                 'quiet': True,
                 'no_warnings': True,
@@ -206,7 +206,9 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'retries': 2,
                 'fragment_retries': 2,
-                'concurrent_fragment_downloads': 4,
+                'concurrent_fragment_downloads': 8,
+                'buffersize': 1024 * 1024,
+                'http_chunk_size': 10485760,
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['mweb', 'web'],
@@ -223,6 +225,9 @@ class YouTubeService:
                     },
                     {'key': 'FFmpegMetadata', 'add_metadata': True},
                 ],
+                'postprocessor_args': {
+                    'FFmpegExtractAudio': ['-threads', '0', '-vn']
+                }
             }
 
             if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
