@@ -69,18 +69,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         buttons = [
             [InlineKeyboardButton("▶️ Open Web Player", url=live_url), InlineKeyboardButton("🎛 Remote Control", url=remote_url)],
-            [InlineKeyboardButton("✏️ Rename This Hub", callback_data=f"rename_{token}")],
+            [InlineKeyboardButton("✏️ Rename Hub", callback_data=f"rename_{token}")],
             [InlineKeyboardButton("🔍 Search & Play Music", switch_inline_query_current_chat="")]
         ]
 
         hub_role = "👑 *Admin*" if is_new_admin else "👤 *Connected*"
         await update.message.reply_text(
-            f"🎉 *Live Hub Connected!*\n\n"
-            f"📡 Hub: *{d_name}*\n"
-            f"⚡ Role: {hub_role}\n\n"
-            f"Everything you search or download here will now play synchronously on this Hub.",
+            f"🎉 *Hub Connected Successfully!*\n\n"
+            f"📡 Hub Name: *{d_name}*\n"
+            f"⚡ Access Level: {hub_role}\n\n"
+            f"💡 *How to Use:*\n"
+            f"1️⃣ Send any Spotify playlist or YouTube link here—it will download and play live on your Hub.\n"
+            f"2️⃣ Tap *Remote Control* below to adjust volume, pause/play, or view the playlist.\n"
+            f"3️⃣ Tap *Queue* in the menu below to view upcoming tracks.",
             reply_markup=InlineKeyboardMarkup(buttons),
             parse_mode=ParseMode.MARKDOWN
+        )
+
+        # Persistent main menu keyboard
+        await update.message.reply_text(
+            "👇 Hub controls are pinned below for instant access:",
+            reply_markup=get_main_menu_keyboard()
         )
 
     # ---------------------------------------------------------
@@ -275,27 +284,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text.strip()
     
-    if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs"]: 
+    if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs", "📺 Devices"]: 
         await list_devices(update, context)
         return
         
-    if text in ["📖 Setup Guide", "❓ Help"]: 
+    if text in ["📖 Setup Guide", "❓ Help", "📖 Guide"]: 
         guide_text = (
-            "🚀 *Quick Setup Guide (Live Hubs):*\n\n"
-            "1️⃣ *Create a Hub:* Open the Web Player on any device. Scan the QR code.\n"
-            "2️⃣ *Multi-Screen Sync:* Tap 'My Devices', copy the 'Live Player' link, and open it on as many screens as you want.\n"
-            "3️⃣ *Send Music:* Paste Spotify/YouTube links or forward MP3 files.\n"
-            "4️⃣ *Remote Control:* Tap 'Remote Control' in the menu to manage playback from your phone."
+            "🚀 *Lyraz Hubs Quick Guide:*\n\n"
+            "1️⃣ *Connect Hub:* Open the Web Player on your screen/TV and scan the QR code with your phone.\n"
+            "2️⃣ *Play Music:* Paste any Spotify playlist or YouTube link here—it will download and play live on your Hub.\n"
+            "3️⃣ *Remote Control:* Tap 'Remote Control' in the menu to manage volume, seeking, and playback.\n"
+            "4️⃣ *Track Queue:* Tap 'Queue' anytime to view upcoming tracks in your active session."
         )
-        await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
         return
 
-    if text == "🔍 Search Music":
+    if text in ["🔍 Search Music", "🔍 Search"]:
         bot_username = Config.BOT_USERNAME
         await update.message.reply_text(
             f"🔎 *How to Search:*\n"
-            f"Simply type `@{bot_username} [song name/lyric]` right here in the chat, "
-            f"or tap the button below!",
+            f"Simply type `@{bot_username} [song name/artist]` right here in the chat, or tap the button below!",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]
@@ -303,8 +311,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
         
-    if text == "📥 Download Link":
-        await update.message.reply_text("🔗 Send me a valid *Spotify* or *YouTube* link, and I'll start downloading it immediately.", parse_mode=ParseMode.MARKDOWN)
+    if text in ["📥 Download Link", "📥 Download"]:
+        await update.message.reply_text("🔗 Send me any valid *Spotify* (track/playlist) or *YouTube* link to start playback.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if text in ["🎛 Remote Control", "🎛 Remote"]:
+        token = await asyncio.to_thread(get_user_current_session, user.id)
+        if not token:
+            await update.message.reply_text("❌ You are not connected to any Hub yet. Scan the QR code on your Web Player to get started.", reply_markup=get_main_menu_keyboard())
+            return
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+        remote_url = f"{base_url}/remote/{token}"
+        await update.message.reply_text(
+            "🎛 *Hub Mobile Remote Control*\n\n"
+            "Tap below to manage playback, volume, and the playlist queue from your phone:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📱 Open Remote Control", url=remote_url)]])
+        )
+        return
+
+    if text in ["📋 Queue", "📋 Playlist"]:
+        token = await asyncio.to_thread(get_user_current_session, user.id)
+        if not token:
+            await update.message.reply_text("❌ You are not connected to any Hub yet.", reply_markup=get_main_menu_keyboard())
+            return
+        def get_queue_items():
+            import sqlite3
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.row_factory = sqlite3.Row
+                return conn.execute("""
+                    SELECT t.title, t.performer, pi.is_played 
+                    FROM playlist_items pi
+                    JOIN tracks t ON pi.track_id = t.id
+                    WHERE pi.session_token = ?
+                    ORDER BY pi.id ASC
+                """, (token,)).fetchall()
+        items = await asyncio.to_thread(get_queue_items)
+        if not items:
+            await update.message.reply_text("📭 The queue for this Hub is currently empty. Send a song or playlist link to start playing!", reply_markup=get_main_menu_keyboard())
+            return
+        queue_text = "📋 *Current Hub Queue:*\n\n"
+        for i, item in enumerate(items[:20], 1):
+            status = "▶️ Playing" if not item['is_played'] and i == 1 else ("✅ Played" if item['is_played'] else "⏳ Queued")
+            queue_text += f"{i}. *{item['title']}* - _{item['performer']}_\n   └ {status}\n"
+        if len(items) > 20:
+            queue_text += f"\n_... and {len(items)-20} more tracks in queue_"
+        await update.message.reply_text(queue_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
         return
 
     # --- Renaming Flow (Multi-layered: context.user_data + Reply-To-Message) ---
@@ -549,3 +601,19 @@ async def youtube_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pass
+
+async def sync_vault_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to manually trigger vault recovery"""
+    user = update.effective_user
+    if user and user.id != Config.ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("⛔️ Access restricted to administrator.")
+        return
+
+    msg = await update.message.reply_text("🔄 Synchronizing database with Telegram Cloud Vault...")
+    from core.tasks import sync_vault_from_channel
+    count = await sync_vault_from_channel(context.bot)
+    await msg.edit_text(
+        f"✅ *Vault Synchronization Complete!*\n\n"
+        f"📦 Total verified tracks indexed: *{count}*",
+        parse_mode=ParseMode.MARKDOWN
+    )

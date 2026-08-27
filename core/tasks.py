@@ -9,6 +9,7 @@ import requests
 import sqlite3
 import random
 import time
+import re
 from huey import SqliteHuey
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
@@ -113,6 +114,118 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
             except Exception as heal_err:
                 logger.error(f"Self-healing failed: {heal_err}")
         raise send_err
+
+async def sync_vault_from_channel(bot=None):
+    """
+    موتور بازیابی خودکار و همگام‌سازی سریع مخزن تلگرام (Vault Auto-Sync)
+    پیام‌های کانال ذخیره‌سازی را اسکن کرده و دیتابیس را پر می‌کند تا در صورت
+    پاک شدن دیتابیس، حتی یک آهنگ هم نیاز به دانلود مجدد از یوتیوب نداشته باشد.
+    """
+    if not Config.STORAGE_CHANNEL_ID:
+        logger.warning("Vault sync skipped: STORAGE_CHANNEL_ID is not configured.")
+        return 0
+
+    channel_id = Config.STORAGE_CHANNEL_ID
+    local_bot = bot
+    should_close_bot = False
+    if not local_bot:
+        local_bot = Bot(token=Config.BOT_TOKEN)
+        await local_bot.initialize()
+        should_close_bot = True
+
+    try:
+        def get_max_mid():
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                res = conn.execute("SELECT MAX(storage_message_id) FROM tracks").fetchone()
+                return res[0] if res and res[0] else Config.MIN_STORAGE_MESSAGE_ID
+
+        start_mid = await asyncio.to_thread(get_max_mid)
+        if not start_mid or start_mid < Config.MIN_STORAGE_MESSAGE_ID:
+            start_mid = Config.MIN_STORAGE_MESSAGE_ID
+
+        logger.info(f"🔄 Starting Vault Auto-Sync from message ID: {start_mid}")
+        current_mid = start_mid + 1 if start_mid > Config.MIN_STORAGE_MESSAGE_ID else Config.MIN_STORAGE_MESSAGE_ID
+        synced_count = 0
+        batch_size = 15
+        consecutive_empty_batches = 0
+
+        async def check_msg(mid):
+            try:
+                fwd = await local_bot.forward_message(chat_id=channel_id, from_chat_id=channel_id, message_id=mid)
+                meta = None
+                if fwd and fwd.audio:
+                    caption = fwd.caption or ''
+                    if any(sig in caption for sig in [Config.VAULT_SIGNATURE, '#lyraz_vault', '#lyraz_verified_vault_2026']):
+                        yt_match = re.search(r'🆔 YT: ([^\s]+)', caption)
+                        if yt_match:
+                            vid = yt_match.group(1).strip()
+                            audio = fwd.audio
+                            actual_bitrate = int(Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else 192)
+                            meta = (
+                                audio.file_unique_id,
+                                audio.file_id,
+                                audio.title or 'Unknown Track',
+                                audio.performer or 'Unknown Artist',
+                                audio.duration or 0,
+                                audio.file_size or 0,
+                                audio.thumbnail.file_id if audio.thumbnail else None,
+                                vid,
+                                actual_bitrate,
+                                mid
+                            )
+                if fwd:
+                    try:
+                        await local_bot.delete_message(chat_id=channel_id, message_id=fwd.message_id)
+                    except Exception:
+                        pass
+                return meta
+            except Exception:
+                return None
+
+        while consecutive_empty_batches < 2 and current_mid < start_mid + 2000:
+            batch_mids = list(range(current_mid, current_mid + batch_size))
+            results = await asyncio.gather(*[check_msg(m) for m in batch_mids])
+            valid_tracks = [r for r in results if r is not None]
+
+            if valid_tracks:
+                consecutive_empty_batches = 0
+                sql = """
+                    INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(youtube_id) DO UPDATE SET 
+                        file_unique_id=excluded.file_unique_id,
+                        file_id=excluded.file_id,
+                        title=excluded.title,
+                        performer=excluded.performer,
+                        duration=excluded.duration,
+                        file_size=excluded.file_size,
+                        thumb_id=excluded.thumb_id,
+                        bitrate=excluded.bitrate,
+                        storage_message_id=excluded.storage_message_id
+                """
+                def save_batch():
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        conn.executemany(sql, valid_tracks)
+                        conn.commit()
+                await asyncio.to_thread(save_batch)
+                synced_count += len(valid_tracks)
+            else:
+                consecutive_empty_batches += 1
+
+            current_mid += batch_size
+
+        logger.info(f"✅ Vault Auto-Sync completed: {synced_count} tracks synchronized into database.")
+        return synced_count
+
+    except Exception as e:
+        logger.error(f"Error during vault sync: {e}")
+        return 0
+    finally:
+        if should_close_bot and local_bot:
+            try:
+                await local_bot.shutdown()
+            except Exception:
+                pass
 
 async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_name):
     """
@@ -296,19 +409,21 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         
         # ۶. ارسال فایل صوتی به چت درخواست‌کننده با قابلیت خودترمیمی
         user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
-        try:
-            await deliver_audio_safe(
-                local_bot=local_bot, chat_id=chat_id, track_row=track_meta,
-                title=final_title, artist=final_artist, user_caption=user_caption,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
-            logger.error(f"Failed to deliver audio to user: {e}")
+        if not is_batch:
+            try:
+                await deliver_audio_safe(
+                    local_bot=local_bot, chat_id=chat_id, track_row=track_meta,
+                    title=final_title, artist=final_artist, user_caption=user_caption,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Failed to deliver audio to user: {e}")
 
-        # ۷. 🔥 اجرای موتور Automation Rules 🔥
-        await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
-
-        return track_meta
+            # ۷. 🔥 اجرای موتور Automation Rules 🔥
+            await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
+            return track_meta
+        else:
+            return (track_meta, final_title, final_artist, user_caption, reply_markup)
 
     except Exception as e:
         logger.error(f"Worker Task Failed: {e}")
@@ -343,9 +458,54 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
     processed_count = 0
 
     state_lock = asyncio.Lock()
-    send_lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(5)
     last_edit_time = 0
+
+    # ۱. بازیابی سریع از مخزن تلگرام در صورت خالی بودن دیتابیس (Cold-Start Vault Sync)
+    def check_db_empty():
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            row = conn.execute("SELECT count(*) FROM tracks").fetchone()
+            return (row[0] if row else 0) == 0
+
+    if await asyncio.to_thread(check_db_empty):
+        logger.info("Database empty on batch start. Running fast Vault Auto-Sync from channel...")
+        await sync_vault_from_channel(local_bot)
+
+    # ۲. صف تحویل ترتیبی (Order-Preserved Delivery Queue)
+    ready_to_deliver = {}
+    delivery_signal = asyncio.Event()
+    next_deliver_index = 0
+    all_workers_finished = False
+
+    async def delivery_consumer():
+        nonlocal next_deliver_index
+        while next_deliver_index < total:
+            if next_deliver_index in ready_to_deliver:
+                item = ready_to_deliver[next_deliver_index]
+                if item is not None:
+                    track_row, t_title, t_artist, t_caption, t_markup = item
+                    try:
+                        await deliver_audio_safe(
+                            local_bot=local_bot, chat_id=chat_id, track_row=track_row,
+                            title=t_title, artist=t_artist, user_caption=t_caption,
+                            reply_markup=t_markup
+                        )
+                        await asyncio.sleep(0.8)
+                    except Exception as e:
+                        logger.error(f"Sequential delivery error on track {next_deliver_index}: {e}")
+                next_deliver_index += 1
+            else:
+                if all_workers_finished:
+                    # اگر تمام دانلودها تمام شده بود و این ایندکس در دیکشنری نبود، رد شویم
+                    next_deliver_index += 1
+                    continue
+                delivery_signal.clear()
+                try:
+                    await asyncio.wait_for(delivery_signal.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
+
+    consumer_task = asyncio.create_task(delivery_consumer())
 
     async def update_progress_safe(current_title=""):
         nonlocal last_edit_time
@@ -359,7 +519,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             except Exception:
                 pass
 
-    async def process_single_batch_track(track_info):
+    async def process_single_batch_track(idx, track_info):
         nonlocal success_count, failed_count, processed_count
         search_query = track_info['search_query']
         title = track_info['title']
@@ -374,6 +534,8 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     async with state_lock:
                         failed_count += 1
                         processed_count += 1
+                    ready_to_deliver[idx] = None
+                    delivery_signal.set()
                     return False
 
                 vid = results[0].get('videoId')
@@ -416,16 +578,8 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         })
 
                     user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
-                    async with send_lock:
-                        try:
-                            await deliver_audio_safe(
-                                local_bot=local_bot, chat_id=chat_id, track_row=cached,
-                                title=title, artist=artist, user_caption=user_caption,
-                                reply_markup=reply_markup
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to deliver cached audio: {e}")
-                        await asyncio.sleep(1.0)
+                    ready_to_deliver[idx] = (cached, title, artist, user_caption, reply_markup)
+                    delivery_signal.set()
 
                     await process_auto_broadcast(local_bot, cached['file_id'], title, artist, user_first_name)
                     async with state_lock:
@@ -434,16 +588,25 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     return True
                 else:
                     result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration)
-                    async with state_lock:
-                        if result:
+                    if result and isinstance(result, tuple):
+                        ready_to_deliver[idx] = result
+                        delivery_signal.set()
+                        async with state_lock:
                             success_count += 1
-                        else:
+                            processed_count += 1
+                        return True
+                    else:
+                        ready_to_deliver[idx] = None
+                        delivery_signal.set()
+                        async with state_lock:
                             failed_count += 1
-                        processed_count += 1
-                    return result
+                            processed_count += 1
+                        return False
 
             except Exception as e:
                 logger.error(f"Error processing track {title}: {e}")
+                ready_to_deliver[idx] = None
+                delivery_signal.set()
                 async with state_lock:
                     failed_count += 1
                     processed_count += 1
@@ -461,9 +624,13 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             except Exception as e:
                 logger.warning(f"Could not send cover photo: {e}")
 
-        # اجرای موازی کنترل‌شده تا حداکثر ۳ ترک همزمان
-        tasks = [process_single_batch_track(t) for t in tracks]
+        # اجرای موازی تا ۵ ترک همزمان با حفظ ترتیب تحویل
+        tasks = [process_single_batch_track(idx, t) for idx, t in enumerate(tracks)]
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_workers_finished = True
+        delivery_signal.set()
+        await consumer_task
 
         try:
             await local_bot.edit_message_text(

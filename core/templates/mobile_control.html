@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
     <title>Lyraz Remote</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -14,150 +14,312 @@
             darkMode: "class",
             theme: {
                 extend: {
-                    colors: { primary: "#1db954", dark: "#121212", surface: "#282828" },
-                    fontFamily: { sans: ["Inter", "sans-serif"] }
+                    colors: { primary: "#1db954", dark: "#0c0d0e", surface: "#18191b" },
+                    fontFamily: { sans: ["'Plus Jakarta Sans'", "sans-serif"] }
                 }
             }
         }
     </script>
     <style>
-        body { background-color: #121212; color: white; -webkit-tap-highlight-color: transparent; }
-        
-        /* Interactive Feedback */
-        .tap-effect:active { transform: scale(0.92); opacity: 0.7; transition: transform 0.1s; }
-        
-        /* Active Track Style */
-        .active-track { 
-            border: 1px solid #1db954 !important; 
-            background-color: rgba(29, 185, 84, 0.1) !important; 
+        body { 
+            background: radial-gradient(circle at 50% 0%, #1a231d 0%, #0c0d0e 70%);
+            color: white; 
+            -webkit-tap-highlight-color: transparent; 
         }
-        .active-track h4 { color: #1db954 !important; }
         
-        .played-track { opacity: 0.5; filter: grayscale(100%); }
+        /* Tap feedback */
+        .tap-effect:active { transform: scale(0.94); opacity: 0.75; transition: transform 0.1s ease; }
         
-        /* Custom Scrollbar */
-        .custom-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        /* Smooth momentum scrolling for mobile */
+        .touch-scroll {
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            scroll-behavior: smooth;
+        }
+
+        .touch-scroll::-webkit-scrollbar { width: 4px; }
+        .touch-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 9999px; }
 
         /* Slider Styling */
         input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #fff; margin-top: -6px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transition: transform 0.1s; }
-        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.3); }
-        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { 
+            -webkit-appearance: none; appearance: none; 
+            height: 16px; width: 16px; border-radius: 50%; 
+            background: #fff; margin-top: -6px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.6); 
+            transition: transform 0.1s ease; 
+        }
+        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.35); }
+        input[type=range]::-webkit-slider-runnable-track { 
+            width: 100%; height: 4px; cursor: pointer; 
+            background: rgba(255,255,255,0.12); border-radius: 9999px; 
+        }
+
+        /* Animated Sound Equalizer Bars */
+        .eq-bar {
+            width: 3px;
+            background: #1db954;
+            border-radius: 2px;
+            animation: eqAnim 1s ease-in-out infinite alternate;
+        }
+        .eq-bar:nth-child(1) { height: 14px; animation-delay: 0.1s; }
+        .eq-bar:nth-child(2) { height: 8px; animation-delay: 0.3s; }
+        .eq-bar:nth-child(3) { height: 16px; animation-delay: 0.2s; }
+        @keyframes eqAnim {
+            0% { transform: scaleY(0.3); }
+            100% { transform: scaleY(1.1); }
+        }
     </style>
 </head>
-<body class="flex flex-col h-[100dvh] overflow-hidden select-none bg-dark">
+<body class="flex flex-col h-[100dvh] overflow-hidden bg-dark text-white select-none">
 
-    <header class="px-6 py-4 flex items-center justify-between bg-black/40 backdrop-blur-md sticky top-0 z-50 border-b border-white/5 shrink-0">
-        <div class="flex items-center gap-2 text-primary">
-            <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/40 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+    <!-- Top Navigation & Tab Bar -->
+    <header class="px-5 py-3.5 flex items-center justify-between bg-black/60 backdrop-blur-xl border-b border-white/10 shrink-0 z-50">
+        <div class="flex items-center gap-2">
+            <span class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
             </span>
-            <span class="font-bold text-xs tracking-widest uppercase">
-                {{ session.device_name if session.device_name else 'Lyraz PLAYER' }}
+            <span class="font-bold text-xs tracking-wider uppercase truncate max-w-[120px] text-gray-200">
+                {{ session.device_name if session.device_name else 'Lyraz Hub' }}
             </span>
         </div>
-        <div class="text-[10px] text-gray-500 font-mono tracking-widest bg-white/5 px-2 py-1 rounded">
-            ID: {{ token[:4] }}
+
+        <!-- Segmented Control (Player vs Queue) -->
+        <div class="flex items-center bg-white/10 p-1 rounded-full border border-white/5">
+            <button id="tab-player-btn" onclick="switchView('player')" class="px-3.5 py-1 rounded-full text-xs font-semibold transition-all bg-white text-black shadow-sm flex items-center gap-1.5 tap-effect">
+                <span class="material-symbols-rounded text-sm">play_circle</span>
+                <span>Player</span>
+            </button>
+            <button id="tab-queue-btn" onclick="switchView('queue')" class="px-3.5 py-1 rounded-full text-xs font-semibold transition-all text-gray-400 hover:text-white flex items-center gap-1.5 tap-effect">
+                <span class="material-symbols-rounded text-sm">queue_music</span>
+                <span>Queue</span>
+                <span id="queue-badge" class="ml-0.5 text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">0</span>
+            </button>
+        </div>
+
+        <div class="text-[10px] text-gray-400 font-mono bg-white/5 px-2 py-1 rounded border border-white/5">
+            {{ token[:4] }}
         </div>
     </header>
 
-    <section class="px-6 py-6 flex flex-col items-center justify-center gap-6 shrink-0 border-b border-white/5">
-        <div class="w-48 h-48 bg-surface rounded-2xl shadow-2xl overflow-hidden relative group border border-white/10 transition-all duration-500">
-            <img id="current-cover" src="/cover/default" class="w-full h-full object-cover transition-opacity duration-300">
-        </div>
+    <!-- MAIN VIEW CONTAINER -->
+    <div class="flex-1 relative overflow-hidden">
 
-        <div class="text-center w-full px-4 space-y-1">
-            <h1 id="np-title" class="text-xl font-bold truncate text-white transition-all">Select Track</h1>
-            <p id="np-artist" class="text-sm text-gray-400 truncate transition-all">--</p>
-        </div>
-
-        <div class="w-full max-w-[280px] flex items-center gap-3 px-2 opacity-80">
-            <span class="material-symbols-rounded text-gray-400 text-sm">volume_down</span>
-            <div class="relative flex-1 h-6 flex items-center">
-                <input type="range" min="0" max="100" value="100" class="w-full z-10" oninput="updateVolume(this.value)">
-                <div id="vol-fill" class="absolute h-1 bg-white rounded-full pointer-events-none" style="width: 100%"></div>
-            </div>
-            <span class="material-symbols-rounded text-white text-sm">volume_up</span>
-        </div>
-
-        <div class="w-full max-w-[320px] flex flex-col gap-1 px-2 mt-2">
-             <div class="relative h-6 flex items-center">
-                <input type="range" id="seek-slider" min="0" max="100" value="0" class="w-full z-10" 
-                       ontouchstart="startSeek()" onmousedown="startSeek()"
-                       oninput="visualSeek(this.value)"
-                       ontouchend="commitSeek(this.value)" onmouseup="commitSeek(this.value)"
-                       onchange="commitSeek(this.value)"> 
-                <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="flex items-center gap-10 mt-2 pb-2">
-            <button onclick="sendCommand('prev')" class="text-gray-400 hover:text-white tap-effect p-3">
-                <span class="material-symbols-rounded text-4xl">skip_previous</span>
-            </button>
+        <!-- ========================================== -->
+        <!-- 🎵 VIEW 1: FULL PLAYER (NOW PLAYING)       -->
+        <!-- ========================================== -->
+        <div id="view-player" class="absolute inset-0 flex flex-col items-center justify-between p-6 overflow-y-auto touch-scroll transition-opacity duration-300">
             
-            <button onclick="togglePlayState()" id="play-pause-btn" class="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.2)] tap-effect hover:scale-105 transition-transform">
-                <span class="material-symbols-rounded text-4xl fill-1 ml-1">play_arrow</span>
-            </button>
-            
-            <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white tap-effect p-3">
-                <span class="material-symbols-rounded text-4xl">skip_next</span>
-            </button>
-        </div>
-    </section>
+            <!-- Album Artwork -->
+            <div class="w-full flex justify-center pt-2">
+                <div class="w-56 h-56 max-w-[65vw] max-h-[65vw] aspect-square bg-surface rounded-3xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] overflow-hidden relative border border-white/10 group">
+                    <img id="current-cover" src="/cover/default" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="Cover">
+                </div>
+            </div>
 
-    <div class="px-6 py-3 flex justify-between items-center bg-white/[0.02]">
-        <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-            <span class="material-symbols-rounded text-sm">queue_music</span> Queue
-        </h2>
-        <span id="queue-count" class="text-[10px] text-gray-500 font-mono bg-white/5 px-2 py-0.5 rounded">0 TRACKS</span>
+            <!-- Track Info -->
+            <div class="text-center w-full px-4 space-y-1 mt-3">
+                <h1 id="np-title" class="text-xl sm:text-2xl font-extrabold truncate text-white tracking-tight">Select Track</h1>
+                <p id="np-artist" class="text-sm text-gray-400 truncate font-medium">Ready to play</p>
+            </div>
+
+            <!-- Scrubbing Bar & Time -->
+            <div class="w-full max-w-sm space-y-1 px-2 mt-2">
+                <div class="relative h-6 flex items-center">
+                    <input type="range" id="seek-slider" min="0" max="100" value="0" class="w-full z-10" 
+                           ontouchstart="startSeek()" onmousedown="startSeek()"
+                           oninput="visualSeek(this.value)"
+                           ontouchend="commitSeek(this.value)" onmouseup="commitSeek(this.value)"
+                           onchange="commitSeek(this.value)"> 
+                    <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none transition-all" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-[11px] font-mono text-gray-500 px-1">
+                    <span id="current-time-label">0:00</span>
+                    <span id="duration-label">0:00</span>
+                </div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="flex items-center justify-center gap-8 w-full max-w-xs py-1">
+                <button onclick="sendCommand('prev')" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Previous">
+                    <span class="material-symbols-rounded text-4xl">skip_previous</span>
+                </button>
+                
+                <button onclick="togglePlayState()" id="play-pause-btn" class="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.25)] tap-effect hover:scale-105 transition-transform" title="Play/Pause">
+                    <span class="material-symbols-rounded text-4xl fill-1 ml-1">play_arrow</span>
+                </button>
+                
+                <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Next">
+                    <span class="material-symbols-rounded text-4xl">skip_next</span>
+                </button>
+            </div>
+
+            <!-- Volume Control -->
+            <div class="w-full max-w-xs flex items-center gap-3 px-3 py-2 bg-white/5 rounded-2xl border border-white/5 mt-1">
+                <button onclick="toggleMute()" class="text-gray-400 hover:text-white tap-effect">
+                    <span id="vol-icon" class="material-symbols-rounded text-lg">volume_up</span>
+                </button>
+                <div class="relative flex-1 h-5 flex items-center">
+                    <input type="range" id="vol-slider" min="0" max="100" value="100" class="w-full z-10" oninput="updateVolume(this.value)">
+                    <div id="vol-fill" class="absolute h-1 bg-white rounded-full pointer-events-none" style="width: 100%"></div>
+                </div>
+            </div>
+
+            <!-- Up Next Quick Peek -->
+            <div onclick="switchView('queue')" class="w-full max-w-sm p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.06] transition tap-effect mt-2">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="material-symbols-rounded text-primary text-lg">playlist_play</span>
+                    <div class="truncate text-left">
+                        <div class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Up Next in Queue</div>
+                        <div id="peek-next-track" class="text-xs text-gray-300 truncate">Tap to view full queue</div>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded text-gray-500 text-sm">chevron_right</span>
+            </div>
+
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 📋 VIEW 2: DEDICATED QUEUE (FULL HEIGHT)   -->
+        <!-- ========================================== -->
+        <div id="view-queue" class="absolute inset-0 flex flex-col bg-dark hidden transition-opacity duration-300">
+            
+            <!-- Queue Search / Filter & Count Header -->
+            <div class="p-4 border-b border-white/10 bg-black/40 backdrop-blur-md flex items-center gap-3 shrink-0">
+                <div class="relative flex-1">
+                    <span class="material-symbols-rounded absolute left-3 top-2.5 text-gray-500 text-sm">search</span>
+                    <input type="text" id="queue-search" placeholder="Search in playlist..." oninput="filterQueue(this.value)" 
+                           class="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-primary transition">
+                </div>
+                <span id="queue-count-label" class="text-xs font-mono font-semibold text-gray-400 whitespace-nowrap bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5">0 TRACKS</span>
+            </div>
+
+            <!-- Full-Height Momentum Scrollable Track List -->
+            <main class="flex-1 overflow-y-auto touch-scroll p-3 space-y-2 pb-28">
+                <div id="queue-list" class="space-y-1.5">
+                    <div class="text-center text-gray-600 py-16 text-xs animate-pulse">Syncing playlist...</div>
+                </div>
+            </main>
+
+            <!-- Sticky Mini Player at Bottom of Queue -->
+            <div onclick="switchView('player')" class="absolute bottom-3 left-3 right-3 p-2.5 rounded-2xl bg-surface/95 backdrop-blur-xl border border-white/15 shadow-2xl flex items-center justify-between cursor-pointer hover:bg-surface transition z-40 tap-effect">
+                <div class="flex items-center gap-3 min-w-0">
+                    <img id="mini-cover" src="/cover/default" class="w-11 h-11 rounded-xl object-cover bg-black shrink-0 border border-white/10">
+                    <div class="min-w-0">
+                        <div id="mini-title" class="text-xs font-bold truncate text-white">Select Track</div>
+                        <div id="mini-artist" class="text-[11px] text-gray-400 truncate">--</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">
+                    <button onclick="togglePlayState()" id="mini-play-btn" class="w-9 h-9 bg-white text-black rounded-full flex items-center justify-center tap-effect shadow-md">
+                        <span class="material-symbols-rounded text-2xl fill-1 ml-0.5">play_arrow</span>
+                    </button>
+                    <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white p-2 tap-effect">
+                        <span class="material-symbols-rounded text-2xl">skip_next</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
     </div>
 
-    <main class="flex-1 overflow-y-auto p-4 custom-scroll pb-10 bg-black/20">
-        <div id="queue-list" class="space-y-2">
-            <div class="text-center text-gray-600 py-10 text-sm animate-pulse">Syncing...</div>
-        </div>
-    </main>
-
+    <!-- ========================================== -->
+    <!-- ⚡ CONTROLLER LOGIC                         -->
+    <!-- ========================================== -->
     <script>
         const SESSION_TOKEN = "{{ token }}";
         
-        // State
         let isPlaying = false;
         let currentTrackId = null;
         let tracksData = [];
         let volumeDebounce = null;
         let isDraggingSlider = false;
-        let currentDuration = 0; 
+        let currentDuration = 0;
+        let lastVolume = 100;
+        let currentView = 'player'; // 'player' or 'queue'
 
-        // ==========================================
-        // 🎛 Logic (Fully Optimized) 
-        // ==========================================
+        // --- View Switching ---
+        function switchView(view) {
+            currentView = view;
+            const playerView = document.getElementById('view-player');
+            const queueView = document.getElementById('view-queue');
+            const playerBtn = document.getElementById('tab-player-btn');
+            const queueBtn = document.getElementById('tab-queue-btn');
+
+            if (view === 'player') {
+                playerView.classList.remove('hidden');
+                queueView.classList.add('hidden');
+                
+                playerBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all bg-white text-black shadow-sm flex items-center gap-1.5 tap-effect";
+                queueBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all text-gray-400 hover:text-white flex items-center gap-1.5 tap-effect";
+            } else {
+                playerView.classList.add('hidden');
+                queueView.classList.remove('hidden');
+                
+                queueBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all bg-white text-black shadow-sm flex items-center gap-1.5 tap-effect";
+                playerBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all text-gray-400 hover:text-white flex items-center gap-1.5 tap-effect";
+                
+                // Focus active song if exists
+                const activeEl = document.querySelector('.active-track');
+                if (activeEl) {
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        // --- Playback / Seeking Logic ---
         function startSeek() {
             isDraggingSlider = true;
         }
 
         function visualSeek(percent) {
             document.getElementById('seek-fill').style.width = percent + '%';
+            if (currentDuration > 0) {
+                const sec = (percent / 100) * currentDuration;
+                document.getElementById('current-time-label').innerText = formatTime(sec);
+            }
         }
 
         function commitSeek(percent) {
             if (!isDraggingSlider) return;
             isDraggingSlider = false;
-            
             if (currentDuration > 0) {
                 const timeInSeconds = (percent / 100) * currentDuration;
-                if(navigator.vibrate) navigator.vibrate(20);
+                if (navigator.vibrate) navigator.vibrate(20);
                 sendCommand('seek', timeInSeconds);
             }
         }
 
+        function formatTime(seconds) {
+            if (!seconds || isNaN(seconds)) return "0:00";
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
         function updateVolume(val) {
             document.getElementById('vol-fill').style.width = val + '%';
+            const icon = document.getElementById('vol-icon');
+            if (val == 0) icon.innerText = 'volume_off';
+            else if (val < 50) icon.innerText = 'volume_down';
+            else icon.innerText = 'volume_up';
+
             clearTimeout(volumeDebounce);
             volumeDebounce = setTimeout(() => { sendCommand('volume', val); }, 100); 
+        }
+
+        function toggleMute() {
+            const slider = document.getElementById('vol-slider');
+            if (slider.value > 0) {
+                lastVolume = slider.value;
+                slider.value = 0;
+                updateVolume(0);
+            } else {
+                slider.value = lastVolume || 100;
+                updateVolume(slider.value);
+            }
         }
 
         async function loadQueue() {
@@ -168,82 +330,99 @@
                 renderList(tracks);
                 
                 if (!currentTrackId && tracks.length > 0) {
-                    const active = tracks.find(t => t.is_played === 0);
-                    if(active) updateNowPlayingUI(active);
+                    const active = tracks.find(t => t.is_played === 0) || tracks[0];
+                    if (active) updateNowPlayingUI(active);
                 }
-            } catch(e) { console.error(e); }
+            } catch(e) { 
+                console.error("Queue load error:", e); 
+            }
         }
 
         function renderList(tracks) {
             const container = document.getElementById('queue-list');
-            document.getElementById('queue-count').innerText = `${tracks.length} TRACKS`;
+            const countStr = `${tracks.length} TRACKS`;
+            document.getElementById('queue-badge').innerText = tracks.length;
+            document.getElementById('queue-count-label').innerText = countStr;
 
             if (tracks.length === 0) {
-                container.innerHTML = `<div class='text-center text-gray-600 py-10 text-sm'>Queue is empty.</div>`;
+                container.innerHTML = `<div class='text-center text-gray-600 py-16 text-xs'>Queue is empty. Send a link in Telegram!</div>`;
+                document.getElementById('peek-next-track').innerText = "Queue is empty";
                 return;
             }
 
-            // Remove deleted items
-            Array.from(container.children).forEach(el => {
-                const id = el.dataset.id;
-                if (!tracks.find(t => t.file_unique_id === id)) el.remove();
-            });
+            // Find current active index and peek next
+            const activeIdx = tracks.findIndex(t => t.file_unique_id === currentTrackId);
+            if (activeIdx >= 0 && activeIdx < tracks.length - 1) {
+                const nextTrack = tracks[activeIdx + 1];
+                document.getElementById('peek-next-track').innerText = `${nextTrack.title} — ${nextTrack.performer}`;
+            } else if (tracks.length > 0) {
+                document.getElementById('peek-next-track').innerText = `${tracks[0].title} — ${tracks[0].performer}`;
+            }
 
-            // Update/Add items
-            tracks.forEach((track) => {
+            container.innerHTML = '';
+
+            tracks.forEach((track, idx) => {
                 const isActive = track.file_unique_id === currentTrackId;
                 const isPlayed = track.is_played === 1;
-                let el = document.getElementById(`remote-item-${track.file_unique_id}`);
 
-                if (!el) {
-                    el = document.createElement('div');
-                    el.id = `remote-item-${track.file_unique_id}`;
-                    el.dataset.id = track.file_unique_id;
-                    el.className = `flex items-center gap-3 p-3 rounded-xl border border-transparent transition cursor-pointer hover:bg-white/5 bg-surface/40`;
-                    
-                    el.innerHTML = `
-                        <div class="relative w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-black">
-                            <img src="/cover/${track.file_unique_id}" class="w-full h-full object-cover opacity-80" loading="lazy">
-                            <div class="icon-layer absolute inset-0 bg-black/50 flex items-center justify-center hidden">
-                                <span class="material-symbols-rounded text-green-500 text-sm animate-pulse">equalizer</span>
-                            </div>
-                        </div>
-                        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                            <div class="flex items-center gap-2">
-                                <h4 class="font-medium truncate text-sm text-gray-200 track-title">${track.title}</h4>
-                                ${track.sender_name && track.sender_name !== 'Unknown' ? `<span class="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 border border-white/5 ml-auto">${track.sender_name}</span>` : ''}
-                            </div>
-                            <p class="text-xs text-gray-500 truncate">${track.performer}</p>
-                        </div>
-                        <button class="del-btn text-gray-600 hover:text-red-500 p-2 transition rounded-full hover:bg-white/10 flex items-center justify-center">
-                            <span class="material-symbols-rounded text-lg">close</span>
-                        </button>
-                    `;
-                    
-                    el.onclick = (e) => {
-                        if(e.target.closest('.del-btn')) {
-                            deleteTrack(track.item_id, el); 
-                            return;
-                        }
-                        playNow(track);
-                    };
-                    container.appendChild(el);
-                }
-
-                // Update Styles
-                const iconLayer = el.querySelector('.icon-layer');
-                const titleText = el.querySelector('.track-title');
-
-                el.classList.remove('active-track', 'played-track');
-                iconLayer.classList.add('hidden');
-                titleText.classList.remove('text-green-400');
+                const el = document.createElement('div');
+                el.id = `remote-item-${track.file_unique_id}`;
+                el.dataset.id = track.file_unique_id;
+                el.className = `flex items-center gap-3 p-2.5 rounded-2xl border transition-all cursor-pointer tap-effect ${
+                    isActive 
+                        ? 'bg-primary/10 border-primary/40 shadow-[0_4px_20px_rgba(29,185,84,0.15)]' 
+                        : isPlayed 
+                            ? 'bg-white/[0.02] border-transparent opacity-50' 
+                            : 'bg-white/[0.04] border-white/5 hover:bg-white/[0.08]'
+                }`;
                 
-                if (isActive) {
-                    el.classList.add('active-track');
-                    iconLayer.classList.remove('hidden');
-                    titleText.classList.add('text-green-400');
-                } else if (isPlayed) {
-                    el.classList.add('played-track');
+                el.innerHTML = `
+                    <div class="text-xs font-mono font-bold w-5 text-center text-gray-500 shrink-0">
+                        ${isActive ? '' : (idx + 1)}
+                    </div>
+                    <div class="relative w-11 h-11 shrink-0 rounded-xl overflow-hidden bg-black border border-white/10">
+                        <img src="/cover/${track.file_unique_id}" class="w-full h-full object-cover ${isPlayed ? 'grayscale' : ''}" loading="lazy">
+                        ${isActive ? `
+                            <div class="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center gap-0.5">
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+                        <h4 class="font-bold truncate text-xs ${isActive ? 'text-primary' : 'text-gray-100'}">${track.title}</h4>
+                        <div class="flex items-center gap-2">
+                            <p class="text-[11px] text-gray-400 truncate">${track.performer}</p>
+                            ${track.duration ? `<span class="text-[10px] text-gray-600 font-mono">• ${formatTime(track.duration)}</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="del-btn text-gray-600 hover:text-red-400 p-2 transition rounded-full hover:bg-white/10 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">close</span>
+                    </button>
+                `;
+                
+                el.onclick = (e) => {
+                    if (e.target.closest('.del-btn')) {
+                        deleteTrack(track.item_id, el); 
+                        return;
+                    }
+                    playNow(track);
+                };
+                container.appendChild(el);
+            });
+        }
+
+        function filterQueue(query) {
+            const q = query.toLowerCase().trim();
+            const items = document.querySelectorAll('#queue-list > div');
+            items.forEach(el => {
+                const title = el.querySelector('h4')?.innerText.toLowerCase() || '';
+                const artist = el.querySelector('p')?.innerText.toLowerCase() || '';
+                if (!q || title.includes(q) || artist.includes(q)) {
+                    el.style.display = 'flex';
+                } else {
+                    el.style.display = 'none';
                 }
             });
         }
@@ -253,13 +432,22 @@
             currentTrackId = track.file_unique_id;
             
             document.getElementById('current-cover').src = `/cover/${track.file_unique_id}`;
+            document.getElementById('mini-cover').src = `/cover/${track.file_unique_id}`;
             document.getElementById('np-title').innerText = track.title;
+            document.getElementById('mini-title').innerText = track.title;
             document.getElementById('np-artist').innerText = track.performer;
+            document.getElementById('mini-artist').innerText = track.performer;
+
+            if (track.duration) {
+                currentDuration = track.duration;
+                document.getElementById('duration-label').innerText = formatTime(track.duration);
+            }
+
             renderList(tracksData); 
         }
 
         async function playNow(track) {
-            if(navigator.vibrate) navigator.vibrate(30);
+            if (navigator.vibrate) navigator.vibrate(30);
             updateNowPlayingUI(track);
             isPlaying = true;
             updatePlayBtn();
@@ -274,62 +462,75 @@
         }
 
         function updatePlayBtn() {
-            const icon = document.querySelector('#play-pause-btn span');
-            icon.innerText = isPlaying ? "pause" : "play_arrow";
+            const mainIcon = document.querySelector('#play-pause-btn span');
+            const miniIcon = document.querySelector('#mini-play-btn span');
+            const iconName = isPlaying ? "pause" : "play_arrow";
+            if (mainIcon) mainIcon.innerText = iconName;
+            if (miniIcon) miniIcon.innerText = iconName;
         }
 
         async function sendCommand(cmd, payload = null) {
             try {
-                if(navigator.vibrate && cmd !== 'volume' && cmd !== 'seek') navigator.vibrate(50);
+                if (navigator.vibrate && cmd !== 'volume' && cmd !== 'seek') navigator.vibrate(40);
                 await fetch('/api/control/command', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ token: SESSION_TOKEN, action: cmd, payload: payload })
                 });
-            } catch(e) {}
+            } catch(e) {
+                console.error("Command error:", e);
+            }
         }
 
         async function deleteTrack(dbId, el) {
-            if(!confirm("Remove from queue?")) return;
+            if (!confirm("Remove this track from queue?")) return;
             el.style.opacity = '0';
-            setTimeout(() => el.remove(), 300);
+            el.style.transform = 'translateX(50px)';
+            setTimeout(() => el.remove(), 250);
             await sendCommand('remove', dbId);
         }
 
-        // SSE Sync
+        // SSE Real-Time Sync
         function initSSE() {
             const eventSource = new EventSource(`/api/events/${SESSION_TOKEN}`);
             eventSource.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.session_token && data.session_token !== SESSION_TOKEN) return;
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.session_token && data.session_token !== SESSION_TOKEN) return;
 
-                if (data.type === 'status_update') {
-                    const status = data.payload;
-                    currentDuration = status.duration; 
+                    if (data.type === 'status_update') {
+                        const status = data.payload;
+                        currentDuration = status.duration; 
 
-                    if (isPlaying !== status.is_playing) {
-                        isPlaying = status.is_playing;
-                        updatePlayBtn();
+                        if (isPlaying !== status.is_playing) {
+                            isPlaying = status.is_playing;
+                            updatePlayBtn();
+                        }
+
+                        if (currentTrackId !== status.file_unique_id) {
+                            const track = tracksData.find(t => t.file_unique_id === status.file_unique_id);
+                            if (track) updateNowPlayingUI(track);
+                            else loadQueue(); 
+                        }
+
+                        if (!isDraggingSlider && status.duration > 0) {
+                            const percent = (status.current_time / status.duration) * 100;
+                            document.getElementById('seek-slider').value = percent;
+                            document.getElementById('seek-fill').style.width = percent + '%';
+                            document.getElementById('current-time-label').innerText = formatTime(status.current_time);
+                            document.getElementById('duration-label').innerText = formatTime(status.duration);
+                        }
                     }
-
-                    if (currentTrackId !== status.file_unique_id) {
-                        const track = tracksData.find(t => t.file_unique_id === status.file_unique_id);
-                        if (track) updateNowPlayingUI(track);
-                        else loadQueue(); 
-                    }
-
-                    if (!isDraggingSlider && status.duration > 0) {
-                        const percent = (status.current_time / status.duration) * 100;
-                        document.getElementById('seek-slider').value = percent;
-                        document.getElementById('seek-fill').style.width = percent + '%';
-                    }
+                    
+                    if (data.file_unique_id && !data.type) loadQueue(); 
+                    if (data.type === 'command' && ['next', 'prev', 'jump', 'remove'].includes(data.action)) setTimeout(loadQueue, 300);
+                } catch(err) {
+                    console.error("SSE parse error:", err);
                 }
-                
-                if (data.file_unique_id && !data.type) loadQueue(); 
-                if (data.type === 'command' && ['next', 'prev', 'jump', 'remove'].includes(data.action)) setTimeout(loadQueue, 300);
             };
         }
 
+        // Boot
         loadQueue();
         initSSE();
         setInterval(loadQueue, 15000);
