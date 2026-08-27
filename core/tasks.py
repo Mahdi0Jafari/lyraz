@@ -300,7 +300,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
 
     state_lock = asyncio.Lock()
     send_lock = asyncio.Lock()
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(5)
     last_edit_time = 0
 
     async def update_progress_safe(current_title=""):

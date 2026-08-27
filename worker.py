@@ -22,7 +22,7 @@ if __name__ == "__main__":
         # تنظیمات مصرف‌کننده (Consumer)
         consumer = Consumer(
             huey,
-            workers=4,             # ۴ دانلود همزمان برای پردازش موازی و پاسخگویی سریع صف
+            workers=6,             # ۶ پردازشگر همزمان برای دانلود موازی فوق‌سریع و پاسخگویی آنی صف
             worker_type='thread',  # استفاده از Thread (چون دانلود I/O است نه CPU)
             check_worker_health=True
         )
