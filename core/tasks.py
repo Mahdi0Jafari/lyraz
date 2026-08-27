@@ -116,19 +116,19 @@ async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_n
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None):
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None):
     """ورکر تسک برای دانلود و پردازش یک آهنگ (Non-blocking)"""
     logger.info(f"🚀 Task Started: {title} ({video_id})")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality)
+            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration)
         )
     finally:
         loop.close()
 
-async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False):
+async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None):
     """
     is_batch: اگر True باشد، پیام وضعیتی که در هندلر ساخته شده (message_id) پاک نمی‌شود، 
     چون آن پیام قرار است به عنوان نوار پیشرفت کل پلی‌لیست عمل کند. اما فایل صوتی حتماً ارسال می‌شود.
@@ -137,13 +137,27 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     local_bot = Bot(token=Config.BOT_TOKEN)
     
     try:
-        # ۱. واکشی متادیتای غنی با کاور رزرو یوتیوب
-        yt_thumb = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg" if video_id else None
-        rich_metadata = metadata_service.get_full_metadata(artist, title, thumbnail_url=yt_thumb)
-        final_title = rich_metadata['title'] if rich_metadata.get('title') else title
-        final_artist = rich_metadata['artist'] if rich_metadata.get('artist') else artist
+        # ۱. تثبیت عنوان و خواننده اصلی (اگر از قبل مشخص است، قفل می‌شود و نباید تغییر کند)
+        is_known_title = bool(title and title not in ['Unknown Track', 'YouTube Track'])
+        is_known_artist = bool(artist and artist not in ['Unknown', 'Unknown Artist'])
 
-        # ۲. دانلود از یوتیوب و تزریق متادیتا با Mutagen
+        final_title = title if is_known_title else None
+        final_artist = artist if is_known_artist else None
+
+        # ۲. واکشی متادیتای غنی با اولویت کاور ارسالی (از اسپاتیفای) یا کاور یوتیوب
+        yt_thumb = cover_url or (f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg" if video_id else None)
+        rich_metadata = metadata_service.get_full_metadata(artist, title, duration=duration, thumbnail_url=yt_thumb)
+        
+        if not final_title:
+            final_title = rich_metadata.get('title') or title or 'Unknown Track'
+        if not final_artist:
+            final_artist = rich_metadata.get('artist') or artist or 'Unknown Artist'
+
+        # تضمین تطابق متادیتا برای تزریق به Mutagen با نام‌های قطعی
+        rich_metadata['title'] = final_title
+        rich_metadata['artist'] = final_artist
+
+        # ۳. دانلود از یوتیوب یا ساندکلاد و تزریق متادیتا با Mutagen
         path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
         
         if not path:
@@ -151,7 +165,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
 
-        # ۳. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل
+        # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل
         tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
         if not tg_audio:
             if message_id and not is_batch:
@@ -364,7 +378,8 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     
                 success_count += 1
             else:
-                result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True)
+                track_duration = track_info.get('duration')
+                result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration)
                 if result: success_count += 1
                 else: failed_count += 1
             
