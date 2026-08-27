@@ -5,6 +5,7 @@ import asyncio
 import time
 import logging
 from telegram import Update
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, 
     CallbackQueryHandler, InlineQueryHandler, ChatMemberHandler, filters
@@ -44,7 +45,8 @@ def run_bot_service():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            app = ApplicationBuilder().token(Config.BOT_TOKEN).post_init(on_post_init).build()
+            req = HTTPXRequest(connect_timeout=20.0, read_timeout=30.0, write_timeout=30.0)
+            app = ApplicationBuilder().token(Config.BOT_TOKEN).request(req).post_init(on_post_init).build()
             
             # --- Register Handlers (به ترتیب اولویت) ---
             app.add_handler(CommandHandler("start", start))

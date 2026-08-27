@@ -13,11 +13,16 @@ import re
 from huey import SqliteHuey
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
+from telegram.request import HTTPXRequest
 
 from core.config import Config
 from core.services.youtube import YouTubeService
 from core.services.bot.database import bot_db_exec, get_user_id
 from core.services.metadata import metadata_service
+
+def get_bot_instance():
+    req = HTTPXRequest(connect_timeout=20.0, read_timeout=30.0, write_timeout=30.0)
+    return Bot(token=Config.BOT_TOKEN, request=req)
 
 logger = logging.getLogger("huey.consumer")
 
@@ -129,7 +134,7 @@ async def sync_vault_from_channel(bot=None):
     local_bot = bot
     should_close_bot = False
     if not local_bot:
-        local_bot = Bot(token=Config.BOT_TOKEN)
+        local_bot = get_bot_instance()
         await local_bot.initialize()
         should_close_bot = True
 
@@ -288,7 +293,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     چون آن پیام قرار است به عنوان نوار پیشرفت کل پلی‌لیست عمل کند. اما فایل صوتی حتماً ارسال می‌شود.
     """
     path = None
-    local_bot = Bot(token=Config.BOT_TOKEN)
+    local_bot = get_bot_instance()
     
     try:
         # ۱. تثبیت عنوان و خواننده اصلی (اگر از قبل مشخص است، قفل می‌شود و نباید تغییر کند)
@@ -451,7 +456,7 @@ def download_playlist_batch(tracks, playlist_name, cover_url, user_id, user_firs
         loop.close()
 
 async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_first_name, session_token, chat_id, message_id, quality):
-    local_bot = Bot(token=Config.BOT_TOKEN)
+    local_bot = get_bot_instance()
     total = len(tracks)
     success_count = 0
     failed_count = 0
