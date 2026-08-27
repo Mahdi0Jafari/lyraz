@@ -180,14 +180,19 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # --- Case 1: Single Track ---
     if sp_data['type'] == 'track':
-        await status_msg.edit_text(f"🔎 Matching *{sp_data['title']}* on global database...", parse_mode=ParseMode.MARKDOWN)
+        title = sp_data['title']
+        artist = sp_data['artist']
+        cover_url = sp_data.get('cover')
+        duration = sp_data.get('duration')
+
+        await status_msg.edit_text(f"🔎 Matching *{title}* on global database...", parse_mode=ParseMode.MARKDOWN)
         results = await asyncio.to_thread(yt_service.search, sp_data['search_query'])
         if not results:
             await status_msg.edit_text("❌ Could not find a match for this specific track.")
             return
-            
+
         vid = results[0]['videoId']
-        await dispatch_to_huey(update, context, vid, sp_data['title'], sp_data['artist'], status_msg)
+        await dispatch_to_huey(update, context, vid, title, artist, status_msg, cover_url=cover_url, duration=duration)
 
     # --- Case 2: Playlist or Album (V4.5 Batch Process) ---
     elif sp_data['type'] in ['playlist', 'album']:
@@ -221,7 +226,7 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
-async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg):
+async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg, cover_url=None, duration=None):
     from core.tasks import download_and_process_track
     user = update.effective_user
     
@@ -249,7 +254,9 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         video_id=vid, title=title, artist=artist, 
         user_id=user.id, user_first_name=user.first_name, 
         session_token=current_token, chat_id=update.effective_chat.id, message_id=status_msg.message_id,
-        quality=download_quality
+        quality=download_quality,
+        cover_url=cover_url,
+        duration=duration
     )
 
 # ==========================================
