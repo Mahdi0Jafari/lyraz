@@ -21,6 +21,8 @@ class Config:
     
     # آیدی کانال آرشیو موزیک (باید با -100 شروع شود)
     STORAGE_CHANNEL_ID = os.getenv('STORAGE_CHANNEL_ID')
+    MIN_STORAGE_MESSAGE_ID = int(os.getenv('MIN_STORAGE_MESSAGE_ID', '655'))
+    VAULT_SIGNATURE = "#lyraz_verified_vault_2026"
     
     # لیست کانال‌های عضویت اجباری (Force Join)
     # از فایل .env خوانده شده و به لیست تبدیل می‌شود (جداکننده: ویرگول)

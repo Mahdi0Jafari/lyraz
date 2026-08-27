@@ -43,13 +43,19 @@ def notify_web_bridge(data_dict):
         logger.error(f"Bridge notification failed: {e}")
 
 async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None):
-    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل"""
+    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل و شناسه پیام کانال"""
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
 
     try:
         with open(file_path, 'rb') as f:
-            caption = f"YT: {video_id}\nTitle: {title}"
+            caption = (
+                f"🎵 Lyraz Cloud Vault\n"
+                f"🏷 Sig: {Config.VAULT_SIGNATURE}\n"
+                f"🆔 YT: {video_id}\n"
+                f"👤 Artist: {artist}\n"
+                f"💽 Title: {title}"
+            )
             thumb = io.BytesIO(cover_bytes) if cover_bytes else None
             sent_msg = await local_bot.send_audio(
                 chat_id=Config.STORAGE_CHANNEL_ID,
@@ -61,10 +67,10 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
                 read_timeout=300,
                 write_timeout=300
             )
-            return sent_msg.audio
+            return sent_msg.audio, sent_msg.message_id
     except Exception as e:
         logger.error(f"Telegram Upload Error: {e}")
-        return None
+        return None, None
 
 def generate_progress_bar(current, total, length=12):
     """تولید نوار پیشرفت بصری برای پیام تلگرام"""
@@ -72,6 +78,41 @@ def generate_progress_bar(current, total, length=12):
     filled_length = int(length * percent)
     bar = '█' * filled_length + '░' * (length - filled_length)
     return f"`[{bar}]` {int(percent * 100)}%"
+
+async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_caption, reply_markup=None):
+    """ارسال فایل صوتی با قابلیت خودترمیمی در صورت تغییر توکن ربات"""
+    file_id = track_row['file_id']
+    try:
+        return await local_bot.send_audio(
+            chat_id=chat_id, audio=file_id, caption=user_caption,
+            title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    except Exception as send_err:
+        storage_msg_id = track_row['storage_message_id'] if ('storage_message_id' in track_row.keys() and track_row['storage_message_id']) else None
+        if storage_msg_id and Config.STORAGE_CHANNEL_ID:
+            logger.warning(f"File ID delivery failed. Attempting self-healing via storage msg {storage_msg_id}...")
+            try:
+                fwd = await local_bot.forward_message(
+                    chat_id=Config.STORAGE_CHANNEL_ID,
+                    from_chat_id=Config.STORAGE_CHANNEL_ID,
+                    message_id=storage_msg_id
+                )
+                if fwd and fwd.audio:
+                    new_file_id = fwd.audio.file_id
+                    bot_db_exec("UPDATE tracks SET file_id=? WHERE id=?", (new_file_id, track_row['id']))
+                    try:
+                        await local_bot.delete_message(chat_id=Config.STORAGE_CHANNEL_ID, message_id=fwd.message_id)
+                    except Exception:
+                        pass
+                    return await local_bot.send_audio(
+                        chat_id=chat_id, audio=new_file_id, caption=user_caption,
+                        title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=reply_markup
+                    )
+            except Exception as heal_err:
+                logger.error(f"Self-healing failed: {heal_err}")
+        raise send_err
 
 async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_name):
     """
@@ -165,8 +206,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
 
-        # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل
-        tg_audio = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
+        # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
+        tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
         if not tg_audio:
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
@@ -181,12 +222,13 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             'title': final_title, 'performer': final_artist,
             'duration': tg_audio.duration, 'file_size': tg_audio.file_size,
             'thumb_id': tg_audio.thumbnail.file_id if tg_audio.thumbnail else None,
-            'youtube_id': video_id, 'bitrate': actual_bitrate
+            'youtube_id': video_id, 'bitrate': actual_bitrate,
+            'storage_message_id': storage_msg_id
         }
 
         sql = """
-            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(youtube_id) DO UPDATE SET 
                 file_unique_id=excluded.file_unique_id,
                 file_id=excluded.file_id,
@@ -195,12 +237,14 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 duration=excluded.duration,
                 file_size=excluded.file_size,
                 thumb_id=excluded.thumb_id,
-                bitrate=excluded.bitrate
+                bitrate=excluded.bitrate,
+                storage_message_id=excluded.storage_message_id
         """
         bot_db_exec(sql, (
             track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
             track_meta['performer'], track_meta['duration'], track_meta['file_size'], 
-            track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate']
+            track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate'],
+            storage_msg_id
         ))
         
         if rich_metadata.get('lyrics'):
@@ -250,12 +294,12 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     'sync_timestamp': time.time() 
                 })
         
-        # ۶. ارسال فایل صوتی به چت درخواست‌کننده
+        # ۶. ارسال فایل صوتی به چت درخواست‌کننده با قابلیت خودترمیمی
         user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
         try:
-            await local_bot.send_audio(
-                chat_id=chat_id, audio=track_meta['file_id'], caption=user_caption,
-                title=final_title, performer=final_artist, parse_mode=ParseMode.MARKDOWN,
+            await deliver_audio_safe(
+                local_bot=local_bot, chat_id=chat_id, track_row=track_meta,
+                title=final_title, artist=final_artist, user_caption=user_caption,
                 reply_markup=reply_markup
             )
         except Exception as e:
@@ -374,9 +418,9 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
                     async with send_lock:
                         try:
-                            await local_bot.send_audio(
-                                chat_id=chat_id, audio=cached['file_id'], caption=user_caption,
-                                title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                            await deliver_audio_safe(
+                                local_bot=local_bot, chat_id=chat_id, track_row=cached,
+                                title=title, artist=artist, user_caption=user_caption,
                                 reply_markup=reply_markup
                             )
                         except Exception as e:
