@@ -56,6 +56,11 @@ async def activate_session_and_notify(session_token, user_id, user_first_name, c
     """
     # 1. Database Operations in Thread
     def db_ops():
+        # تضمین وجود کاربر در جدول users تا ID کاربر هرگز None نشود
+        bot_db_exec(
+            "INSERT OR IGNORE INTO users (telegram_id, first_name) VALUES (?, ?)",
+            (user_id, user_first_name)
+        )
         internal_user_id = get_user_id(user_id)
         session = get_session_info(session_token)
         if not session:

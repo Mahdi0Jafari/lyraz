@@ -82,16 +82,16 @@ def check_session_status(token):
     if not sess:
         return jsonify({'status': 'expired'}), 404
         
-    # اگر وضعیت active شده بود (ادمین استارت زده است)
-    if sess['status'] == 'active' and sess['admin_id']:
+    # اگر وضعیت active شده بود (هاب فعال شده است)
+    if sess['status'] == 'active':
+        admin_name = sess['first_name'] or "Host"
         return jsonify({
             'status': 'active',
             'admin': {
-                'id': sess['admin_id'],
-                'name': sess['first_name'],
-                'telegram_id': sess['telegram_id'],
-                # نمایش نام شخصی‌سازی شده هاب یا نام صاحب آن
-                'device_display_name': sess['device_name'] or f"{sess['first_name']}'s Hub"
+                'id': sess['admin_id'] or 1,
+                'name': admin_name,
+                'telegram_id': sess['telegram_id'] or 0,
+                'device_display_name': sess['device_name'] or f"{admin_name}'s Hub"
             }
         })
         
