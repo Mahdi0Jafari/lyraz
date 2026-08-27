@@ -270,6 +270,9 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
 # ==========================================
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not update.message or not update.message.text: 
+        return
     text = update.message.text.strip()
     
     if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs"]: 
@@ -312,7 +315,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_reply_to_naming = True
 
     if 'renaming_token' in context.user_data or is_reply_to_naming:
-        token = context.user_data.get('renaming_token') or get_user_current_session(user.id)
+        token = context.user_data.get('renaming_token') or (get_user_current_session(user.id) if user else None)
         if token:
             await asyncio.to_thread(set_device_name, token, text)
             if 'renaming_token' in context.user_data:
