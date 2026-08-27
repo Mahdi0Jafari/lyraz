@@ -89,8 +89,7 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'tv_embedded', 'mweb', 'web'],
-                        'player_skip': ['configs'],
+                        'player_client': ['mweb', 'web'],
                     },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
@@ -210,8 +209,7 @@ class YouTubeService:
                 'concurrent_fragment_downloads': 4,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'tv_embedded', 'mweb', 'web'],
-                        'player_skip': ['configs'],
+                        'player_client': ['mweb', 'web'],
                     },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
