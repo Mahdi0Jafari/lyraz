@@ -6,15 +6,17 @@ from core.config import Config
 def get_main_menu_keyboard():
     """
     Persistent Bottom Menu (Reply Keyboard).
-    Acts as the primary navigation hub, keeping the user in control at all times.
+    is_persistent=True ensures the menu NEVER disappears or minimizes.
     """
     keyboard = [
         [KeyboardButton("🔍 Search Music"), KeyboardButton("📥 Download Link")],
-        [KeyboardButton("📺 My Devices"), KeyboardButton("📖 Setup Guide")]
+        [KeyboardButton("🎛 Remote Control"), KeyboardButton("📋 Queue")],
+        [KeyboardButton("📺 My Hubs"), KeyboardButton("📖 Setup Guide")]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
-        resize_keyboard=True
+        resize_keyboard=True,
+        is_persistent=True
     )
 
 def get_onboarding_keyboard(session_token=None, is_admin=True):

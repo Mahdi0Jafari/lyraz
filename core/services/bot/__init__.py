@@ -15,10 +15,19 @@ from core.models import init_db
 # هندلرها
 from .handlers import (
     start, list_devices, handle_callbacks, handle_text, 
-    handle_audio, inline_music_search, youtube_dl, handle_my_chat_member
+    handle_audio, inline_music_search, youtube_dl, handle_my_chat_member,
+    sync_vault_cmd
 )
 
 logger = logging.getLogger(__name__)
+
+async def on_post_init(application):
+    """Auto-sync vault tracks from channel in background on bot startup"""
+    try:
+        from core.tasks import sync_vault_from_channel
+        asyncio.create_task(sync_vault_from_channel(application.bot))
+    except Exception as e:
+        logger.error(f"Error in on_post_init vault sync: {e}")
 
 def run_bot_service():
     """
@@ -35,12 +44,13 @@ def run_bot_service():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            app = ApplicationBuilder().token(Config.BOT_TOKEN).build()
+            app = ApplicationBuilder().token(Config.BOT_TOKEN).post_init(on_post_init).build()
             
             # --- Register Handlers (به ترتیب اولویت) ---
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CommandHandler("devices", list_devices))
             app.add_handler(CommandHandler("dl", youtube_dl))
+            app.add_handler(CommandHandler("sync", sync_vault_cmd))
             
             app.add_handler(InlineQueryHandler(inline_music_search))
             app.add_handler(CallbackQueryHandler(handle_callbacks))
