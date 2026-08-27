@@ -86,7 +86,12 @@ class YouTubeService:
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': True,
+                'socket_timeout': 5,
                 'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios', 'tv_embedded', 'mweb', 'web'],
+                        'player_skip': ['configs'],
+                    },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
                     }
@@ -199,7 +204,15 @@ class YouTubeService:
                 'ignoreerrors': True,
                 'nocheckcertificate': True,
                 'geo_bypass': True,
+                'socket_timeout': 5,
+                'retries': 2,
+                'fragment_retries': 2,
+                'concurrent_fragment_downloads': 4,
                 'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios', 'tv_embedded', 'mweb', 'web'],
+                        'player_skip': ['configs'],
+                    },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
                     }
@@ -217,9 +230,12 @@ class YouTubeService:
             if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
                 ydl_opts['ffmpeg_location'] = self.ffmpeg_path
 
-            # لود کردن کوکی‌ها برای یوتیوب
+            # لود کردن کوکی‌ها برای سورس‌های وب در صورت وجود
             if os.path.exists(Config.YT_COOKIES_PATH) and not source.startswith('scsearch'):
-                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
+                try:
+                    if os.path.getsize(Config.YT_COOKIES_PATH) > 50:
+                        ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
+                except Exception: pass
 
             try:
                 def run_dl(src=source, opts=ydl_opts):
