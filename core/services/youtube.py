@@ -188,7 +188,7 @@ class YouTubeService:
 
         sources = [f"https://www.youtube.com/watch?v={video_id}"]
         if search_query:
-            sources.append(f"scsearch1:{search_query}")
+            sources.append(f"scsearch3:{search_query}")
             sources.append(f"ytsearch1:{search_query}")
 
         logger.info(f"[*] Starting Multi-Source Download for [{video_id}] | Quality: {target_quality}kbps")

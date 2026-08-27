@@ -46,7 +46,7 @@ jobs:
               
               # 5. Inject YouTube Cookies from GitHub Secrets safely
               echo "${{ secrets.YT_COOKIES }}" > instance/cookies.txt
-              chmod 444 instance/cookies.txt 2>/dev/null || true
+              chmod 666 instance/cookies.txt 2>/dev/null || true
               
               COMMIT_MSG="${{ github.event.head_commit.message }}"
               if [ -f "CLEAR_DB_FLAG" ] || [[ "$COMMIT_MSG" == *"[clear-db]"* ]]; then
