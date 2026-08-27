@@ -63,19 +63,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = await asyncio.to_thread(get_session_info, token)
         d_name = session['device_name'] or f"Hub-{token[:4]}"
 
-        if is_new_admin:
-            context.user_data['renaming_token'] = token
-            await update.message.reply_text(
-                f"🎉 *Hub Activated!*\n\nYou are now the Admin of this Live Hub.\n✍️ Please enter a *Name* for it (e.g., Living Room TV, Party Sync):",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=ForceReply(selective=True)
-            )
-        else:
-            await update.message.reply_text(
-                f"✅ *Connected to {d_name}*\n\nEverything you search or download here will now play synchronously on all devices connected to this Hub.", 
-                reply_markup=get_main_menu_keyboard(),
-                parse_mode=ParseMode.MARKDOWN
-            )
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+        live_url = f"{base_url}/live/{token}"
+        remote_url = f"{base_url}/remote/{token}"
+
+        buttons = [
+            [InlineKeyboardButton("▶️ Open Web Player", url=live_url), InlineKeyboardButton("🎛 Remote Control", url=remote_url)],
+            [InlineKeyboardButton("✏️ Rename This Hub", callback_data=f"rename_{token}")],
+            [InlineKeyboardButton("🔍 Search & Play Music", switch_inline_query_current_chat="")]
+        ]
+
+        hub_role = "👑 *Admin*" if is_new_admin else "👤 *Connected*"
+        await update.message.reply_text(
+            f"🎉 *Live Hub Connected!*\n\n"
+            f"📡 Hub: *{d_name}*\n"
+            f"⚡ Role: {hub_role}\n\n"
+            f"Everything you search or download here will now play synchronously on this Hub.",
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
     # ---------------------------------------------------------
     # Scenario 2: Admin User Inspection (Deep Link)
@@ -298,14 +304,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔗 Send me a valid *Spotify* or *YouTube* link, and I'll start downloading it immediately.", parse_mode=ParseMode.MARKDOWN)
         return
 
-    # --- Renaming Flow ---
-    if 'renaming_token' in context.user_data:
-        token = context.user_data['renaming_token']
-        await asyncio.to_thread(set_device_name, token, text)
-        del context.user_data['renaming_token']
-        await update.message.reply_text(f"✅ Hub successfully renamed to: *{text}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
-        return
-    
+    # --- Renaming Flow (Multi-layered: context.user_data + Reply-To-Message) ---
+    is_reply_to_naming = False
+    if update.message.reply_to_message:
+        orig_text = update.message.reply_to_message.text or ""
+        if any(k in orig_text.lower() for k in ["enter a name", "enter a new name", "rename", "hub activated"]):
+            is_reply_to_naming = True
+
+    if 'renaming_token' in context.user_data or is_reply_to_naming:
+        token = context.user_data.get('renaming_token') or get_user_current_session(user.id)
+        if token:
+            await asyncio.to_thread(set_device_name, token, text)
+            if 'renaming_token' in context.user_data:
+                del context.user_data['renaming_token']
+            
+            base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+            live_url = f"{base_url}/live/{token}"
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Web Player", url=live_url)]])
+            await update.message.reply_text(
+                f"✅ Hub successfully renamed to: *{text}*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            return
+
     # --- Smart Link Detection ---
     if re.match(r'(https?://)?(www\.)?(youtube\.com|youtu\.be|music\.youtube\.com)/.+', text):
         await handle_youtube_link(update, context, text)
@@ -315,24 +337,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_spotify_link(update, context, text)
         return
 
-    # --- Search Fallback ---
+    # --- Interactive Search Results (NO Blind Auto-Downloading!) ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
         results = await asyncio.to_thread(yt_service.search, text)
         if not results:
-            await status_msg.edit_text("❌ No results found. Try a different keyword.")
+            await status_msg.edit_text("❌ No matching songs found. Try a different keyword.")
             return
-            
-        vid = results[0]['videoId']
-        title = results[0]['title']
-        raw_artist = results[0]['artists'][0]['name'] if results[0].get('artists') else "Unknown"
-        artist = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip() or "Unknown"
-        
-        await dispatch_to_huey(update, context, vid, title, artist, status_msg)
-        
+
+        buttons = []
+        for i, song in enumerate(results[:4], 1):
+            vid = song.get('videoId')
+            s_title = song.get('title', 'Unknown Track')[:30]
+            raw_artist = song.get('artists', [{'name': 'Unknown'}])[0]['name'] if song.get('artists') else "Unknown"
+            s_artist = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip() or "Unknown"
+            s_artist = s_artist[:20]
+
+            cached = get_track_by_youtube_id(vid)
+            prefix = "⚡ " if cached else "📥 "
+            btn_text = f"{prefix}{i}. {s_title} — {s_artist}"
+            buttons.append([InlineKeyboardButton(btn_text, callback_data=f"dl_{vid}")])
+
+        buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")])
+
+        await status_msg.edit_text(
+            f"🎶 *Search Results for:* _{text}_\n"
+            f"Select a track below to play on your Hub:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
     except Exception as e:
-        logger.error(f"Text Search Fallback Error: {e}")
-        await status_msg.edit_text("❌ An error occurred during the search.")
+        logger.error(f"Text Search Error: {e}")
+        await status_msg.edit_text("❌ An error occurred during search.")
 
 # ==========================================
 # 🎵 OTHER HANDLERS
@@ -433,6 +469,23 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN, 
             reply_markup=ForceReply(selective=True)
         )
+
+    elif data.startswith("dl_"):
+        vid = data.split("_")[1]
+        try:
+            await query.edit_message_text("⏳ Processing selected track...", parse_mode=ParseMode.MARKDOWN)
+            info = await asyncio.to_thread(yt_service.get_video_info, vid)
+            if info:
+                await dispatch_to_huey(update, context, vid, info['title'], info['artist'], query.message)
+            else:
+                await query.edit_message_text("❌ Failed to fetch track information.")
+        except Exception as e:
+            logger.error(f"Callback dl_ error: {e}")
+            await query.edit_message_text("❌ An error occurred while queuing the track.")
+
+    elif data == "cancel_search":
+        try: await query.message.delete()
+        except Exception: pass
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message.audio: return
