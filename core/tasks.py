@@ -296,6 +296,114 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
     total = len(tracks)
     success_count = 0
     failed_count = 0
+    processed_count = 0
+
+    state_lock = asyncio.Lock()
+    send_lock = asyncio.Lock()
+    semaphore = asyncio.Semaphore(3)
+    last_edit_time = 0
+
+    async def update_progress_safe(current_title=""):
+        nonlocal last_edit_time
+        now = time.time()
+        if now - last_edit_time >= 2.5:
+            last_edit_time = now
+            try:
+                progress = generate_progress_bar(processed_count, total)
+                status_text = f"🗂 *{playlist_name}*\n\n{progress}\n📥 Processing: _{current_title[:25]}_\n✅ Done: {success_count} | ❌ Fail: {failed_count}"
+                await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                pass
+
+    async def process_single_batch_track(track_info):
+        nonlocal success_count, failed_count, processed_count
+        search_query = track_info['search_query']
+        title = track_info['title']
+        artist = track_info['artist']
+        track_duration = track_info.get('duration')
+
+        async with semaphore:
+            await update_progress_safe(title)
+            try:
+                results = await asyncio.to_thread(yt_service.search, search_query)
+                if not results:
+                    async with state_lock:
+                        failed_count += 1
+                        processed_count += 1
+                    return False
+
+                vid = results[0].get('videoId')
+
+                def check_cache():
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        conn.row_factory = sqlite3.Row
+                        cur = conn.execute("SELECT * FROM tracks WHERE youtube_id=?", (vid,))
+                        return cur.fetchone()
+
+                cached = await asyncio.to_thread(check_cache)
+
+                if cached:
+                    d_name = "Hub"
+                    reply_markup = None
+
+                    if session_token:
+                        def update_hub():
+                            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                                conn.row_factory = sqlite3.Row  
+                                res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
+                                d_n = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
+                                h_admin_id = res['admin_id'] if res else None
+                            
+                            int_uid = get_user_id(user_id)
+                            safe_owner = h_admin_id if h_admin_id else int_uid
+                            bot_db_exec("INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) VALUES (?, ?, ?, ?)",
+                                        (safe_owner, cached['id'], int_uid, session_token))
+                            return d_n
+
+                        d_name = await asyncio.to_thread(update_hub)
+                        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+                        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
+
+                        notify_web_bridge({
+                            'type': 'new_track', 'title': title, 'performer': artist,
+                            'file_unique_id': cached['file_unique_id'], 'duration': cached['duration'],
+                            'added_by': user_first_name, 'session_token': session_token,
+                            'sync_timestamp': time.time()
+                        })
+
+                    user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
+                    async with send_lock:
+                        try:
+                            await local_bot.send_audio(
+                                chat_id=chat_id, audio=cached['file_id'], caption=user_caption,
+                                title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                                reply_markup=reply_markup
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to deliver cached audio: {e}")
+                        await asyncio.sleep(1.0)
+
+                    await process_auto_broadcast(local_bot, cached['file_id'], title, artist, user_first_name)
+                    async with state_lock:
+                        success_count += 1
+                        processed_count += 1
+                    return True
+                else:
+                    result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration)
+                    async with state_lock:
+                        if result:
+                            success_count += 1
+                        else:
+                            failed_count += 1
+                        processed_count += 1
+                    return result
+
+            except Exception as e:
+                logger.error(f"Error processing track {title}: {e}")
+                async with state_lock:
+                    failed_count += 1
+                    processed_count += 1
+                return False
 
     try:
         if cover_url:
@@ -309,81 +417,9 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             except Exception as e:
                 logger.warning(f"Could not send cover photo: {e}")
 
-        for i, track_info in enumerate(tracks, 1):
-            search_query = track_info['search_query']
-            title = track_info['title']
-            artist = track_info['artist']
-
-            if i % 3 == 0 or i == 1:
-                try:
-                    progress = generate_progress_bar(i, total)
-                    status_text = f"🗂 *{playlist_name}*\n\n{progress}\n📥 Processing: _{title}_\n✅ Done: {success_count} | ❌ Fail: {failed_count}"
-                    await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
-                except Exception: pass
-
-            results = yt_service.search(search_query)
-            if not results:
-                failed_count += 1
-                continue
-            
-            vid = results[0].get('videoId')
-            
-            cached = None
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                conn.row_factory = sqlite3.Row
-                cur = conn.execute("SELECT * FROM tracks WHERE youtube_id=?", (vid,))
-                cached = cur.fetchone()
-
-            if cached:
-                reply_markup = None
-                d_name = "Hub"
-                
-                if session_token:
-                    with sqlite3.connect(Config.DATABASE_URI) as conn:
-                        conn.row_factory = sqlite3.Row  
-                        res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
-                        d_name = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
-                        hub_admin_id = res['admin_id'] if res else None
-                    
-                    base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
-                    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
-                    
-                    internal_user_id = get_user_id(user_id)
-                    safe_owner_id = hub_admin_id if hub_admin_id else internal_user_id
-                    
-                    bot_db_exec("""
-                        INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
-                        VALUES (?, ?, ?, ?)
-                    """, (safe_owner_id, cached['id'], internal_user_id, session_token))
-
-                    notify_web_bridge({
-                        'type': 'new_track', 'title': title, 'performer': artist,
-                        'file_unique_id': cached['file_unique_id'], 'duration': cached['duration'],
-                        'added_by': user_first_name, 'session_token': session_token,
-                        'sync_timestamp': time.time()
-                    })
-                
-                user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
-                try:
-                    await local_bot.send_audio(
-                        chat_id=chat_id, audio=cached['file_id'], caption=user_caption,
-                        title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=reply_markup
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to deliver cached audio: {e}")
-                    
-                # 🔥 اجرای موتور Automation برای آهنگ‌های کش شده نیز ضروری است
-                await process_auto_broadcast(local_bot, cached['file_id'], title, artist, user_first_name)
-                    
-                success_count += 1
-            else:
-                track_duration = track_info.get('duration')
-                result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration)
-                if result: success_count += 1
-                else: failed_count += 1
-            
-            await asyncio.sleep(random.uniform(1.0, 2.5))
+        # اجرای موازی کنترل‌شده تا حداکثر ۳ ترک همزمان
+        tasks = [process_single_batch_track(t) for t in tracks]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         try:
             await local_bot.edit_message_text(
