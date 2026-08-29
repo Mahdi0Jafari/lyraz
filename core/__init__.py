@@ -85,6 +85,119 @@ def create_app():
 
     @app.route('/favicon.ico')
     def favicon():
-        return "", 204
+        return send_from_directory('static/icons', 'icon-48x48.png', mimetype='image/png')
+
+    # ==========================================
+    # 🔍 TECHNICAL SEO & AI BOT CRAWLABILITY (2026 STANDARDS)
+    # ==========================================
+
+    @app.route('/robots.txt')
+    def robots_txt():
+        content = """# Lyraz Robots.txt - 2026 Standards
+User-agent: *
+Allow: /
+Allow: /static/
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /admin
+Disallow: /api/
+Disallow: /remote/
+
+# AI Crawlers Policy (Search & Knowledge Ingestion)
+User-agent: GPTBot
+Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /admin
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /admin
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /admin
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /admin
+Disallow: /api/
+
+User-agent: Applebot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://lyraz.ir/sitemap.xml
+"""
+        return Response(content, mimetype='text/plain; charset=utf-8')
+
+    @app.route('/sitemap.xml')
+    def sitemap_xml():
+        content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://lyraz.ir/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lyraz.ir/"/>
+    <xhtml:link rel="alternate" hreflang="fa" href="https://lyraz.ir/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lyraz.ir/"/>
+    <lastmod>2026-08-29</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+"""
+        return Response(content, mimetype='application/xml; charset=utf-8')
+
+    @app.route('/llms.txt')
+    def llms_txt():
+        content = """# Lyraz
+> High-Resolution Synchronized Audio Streaming & Collaborative Music Hub
+
+Lyraz (https://lyraz.ir) is a decentralized web audio player and live collaborative music hub. It enables zero-latency synchronized audio playback across desktop, mobile, and Smart TV screens, integrated with a high-performance Telegram audio vault.
+
+## Core Capabilities
+- **Synchronized Live Hubs:** Stream audio synchronously across multiple screens using QR-based session pairing.
+- **Telegram Bot Audio Vault (@LyrazBot):** Instant downloads and queue dispatching for Spotify playlists and YouTube tracks at up to 320kbps.
+- **Synchronized Real-Time Lyrics:** Millisecond-accurate synchronized lyrics rendering with dynamic background ambient glow.
+- **Curated Music Magazine (@LyrazMusic):** Editorial music curation, timeless sounds, hidden gems, and storytelling.
+
+## Entities & Links
+- Website: https://lyraz.ir
+- Telegram Bot: https://t.me/LyrazBot
+- Telegram Channel: https://t.me/LyrazMusic
+- Full Documentation: https://lyraz.ir/llms-full.txt
+"""
+        return Response(content, mimetype='text/plain; charset=utf-8')
+
+    @app.route('/llms-full.txt')
+    def llms_full_txt():
+        content = """# Lyraz - Comprehensive Platform & Technical Specification
+
+## Overview
+Lyraz is a next-generation distributed audio streaming system and collaborative live player developed for cross-screen entertainment, parties, and personal high-fidelity music playback.
+
+## Architecture
+- **Web Player (https://lyraz.ir):** Dark OLED interface built with Vanilla CSS, Server-Sent Events (SSE) for zero-latency device synchronization, and hardware-accelerated dynamic blur shaders.
+- **Bot Engine (@LyrazBot):** Python-based asynchronous worker engine interfacing with Telegram Bot API, yt-dlp, and Spotify metadata APIs.
+- **Audio Quality:** Native support for 128kbps, 192kbps, and lossless 320kbps audio bitrate tiers.
+- **Device Pairing:** QR-code based instant pairing without traditional username/password barriers.
+
+## Official Channels & Community
+- **Website:** https://lyraz.ir
+- **Music Channel:** https://t.me/LyrazMusic ("Lyraz | Music & Stories")
+- **Bot Interface:** https://t.me/LyrazBot ("@LyrazBot")
+"""
+        return Response(content, mimetype='text/plain; charset=utf-8')
 
     return app
