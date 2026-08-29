@@ -3,8 +3,7 @@ let isBulkMode = false;
 
 // --- 1. TABS SYSTEM ---
 function switchTab(tabName) {
-    // 🔥 تب 'logs' به آرایه اضافه شد تا توسط سیستم شناخته شود
-    const tabs = ['library', 'automation', 'channels', 'devices', 'users', 'logs'];
+    const tabs = ['library', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
     
     // Hide all tabs
     tabs.forEach(t => {
@@ -21,14 +20,15 @@ function switchTab(tabName) {
     const navItem = document.getElementById(`nav-${tabName}`);
     if(navItem) navItem.classList.add('active');
     
-    // Update Header Title (تایتل تب جدید اضافه شد)
+    // Update Header Title
     const titles = {
         'library': 'Music Library', 
         'automation': 'Automation Rules', 
         'channels': 'Channel Manager',
         'devices': 'Device Manager',
         'users': 'Intelligence & Users',
-        'logs': 'System Telemetry' // 🔥 عنوان تب لاگ‌ها
+        'health': 'System Health & Maintenance',
+        'logs': 'System Telemetry'
     };
     const pageTitle = document.getElementById('page-title');
     if(pageTitle && titles[tabName]) {

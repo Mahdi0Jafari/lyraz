@@ -169,3 +169,21 @@ async function confirmUserBroadcast() {
     btn.innerHTML = '<span>Send to Target</span><span class="material-symbols-outlined text-[16px]">rocket_launch</span>';
     btn.disabled = false;
 }
+
+// --- 4. Quota Management ---
+async function updateUserQuota(userId, newQuota) {
+    try {
+        const res = await fetch('/api/admin/users/update_quota', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ user_id: userId, quota: parseInt(newQuota) })
+        });
+        const data = await res.json();
+        if(data.status !== 'success') {
+            alert("Error updating quota: " + (data.message || 'Unknown error'));
+            location.reload();
+        }
+    } catch(e) {
+        alert("Network Error: Could not update user quota.");
+    }
+}
