@@ -69,6 +69,122 @@ def get_user_role(telegram_id):
         logger.error(f"Get User Role Error: {e}")
         return 'user'
 
+def check_user_quota_status(telegram_id):
+    """
+    بررسی سهمیه روزانه کاربر و تعداد دانلودهای امروز (استراتژی رشد لایراز).
+    خروجی: (allowed: bool, current_count: int, max_quota: int, role: str)
+    """
+    conn = get_db_connection()
+    if not conn: return True, 0, 999, 'user'
+    try:
+        user = conn.execute("SELECT id, role, daily_quota FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if not user:
+            return True, 0, 25, 'user'
+            
+        role = user['role'] or 'user'
+        if role in ['admin', 'pro']:
+            return True, 0, 9999, role
+            
+        max_quota = user['daily_quota'] if user['daily_quota'] is not None else 25
+        
+        # تعداد دانلودهای امروز کاربر (بر اساس ساعت محلی سرور)
+        res = conn.execute("""
+            SELECT COUNT(*) FROM playlist_items 
+            WHERE added_by = ? AND date(created_at, 'localtime') = date('now', 'localtime')
+        """, (user['id'],)).fetchone()
+        
+        current_count = res[0] if res else 0
+        allowed = (current_count < max_quota)
+        return allowed, current_count, max_quota, role
+    except sqlite3.Error as e:
+        logger.error(f"Check Quota Error: {e}")
+        return True, 0, 25, 'user'
+
+def register_referral(referrer_tg_id, new_user_tg_id):
+    """
+    ثبت ریفرال با اعتبارسنجی‌های ضد تقلب و پاداش دوطرفه (Double-Sided Viral Loop):
+    ۱. جلوگیری از دعوت خود (Self-invite).
+    ۲. قفل عدم تکرار (هر کاربر فقط یک‌بار می‌تواند دعوت شود).
+    ۳. پاداش معرف: +۲۵ سهمیه روزانه به ازای هر دوست (۳ دوست = Pro نامحدود).
+    ۴. پاداش دعوت‌شده: +۵ سهمیه خوش‌آمدگویی.
+    """
+    if referrer_tg_id == new_user_tg_id:
+        return False, 0, False, None
+
+    conn = get_db_connection()
+    if not conn: return False, 0, False, None
+
+    try:
+        with conn:
+            # ۱. اطلاعات معرف
+            referrer = conn.execute(
+                "SELECT id, role, daily_quota, first_name FROM users WHERE telegram_id = ?", 
+                (referrer_tg_id,)
+            ).fetchone()
+            if not referrer:
+                return False, 0, False, None
+
+            # ۲. اطلاعات کاربر جدید
+            new_user = conn.execute(
+                "SELECT id, daily_quota FROM users WHERE telegram_id = ?", 
+                (new_user_tg_id,)
+            ).fetchone()
+            if not new_user:
+                return False, 0, False, None
+
+            # ۳. بررسی اینکه آیا کاربر قبلاً توسط کسی دعوت شده؟
+            existing = conn.execute(
+                "SELECT id FROM referrals WHERE referred_id = ?", 
+                (new_user['id'],)
+            ).fetchone()
+            if existing:
+                return False, 0, False, None
+
+            # ۴. ثبت رکورد دعوت
+            conn.execute(
+                "INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)", 
+                (referrer['id'], new_user['id'])
+            )
+
+            # ۵. محاسبه تعداد کل دعوت‌های معرف
+            count_res = conn.execute(
+                "SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", 
+                (referrer['id'],)
+            ).fetchone()
+            total_refs = count_res[0] if count_res else 1
+
+            became_pro = False
+            if total_refs >= 3 and referrer['role'] != 'admin':
+                conn.execute("UPDATE users SET role = 'pro' WHERE id = ?", (referrer['id'],))
+                became_pro = True
+            else:
+                cur_quota = referrer['daily_quota'] if referrer['daily_quota'] is not None else 25
+                conn.execute("UPDATE users SET daily_quota = ? WHERE id = ?", (cur_quota + 25, referrer['id']))
+
+            # ۶. پاداش کاربر دعوت‌شده (+۵ دانلود هدیه)
+            new_cur_q = new_user['daily_quota'] if new_user['daily_quota'] is not None else 25
+            conn.execute("UPDATE users SET daily_quota = ? WHERE id = ?", (new_cur_q + 5, new_user['id']))
+
+            return True, total_refs, became_pro, referrer['first_name']
+    except sqlite3.Error as e:
+        logger.error(f"Register Referral Error: {e}")
+        return False, 0, False, None
+
+def get_user_referral_stats(telegram_id):
+    """دریافت تعداد دعوت‌های موفق، سهمیه فعلی و نقش کاربر"""
+    conn = get_db_connection()
+    if not conn: return 0, 25, 'user'
+    try:
+        user = conn.execute("SELECT id, role, daily_quota FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if not user: return 0, 25, 'user'
+        res = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", (user['id'],)).fetchone()
+        count = res[0] if res else 0
+        quota = user['daily_quota'] if user['daily_quota'] is not None else 25
+        return count, quota, user['role'] or 'user'
+    except sqlite3.Error as e:
+        logger.error(f"Get Referral Stats Error: {e}")
+        return 0, 25, 'user'
+
 def update_user_session(telegram_id, session_token):
     """
     🔥 آپدیت کردن هاب فعال کاربر (Collaborative Hub Logic):

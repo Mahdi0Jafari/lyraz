@@ -14,7 +14,8 @@ from core.services.spotify_official import spotify_keyless
 from .database import (
     bot_db_exec, get_user_id, update_user_session, get_session_info,
     get_user_current_session, set_device_name, get_active_sessions,
-    get_track_by_youtube_id, get_user_role
+    get_track_by_youtube_id, get_user_role, check_user_quota_status,
+    register_referral, get_user_referral_stats
 )
 from .keyboards import get_main_menu_keyboard, get_smart_buttons, get_onboarding_keyboard
 from .logic import (
@@ -123,7 +124,57 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Error generating Intelligence Report: {e}")
 
     # ---------------------------------------------------------
-    # Scenario 3: Normal Start (Welcome Message)
+    # Scenario 3: Referral Deep Link
+    # ---------------------------------------------------------
+    elif args and args[0].startswith('ref_'):
+        try:
+            referrer_tg_id = int(args[0].replace('ref_', ''))
+            success, total_refs, became_pro, referrer_name = await asyncio.to_thread(
+                register_referral, referrer_tg_id, user.id
+            )
+            if success:
+                try:
+                    ref_reward_msg = (
+                        f"🎉 *New Friend Joined Lyraz!*\n\n"
+                        f"Your friend *{user.first_name}* just joined using your personal invite link!\n\n"
+                        f"🎁 *Reward:* +25 Extra Daily Downloads added!\n"
+                        f"📊 Total Friends Invited: *{total_refs} / 3*"
+                    )
+                    if became_pro:
+                        ref_reward_msg += "\n\n👑 *PRO STATUS UNLOCKED!*\nYou have invited 3 friends! You now have permanent *Unlimited Downloads* at 320kbps!"
+                        
+                    await context.bot.send_message(chat_id=referrer_tg_id, text=ref_reward_msg, parse_mode=ParseMode.MARKDOWN)
+                except Exception as e:
+                    logger.warning(f"Could not notify referrer {referrer_tg_id}: {e}")
+
+                inviter_display = referrer_name or "a friend"
+                welcome_msg = (
+                    f"👋 *Welcome to Lyraz, {user.first_name}!*\n"
+                    f"🎉 You were invited by *{inviter_display}*!\n\n"
+                    f"🎁 *Welcome Bonus:* +5 Extra Daily Downloads unlocked!\n\n"
+                    "🎼 *What can I do?*\n"
+                    "📥 *Download:* Paste a Spotify/YouTube link to get tracks at 320kbps.\n"
+                    "🔍 *Search:* Instantly find any song from our catalog.\n"
+                    "📡 *Live Sync:* Stream music live on multiple screens with our Web Player.\n\n"
+                    "👇 *Choose an option below to get started:*"
+                )
+                await update.message.reply_text(
+                    welcome_msg, 
+                    parse_mode=ParseMode.MARKDOWN, 
+                    reply_markup=get_main_menu_keyboard(),
+                    disable_web_page_preview=True
+                )
+                await update.message.reply_text(
+                    "⚡️ *Quick Actions:*",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin)
+                )
+                return
+        except Exception as e:
+            logger.error(f"Referral processing error: {e}")
+
+    # ---------------------------------------------------------
+    # Scenario 4: Normal Start (Welcome Message)
     # ---------------------------------------------------------
     else:
         welcome_msg = (
@@ -163,7 +214,63 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 📡 LINK PARSERS & DISPATCHERS
 # ==========================================
 
+async def check_quota_and_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    بررسی سهمیه دانلود کاربر طبق استراتژی رشد لایراز (docs/growth_and_quota_strategy.md).
+    اگر سهمیه تمام شده باشد و عضو کانال نباشد، پیام ترغیب به عضویت نمایش داده می‌شود.
+    """
+    user = update.effective_user
+    if not user: return True
+
+    allowed, current_count, max_quota, role = await asyncio.to_thread(check_user_quota_status, user.id)
+    if allowed:
+        return True
+
+    # اگر سهمیه پایه تمام شده و کانال اجباری تعریف شده باشد
+    if Config.MANDATORY_CHANNELS:
+        is_member = True
+        for ch in Config.MANDATORY_CHANNELS:
+            try:
+                member = await context.bot.get_chat_member(chat_id=ch, user_id=user.id)
+                if member.status in ['left', 'kicked', 'restricted']:
+                    is_member = False
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to check membership for {ch}: {e}")
+                is_member = True
+                break
+
+        if is_member:
+            return True
+
+        # کاربر عضو نیست -> ارسال پیام ترغیب محترمانه
+        channel_name = Config.MANDATORY_CHANNELS[0]
+        channel_clean = channel_name.lstrip('@')
+        channel_url = f"https://t.me/{channel_clean}"
+
+        quota_msg = (
+            f"🎧 *Daily High-Performance Quota Reached!* ({current_count}/{max_quota})\n\n"
+            f"To keep our audio servers lightning-fast and ensure fair bandwidth, "
+            f"free quotas refresh automatically every midnight.\n\n"
+            f"⚡️ *Want to continue downloading right now?*\n"
+            f"Join our official music channel to unlock extended access:"
+        )
+
+        buttons = [
+            [InlineKeyboardButton("🦊 Join Lyraz Music", url=channel_url)],
+            [InlineKeyboardButton("🔄 Verify Membership", callback_data="verify_channel_membership")]
+        ]
+
+        if update.message:
+            await update.message.reply_text(quota_msg, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(buttons))
+        return False
+
+    return True
+
 async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
+    if not await check_quota_and_channel_membership(update, context):
+        return
+
     match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11}).*', url)
     if not match:
         await update.message.reply_text("❌ Invalid YouTube link format.")
@@ -184,6 +291,9 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
+    if not await check_quota_and_channel_membership(update, context):
+        return
+
     status_msg = await update.message.reply_text("🔎 Analyzing Spotify link...")
     
     # پردازش شبکه اسپاتیفای در پس‌زمینه
@@ -274,6 +384,57 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         duration=duration
     )
 
+async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    کارت معرفی و سیستم دعوت دوستان (Viral Referral Dashboard).
+    نمایش لینک اختصاصی، آمار دعوت‌ها و دکمه اشتراک‌گذاری مستقیم در چت‌های تلگرام.
+    """
+    import urllib.parse
+    user = update.effective_user
+    if not user: return
+    
+    count, quota, role = await asyncio.to_thread(get_user_referral_stats, user.id)
+    bot_username = Config.BOT_USERNAME
+    invite_link = f"https://t.me/{bot_username}?start=ref_{user.id}"
+    share_text = f"🎵 Listen and download high-quality 320kbps music with full lyrics on Lyraz!\nJoin here: {invite_link}"
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(invite_link)}&text={urllib.parse.quote(share_text)}"
+    
+    if role in ['admin', 'pro']:
+        role_badge = "👑 *PRO (Unlimited Access)*"
+    else:
+        role_badge = f"⚡️ *{quota} Tracks / Day*"
+        
+    remaining = max(0, 3 - count)
+    if remaining > 0 and role not in ['admin', 'pro']:
+        target_info = f"Invite *{remaining} more friend{'s' if remaining > 1 else ''}* to unlock lifetime PRO status!"
+    else:
+        target_info = "🎉 You've unlocked permanent PRO status!"
+
+    card_text = (
+        "🎁 *Invite Friends & Get Unlimited Music!*\n\n"
+        "Share your personal invite link with friends. For every friend who joins:\n"
+        "• ⚡️ *+25 Extra Daily Downloads* permanently added to your quota\n"
+        "• 👑 *Invite 3 Friends* to unlock lifetime *PRO Status* (Unlimited downloads at 320kbps!)\n\n"
+        f"📊 *Your Referral Stats:*\n"
+        f"• Friends Invited: *{count} / 3*\n"
+        f"• Current Status: {role_badge}\n"
+        f"💡 {target_info}\n\n"
+        f"🔗 *Your Personal Invite Link:*\n"
+        f"`{invite_link}`"
+    )
+    
+    buttons = [
+        [InlineKeyboardButton("🚀 Share with Friends", url=share_url)],
+        [InlineKeyboardButton("🌐 Open Web Player", url=Config.BASE_URL or "https://lyraz.ir")]
+    ]
+    
+    await update.message.reply_text(
+        card_text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        disable_web_page_preview=True
+    )
+
 # ==========================================
 # 💬 TEXT & NAVIGATION HANDLER
 # ==========================================
@@ -313,6 +474,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     if text in ["📥 Download Link", "📥 Download"]:
         await update.message.reply_text("🔗 Send me any valid *Spotify* (track/playlist) or *YouTube* link to start playback.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if text in ["🎁 Invite Friends", "🎁 Invite", "🎁 Referral"]:
+        await show_referral_info(update, context)
         return
 
     if text in ["🎛 Remote Control", "🎛 Remote"]:
@@ -490,7 +655,29 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d_name = sess['device_name'] or f"Hub-{target_token[:4]}" if sess else "Unknown"
         return c_token, is_admin, d_name
 
-    if data.startswith("select_"):
+    if data == "verify_channel_membership":
+        is_member = True
+        for ch in Config.MANDATORY_CHANNELS:
+            try:
+                member = await context.bot.get_chat_member(chat_id=ch, user_id=user.id)
+                if member.status in ['left', 'kicked', 'restricted']:
+                    is_member = False
+                    break
+            except Exception:
+                is_member = True
+                break
+
+        if is_member:
+            await query.answer("✅ Verified! Your quota has been extended.", show_alert=True)
+            await query.edit_message_text(
+                "🎉 *Membership Verified!*\n\nYour download access has been extended. Paste any Spotify or YouTube link to start!",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            await query.answer("❌ You haven't joined yet! Please join the channel first.", show_alert=True)
+        return
+
+    elif data.startswith("select_"):
         target_token = data.split("_")[1]
         _, is_admin, d_name = await asyncio.to_thread(process_callback_db, target_token, True)
         

@@ -72,6 +72,7 @@
                         <th class="px-6 py-4 text-center">Engagement</th>
                         <th class="px-6 py-4 text-center">Impact (MB)</th>
                         <th class="px-6 py-4 text-center">Daily Quota</th>
+                        <th class="px-6 py-4 text-center">Referrals</th>
                         <th class="px-6 py-4 text-center">Access Role</th>
                         <th class="px-6 py-4 text-center">Actions</th>
                     </tr>
@@ -124,12 +125,21 @@
 
                         <td class="px-6 py-4 text-center">
                             <div class="inline-flex items-center gap-1">
-                                <input type="number" min="0" max="9999" value="{{ u.daily_quota if u.daily_quota is not none else 20 }}" 
+                                <input type="number" min="0" max="9999" value="{{ u.daily_quota if u.daily_quota is not none else 25 }}" 
                                        onchange="updateUserQuota({{ u.id }}, this.value)"
                                        class="glass-input h-8 w-16 px-1 rounded-lg text-xs text-center font-mono font-bold text-white focus:ring-1 focus:ring-primary/50 transition-colors"
                                        title="Daily Quota (0 for unlimited)">
                                 <span class="text-[10px] text-gray-500 font-mono">/day</span>
                             </div>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="openUserReferralsModal({{ u.id }}, '{{ u.first_name|escape }}')" 
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition-all {% if u.referral_count > 0 %}bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 shadow-[0_0_10px_rgba(13,242,51,0.1)]{% else %}bg-white/5 hover:bg-white/10 text-gray-500 border border-white/5{% endif %}"
+                                    title="Click to view invited friends">
+                                <span class="material-symbols-outlined text-[14px]">group_add</span>
+                                <span>{{ u.referral_count }}</span>
+                            </button>
                         </td>
 
                         <td class="px-6 py-4 text-center">
@@ -223,6 +233,45 @@
                                 <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Referral Network Inspector Modal -->
+    <div id="referrals-modal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="closeUserReferralsModal()"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg p-4">
+            <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="p-6">
+                    <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="size-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30 shadow-[0_0_15px_rgba(13,242,51,0.2)]">
+                                <span class="material-symbols-outlined text-[22px]">diversity_3</span>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-white tracking-tight" id="ref-modal-title">Referral Network</h3>
+                                <p class="text-xs text-gray-400" id="ref-modal-subtitle">Invited users audit list</p>
+                            </div>
+                        </div>
+                        <button onclick="closeUserReferralsModal()" class="size-8 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors">
+                            <span class="material-symbols-outlined text-[18px]">close</span>
+                        </button>
+                    </div>
+
+                    <div id="ref-modal-loading" class="py-8 text-center text-gray-400 text-xs flex items-center justify-center gap-2">
+                        <span class="material-symbols-outlined text-[18px] animate-spin text-primary">sync</span>
+                        Loading referral network...
+                    </div>
+
+                    <div id="ref-modal-content" class="hidden max-h-80 overflow-y-auto space-y-2 pr-1 custom-scroll">
+                        <!-- Dynamic List of Referred Friends -->
+                    </div>
+
+                    <div id="ref-modal-empty" class="hidden py-8 text-center text-gray-500 text-xs">
+                        <span class="material-symbols-outlined text-[32px] text-gray-600 mb-2 block">person_off</span>
+                        This user has not invited any friends yet.
                     </div>
                 </div>
             </div>

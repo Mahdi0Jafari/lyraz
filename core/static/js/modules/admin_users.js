@@ -187,3 +187,87 @@ async function updateUserQuota(userId, newQuota) {
         alert("Network Error: Could not update user quota.");
     }
 }
+
+// --- 5. Referral Network Inspector ---
+async function openUserReferralsModal(userId, userName) {
+    const modal = document.getElementById('referrals-modal');
+    const title = document.getElementById('ref-modal-title');
+    const subtitle = document.getElementById('ref-modal-subtitle');
+    const loading = document.getElementById('ref-modal-loading');
+    const content = document.getElementById('ref-modal-content');
+    const empty = document.getElementById('ref-modal-empty');
+
+    if(!modal) return;
+    modal.classList.remove('hidden');
+    title.innerText = `Referral Network of ${userName}`;
+    subtitle.innerText = `Audit list of users invited by ID #${userId}`;
+    loading.classList.remove('hidden');
+    content.classList.add('hidden');
+    empty.classList.add('hidden');
+    content.innerHTML = '';
+
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/referrals`);
+        const json = await res.json();
+        loading.classList.add('hidden');
+
+        if (json.status === 'success' && json.data && json.data.referrals && json.data.referrals.length > 0) {
+            subtitle.innerText = `${json.data.referrals.length} friend${json.data.referrals.length > 1 ? 's' : ''} invited by ${userName}`;
+            content.classList.remove('hidden');
+
+            json.data.referrals.forEach(ref => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-primary/30 transition-colors';
+                
+                const roleBadge = ref.role === 'admin' 
+                    ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 font-bold">Admin</span>' 
+                    : (ref.role === 'pro' 
+                        ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold">Pro</span>' 
+                        : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-400 font-bold">User</span>');
+                
+                const dateStr = ref.join_date ? ref.join_date.slice(0, 16) : 'Unknown';
+                const userHandle = ref.username ? `@${ref.username}` : `ID: ${ref.telegram_id}`;
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="size-8 rounded-full bg-gradient-to-tr from-gray-700 to-gray-600 flex items-center justify-center text-white text-xs font-bold shadow">
+                            ${(ref.first_name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white flex items-center gap-2">
+                                <span>${escapeHtml(ref.first_name || 'Anonymous')}</span>
+                                ${roleBadge}
+                            </div>
+                            <div class="text-[10px] text-gray-500 font-mono tracking-wider">${userHandle}</div>
+                        </div>
+                    </div>
+                    <div class="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[12px] text-gray-500">calendar_today</span>
+                        ${dateStr}
+                    </div>
+                `;
+                content.appendChild(item);
+            });
+        } else {
+            empty.classList.remove('hidden');
+        }
+    } catch(e) {
+        loading.classList.add('hidden');
+        empty.innerText = "Error loading referral data.";
+        empty.classList.remove('hidden');
+    }
+}
+
+function closeUserReferralsModal() {
+    const modal = document.getElementById('referrals-modal');
+    if(modal) modal.classList.add('hidden');
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}

@@ -41,7 +41,21 @@ class AdminAnalyticsService:
         try:
             db.execute("SELECT daily_quota FROM users LIMIT 1")
         except:
-            db.execute("ALTER TABLE users ADD COLUMN daily_quota INTEGER DEFAULT 20")
+            db.execute("ALTER TABLE users ADD COLUMN daily_quota INTEGER DEFAULT 25")
+
+        try:
+            db.execute('''CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER,
+                referred_id INTEGER UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(referred_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);')
+        except Exception as e:
+            logger.error(f"Error ensuring referrals schema: {e}")
+
         db.commit()
         
         # پس از یک بار بررسی موفق، فلگ را تغییر می‌دهیم تا کوئری‌های اضافی به دیتابیس زده نشود
@@ -120,7 +134,8 @@ class AdminAnalyticsService:
                 COUNT(pi.id) as total_tracks,
                 COUNT(DISTINCT pi.session_token) as hubs_connected,
                 MAX(pi.created_at) as last_activity,
-                SUM(t.file_size) as total_storage_bytes
+                SUM(t.file_size) as total_storage_bytes,
+                (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) as referral_count
             FROM users u
             LEFT JOIN playlist_items pi ON u.id = pi.added_by
             LEFT JOIN tracks t ON pi.track_id = t.id
@@ -145,6 +160,8 @@ class AdminAnalyticsService:
             base_query += " ORDER BY last_activity DESC NULLS LAST, join_date DESC"
         elif sort_by == "storage":
             base_query += " ORDER BY total_storage_bytes DESC NULLS LAST"
+        elif sort_by == "referrals":
+            base_query += " ORDER BY referral_count DESC, total_tracks DESC"
         else: # پیش‌فرض: بیشترین مشارکت (tracks)
             base_query += " ORDER BY total_tracks DESC, hubs_connected DESC"
             
@@ -215,6 +232,30 @@ class AdminAnalyticsService:
             rows = db.execute("SELECT telegram_id FROM users WHERE is_banned = 0").fetchall()
             
         return [row['telegram_id'] for row in rows if row['telegram_id']]
+
+    def get_user_referral_network(self, user_id):
+        """
+        واکشی لیست تمام کاربرانی که توسط این کاربر دعوت شده‌اند برای نمایش در پنل ادمین.
+        """
+        self._ensure_schema()
+        db = get_db()
+        user = db.execute("SELECT id, first_name, username, telegram_id, role, daily_quota FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            return None
+            
+        rows = db.execute("""
+            SELECT u.id, u.telegram_id, u.first_name, u.username, u.role, r.created_at as join_date
+            FROM referrals r
+            JOIN users u ON r.referred_id = u.id
+            WHERE r.referrer_id = ?
+            ORDER BY r.created_at DESC
+        """, (user_id,)).fetchall()
+        
+        return {
+            "user": dict(user),
+            "referrals": [dict(r) for r in rows],
+            "total": len(rows)
+        }
 
     # ==========================================
     # 🩺 SYSTEM HEALTH & MAINTENANCE ENGINE
