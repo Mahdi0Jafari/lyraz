@@ -263,8 +263,12 @@ async def process_track_and_queue(update, context, track_meta):
         target_token = get_user_current_session(user.id)
         session = get_session_info(target_token) if target_token else None
         
-        if track_id and session:
-            hub_owner_id = session['admin_id'] if session['admin_id'] else internal_uid
+        if track_id:
+            if session:
+                hub_owner_id = session['admin_id'] if session.get('admin_id') else internal_uid
+            else:
+                hub_owner_id = internal_uid
+                
             bot_db_exec("""
                 INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
                 VALUES (?, ?, ?, ?)
