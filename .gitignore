@@ -64,3 +64,6 @@ static/covers/*
 
 # --- Docker ---
 docker-compose.override.yml
+
+# --- Documentation ---
+docs/
