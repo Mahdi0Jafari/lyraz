@@ -71,6 +71,7 @@
                         <th class="px-6 py-4">Identity</th>
                         <th class="px-6 py-4 text-center">Engagement</th>
                         <th class="px-6 py-4 text-center">Impact (MB)</th>
+                        <th class="px-6 py-4 text-center">Daily Quota</th>
                         <th class="px-6 py-4 text-center">Access Role</th>
                         <th class="px-6 py-4 text-center">Actions</th>
                     </tr>
@@ -119,6 +120,16 @@
                                 <span class="text-sm font-bold font-mono">{{ u.storage_mb }}</span>
                             </div>
                             <div class="text-[10px] text-gray-600 mt-1" title="Last Active">{{ u.last_activity[:16] if u.last_activity else 'Never' }}</div>
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            <div class="inline-flex items-center gap-1">
+                                <input type="number" min="0" max="9999" value="{{ u.daily_quota if u.daily_quota is not none else 20 }}" 
+                                       onchange="updateUserQuota({{ u.id }}, this.value)"
+                                       class="glass-input h-8 w-16 px-1 rounded-lg text-xs text-center font-mono font-bold text-white focus:ring-1 focus:ring-primary/50 transition-colors"
+                                       title="Daily Quota (0 for unlimited)">
+                                <span class="text-[10px] text-gray-500 font-mono">/day</span>
+                            </div>
                         </td>
 
                         <td class="px-6 py-4 text-center">

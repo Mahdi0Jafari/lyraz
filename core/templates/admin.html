@@ -132,6 +132,11 @@
                 <span class="hidden lg:block text-sm font-medium">Channel Rules</span>
             </button>
 
+            <button onclick="switchTab('health')" id="nav-health" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <span class="material-symbols-outlined icon text-[24px] group-hover:text-primary transition-colors">vital_signs</span>
+                <span class="hidden lg:block text-sm font-medium">System Health</span>
+            </button>
+
             <button onclick="switchTab('logs')" id="nav-logs" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <span class="material-symbols-outlined icon text-[24px] group-hover:text-white transition-colors">terminal</span>
                 <span class="hidden lg:block text-sm font-medium">System Logs</span>
@@ -431,6 +436,10 @@
                 </div>
             </div>
 
+            <div id="tab-health" class="hidden animate-in fade-in duration-300">
+                {% include 'admin/components/health_tab.html' %}
+            </div>
+
             <div id="tab-logs" class="hidden animate-in fade-in duration-300 h-full">
                 {% include 'admin/components/logs_tab.html' %}
             </div>
@@ -504,6 +513,7 @@
 
     <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modules/admin_users.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/modules/admin_health.js') }}"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {

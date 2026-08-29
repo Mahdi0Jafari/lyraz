@@ -1,9 +1,11 @@
 # core/services/admin_service.py
 
 import os
+import shutil
 import logging
 from collections import deque
 from core.models import get_db
+from core.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,11 @@ class AdminAnalyticsService:
             db.execute("SELECT is_banned FROM users LIMIT 1")
         except:
             db.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0")
+
+        try:
+            db.execute("SELECT daily_quota FROM users LIMIT 1")
+        except:
+            db.execute("ALTER TABLE users ADD COLUMN daily_quota INTEGER DEFAULT 20")
         db.commit()
         
         # پس از یک بار بررسی موفق، فلگ را تغییر می‌دهیم تا کوئری‌های اضافی به دیتابیس زده نشود
@@ -109,7 +116,7 @@ class AdminAnalyticsService:
 
         base_query = """
             SELECT 
-                u.id, u.telegram_id, u.first_name, u.username, u.role, u.is_banned, u.created_at as join_date,
+                u.id, u.telegram_id, u.first_name, u.username, u.role, u.is_banned, u.daily_quota, u.created_at as join_date,
                 COUNT(pi.id) as total_tracks,
                 COUNT(DISTINCT pi.session_token) as hubs_connected,
                 MAX(pi.created_at) as last_activity,
@@ -184,6 +191,8 @@ class AdminAnalyticsService:
             elif action == 'ban':
                 # value: 1 (ban) or 0 (unban)
                 db.execute("UPDATE users SET is_banned = ? WHERE id = ?", (int(value), target_id))
+            elif action == 'quota':
+                db.execute("UPDATE users SET daily_quota = ? WHERE id = ?", (int(value), target_id))
             db.commit()
             return True
         except Exception as e:
@@ -206,6 +215,192 @@ class AdminAnalyticsService:
             rows = db.execute("SELECT telegram_id FROM users WHERE is_banned = 0").fetchall()
             
         return [row['telegram_id'] for row in rows if row['telegram_id']]
+
+    # ==========================================
+    # 🩺 SYSTEM HEALTH & MAINTENANCE ENGINE
+    # ==========================================
+
+    def get_system_health(self):
+        """
+        بررسی وضعیت زنده سلامت سرور، مصرف دیسک، کش دانلود و اعتبارسنجی کوکی یوتیوب.
+        """
+        self._ensure_schema()
+        
+        # ۱. اطلاعات مصرف دیسک سرور
+        disk_path = Config.INSTANCE_PATH if os.path.exists(Config.INSTANCE_PATH) else os.getcwd()
+        try:
+            total_b, used_b, free_b = shutil.disk_usage(disk_path)
+            disk_total_gb = round(total_b / (1024 ** 3), 1)
+            disk_used_gb = round(used_b / (1024 ** 3), 1)
+            disk_free_gb = round(free_b / (1024 ** 3), 1)
+            disk_percent = round((used_b / total_b) * 100, 1) if total_b > 0 else 0
+        except Exception as e:
+            logger.error(f"Error reading disk usage: {e}")
+            disk_total_gb, disk_used_gb, disk_free_gb, disk_percent = 0, 0, 0, 0
+
+        # ۲. بررسی حجم کش موقت دانلودها (yt_cache)
+        cache_path = Config.DOWNLOAD_CACHE_PATH
+        cache_size_bytes = 0
+        cache_file_count = 0
+        if os.path.exists(cache_path):
+            try:
+                for entry in os.scandir(cache_path):
+                    if entry.is_file():
+                        cache_size_bytes += entry.stat().st_size
+                        cache_file_count += 1
+            except Exception as e:
+                logger.error(f"Error reading cache directory: {e}")
+        cache_size_mb = round(cache_size_bytes / (1024 * 1024), 2)
+
+        # ۳. بررسی حجم فایل دیتابیس
+        db_path = Config.DATABASE_URI
+        db_size_bytes = 0
+        if os.path.exists(db_path):
+            db_size_bytes += os.path.getsize(db_path)
+        wal_path = db_path + "-wal"
+        if os.path.exists(wal_path):
+            db_size_bytes += os.path.getsize(wal_path)
+        db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
+
+        # ۴. وضعیت اعتبار فایل کوکی یوتیوب
+        cookie_path = Config.YT_COOKIES_PATH
+        cookie_info = {
+            "exists": False,
+            "status": "missing",
+            "label": "Missing / No Cookie",
+            "color": "red",
+            "details": "cookies.txt not found. YouTube may block datacenter requests."
+        }
+        if os.path.exists(cookie_path):
+            try:
+                with open(cookie_path, 'r', encoding='utf-8', errors='ignore') as cf:
+                    content = cf.read()
+                cookie_info["exists"] = True
+                has_sid = "SID\t" in content or "\tSID" in content or "SID" in content
+                has_hsid = "HSID" in content
+                has_ssid = "SSID" in content
+                has_login = "LOGIN_INFO" in content
+
+                if has_sid and has_hsid and has_ssid:
+                    cookie_info["status"] = "valid"
+                    cookie_info["label"] = "Authenticated (Full Session)"
+                    cookie_info["color"] = "emerald"
+                    cookie_info["details"] = "Full Google authentication tags present (SID, HSID, SSID)."
+                elif has_login or "PSID" in content:
+                    cookie_info["status"] = "partial"
+                    cookie_info["label"] = "Partial (Temporary)"
+                    cookie_info["color"] = "yellow"
+                    cookie_info["details"] = "Temporary cookies detected. May require periodic refresh."
+                else:
+                    cookie_info["status"] = "unauthenticated"
+                    cookie_info["label"] = "Anonymous / Expired"
+                    cookie_info["color"] = "red"
+                    cookie_info["details"] = "No authentication tags detected in cookies.txt."
+            except Exception as e:
+                logger.error(f"Error checking cookies file: {e}")
+                cookie_info["details"] = str(e)
+
+        return {
+            "disk": {
+                "total_gb": disk_total_gb,
+                "used_gb": disk_used_gb,
+                "free_gb": disk_free_gb,
+                "percent": disk_percent
+            },
+            "cache": {
+                "size_mb": cache_size_mb,
+                "files_count": cache_file_count
+            },
+            "database": {
+                "size_mb": db_size_mb,
+                "path": os.path.basename(db_path)
+            },
+            "cookies": cookie_info
+        }
+
+    def purge_cache(self):
+        """
+        پاکسازی ایمن پوشه کش فایل‌های موقت بدون دستکاری دیتابیس یا فایل‌های اصلی.
+        """
+        cache_path = Config.DOWNLOAD_CACHE_PATH
+        deleted_files = 0
+        freed_bytes = 0
+        if os.path.exists(cache_path):
+            for entry in os.scandir(cache_path):
+                try:
+                    if entry.is_file():
+                        freed_bytes += entry.stat().st_size
+                        os.remove(entry.path)
+                        deleted_files += 1
+                except Exception as e:
+                    logger.warning(f"Could not delete cache file {entry.path}: {e}")
+        
+        freed_mb = round(freed_bytes / (1024 * 1024), 2)
+        return {
+            "success": True,
+            "deleted_files": deleted_files,
+            "freed_mb": freed_mb
+        }
+
+    def optimize_database(self):
+        """
+        بهینه‌سازی دیتابیس SQLite و آزاد کردن فضای جدول‌های حذف‌شده (Vacuum & Optimize).
+        """
+        db = get_db()
+        try:
+            db.execute("PRAGMA optimize;")
+            db.commit()
+            return {"success": True, "message": "Database optimization completed successfully."}
+        except Exception as e:
+            logger.error(f"Database optimization failed: {e}")
+            return {"success": False, "message": str(e)}
+
+    def get_trending_analytics(self):
+        """
+        تحلیل هوشمند محبوب‌ترین قطعات موسیقی و پرطرفدارترین خوانندگان در کل پلتفرم.
+        """
+        self._ensure_schema()
+        db = get_db()
+
+        # ۱. تاپ ۵ موزیک پرطرفدار بر اساس تکرار در دانلودها و هاب‌ها
+        top_tracks_rows = db.execute("""
+            SELECT 
+                t.id, t.title, t.performer, t.duration, t.file_size,
+                COUNT(pi.id) as request_count
+            FROM tracks t
+            JOIN playlist_items pi ON t.id = pi.track_id
+            GROUP BY t.id
+            ORDER BY request_count DESC
+            LIMIT 5
+        """).fetchall()
+
+        # ۲. تاپ ۵ آرتیست محبوب
+        top_artists_rows = db.execute("""
+            SELECT 
+                t.performer,
+                COUNT(pi.id) as total_requests,
+                COUNT(DISTINCT t.id) as unique_tracks
+            FROM tracks t
+            JOIN playlist_items pi ON t.id = pi.track_id
+            WHERE t.performer IS NOT NULL AND TRIM(t.performer) != '' AND LOWER(t.performer) != 'unknown'
+            GROUP BY t.performer
+            ORDER BY total_requests DESC
+            LIMIT 5
+        """).fetchall()
+
+        top_tracks = []
+        for r in top_tracks_rows:
+            d = dict(r)
+            size_bytes = d.get('file_size') or 0
+            d['size_mb'] = round(size_bytes / (1024 * 1024), 1)
+            top_tracks.append(d)
+
+        top_artists = [dict(r) for r in top_artists_rows]
+
+        return {
+            "top_tracks": top_tracks,
+            "top_artists": top_artists
+        }
 
 # سینگلتون برای استفاده در سراسر پروژه
 admin_analytics = AdminAnalyticsService()

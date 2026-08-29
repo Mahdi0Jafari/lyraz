@@ -1,0 +1,273 @@
+<!-- core/templates/admin/components/health_tab.html -->
+<div class="space-y-8 animate-in fade-in duration-300">
+    
+    <!-- Header Section -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                <span class="material-symbols-outlined text-primary text-[28px]">vital_signs</span>
+                System Health & Maintenance
+            </h2>
+            <p class="text-xs text-gray-400 mt-1">Live infrastructure diagnostics, disk resource metrics, and maintenance controls.</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="refreshSystemHealth()" id="btn-refresh-health" class="bg-white/5 hover:bg-white/10 text-white text-xs font-bold h-9 px-3.5 rounded-xl transition-all border border-white/5 hover:border-white/20 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">sync</span>
+                <span>Refresh Metrics</span>
+            </button>
+            <a href="/api/admin/system/backup-db" class="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 text-xs font-bold h-9 px-4 rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(13,242,51,0.15)]">
+                <span class="material-symbols-outlined text-[16px]">download</span>
+                <span>Download DB Backup</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Live Resource Metrics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        
+        <!-- 1. Disk Space Card -->
+        <div class="glass-panel p-5 rounded-2xl relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-all duration-500"></div>
+            <div class="flex items-center justify-between mb-3">
+                <div class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-primary shadow-inner">
+                    <span class="material-symbols-outlined text-[24px]">hard_drive</span>
+                </div>
+                <span class="text-xs font-mono font-bold px-2 py-0.5 rounded-full {% if system_health.disk.percent > 85 %}bg-red-500/20 text-red-400 border border-red-500/30{% elif system_health.disk.percent > 70 %}bg-yellow-500/20 text-yellow-400 border border-yellow-500/30{% else %}bg-primary/20 text-primary border border-primary/30{% endif %}">
+                    {{ system_health.disk.percent }}% Used
+                </span>
+            </div>
+            <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Server Disk</p>
+            <h3 class="text-2xl font-bold text-white tracking-tight font-mono mb-2">
+                {{ system_health.disk.used_gb }} <span class="text-sm font-normal text-gray-400">/ {{ system_health.disk.total_gb }} GB</span>
+            </h3>
+            <!-- Progress Bar -->
+            <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-500 {% if system_health.disk.percent > 85 %}bg-red-500{% elif system_health.disk.percent > 70 %}bg-yellow-500{% else %}bg-primary{% endif %}" style="width: {{ system_health.disk.percent }}%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-gray-500 font-mono mt-1.5">
+                <span>Free: {{ system_health.disk.free_gb }} GB</span>
+                <span>Total: {{ system_health.disk.total_gb }} GB</span>
+            </div>
+        </div>
+
+        <!-- 2. Audio Cache Card -->
+        <div class="glass-panel p-5 rounded-2xl relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all duration-500"></div>
+            <div class="flex items-center justify-between mb-3">
+                <div class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-amber-400 shadow-inner">
+                    <span class="material-symbols-outlined text-[24px]">folder_zip</span>
+                </div>
+                <button onclick="purgeTempCache()" id="btn-purge-quick" class="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-colors flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[13px]">delete_sweep</span>
+                    Purge
+                </button>
+            </div>
+            <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Audio Temp Cache</p>
+            <h3 class="text-2xl font-bold text-white tracking-tight font-mono mb-1">
+                {{ system_health.cache.size_mb }} <span class="text-sm font-normal text-gray-400">MB</span>
+            </h3>
+            <p class="text-[11px] text-gray-500 font-mono flex items-center gap-1">
+                <span class="material-symbols-outlined text-[13px]">audio_file</span>
+                {{ system_health.cache.files_count }} temporary audio files
+            </p>
+        </div>
+
+        <!-- 3. SQLite Database Card -->
+        <div class="glass-panel p-5 rounded-2xl relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
+            <div class="flex items-center justify-between mb-3">
+                <div class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-400 shadow-inner">
+                    <span class="material-symbols-outlined text-[24px]">database</span>
+                </div>
+                <button onclick="optimizeDatabase()" id="btn-opt-quick" class="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 transition-colors flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[13px]">speed</span>
+                    Optimize
+                </button>
+            </div>
+            <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">Database Footprint</p>
+            <h3 class="text-2xl font-bold text-white tracking-tight font-mono mb-1">
+                {{ system_health.database.size_mb }} <span class="text-sm font-normal text-gray-400">MB</span>
+            </h3>
+            <p class="text-[11px] text-gray-500 font-mono truncate" title="{{ system_health.database.path }}">
+                WAL Mode Enabled
+            </p>
+        </div>
+
+        <!-- 4. YouTube Engine & Cookies Status Card -->
+        <div class="glass-panel p-5 rounded-2xl relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 size-24 {% if system_health.cookies.status == 'valid' %}bg-primary/10{% else %}bg-red-500/10{% endif %} rounded-full blur-2xl transition-all duration-500"></div>
+            <div class="flex items-center justify-between mb-3">
+                <div class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center {% if system_health.cookies.status == 'valid' %}text-primary{% else %}text-red-400{% endif %} shadow-inner">
+                    <span class="material-symbols-outlined text-[24px]">key</span>
+                </div>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold {% if system_health.cookies.status == 'valid' %}bg-primary/20 text-primary border border-primary/30{% elif system_health.cookies.status == 'partial' %}bg-yellow-500/20 text-yellow-400 border border-yellow-500/30{% else %}bg-red-500/20 text-red-400 border border-red-500/30{% endif %}">
+                    <span class="size-1.5 rounded-full {% if system_health.cookies.status == 'valid' %}bg-primary animate-pulse{% else %}bg-red-400{% endif %}"></span>
+                    {{ system_health.cookies.label }}
+                </span>
+            </div>
+            <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">YouTube Auth State</p>
+            <p class="text-xs text-gray-300 leading-snug line-clamp-2" title="{{ system_health.cookies.details }}">
+                {{ system_health.cookies.details }}
+            </p>
+        </div>
+
+    </div>
+
+    <!-- Quick Maintenance & Actions Panel -->
+    <div class="glass-panel rounded-2xl p-6 relative overflow-hidden">
+        <div class="flex items-center gap-3 mb-5 border-b border-white/5 pb-4">
+            <div class="size-9 rounded-lg bg-primary/20 text-primary flex items-center justify-center">
+                <span class="material-symbols-outlined text-[20px]">build</span>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-white tracking-tight">Maintenance Actions</h3>
+                <p class="text-xs text-gray-400">Run manual maintenance tasks to keep the system lean and responsive.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Purge Cache Card -->
+            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between hover:border-amber-500/30 transition-all group">
+                <div class="mb-4">
+                    <div class="flex items-center gap-2 text-amber-400 font-bold text-sm mb-1">
+                        <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                        Purge Audio Cache
+                    </div>
+                    <p class="text-xs text-gray-400 leading-relaxed">
+                        Removes temporary downloaded audio files from <code class="text-gray-300 font-mono text-[11px]">instance/yt_cache/</code>. Safe to run anytime.
+                    </p>
+                </div>
+                <button onclick="purgeTempCache()" id="btn-purge-main" class="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 font-bold text-xs h-9 rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">cleaning_services</span>
+                    <span>Free Up Disk Space</span>
+                </button>
+            </div>
+
+            <!-- Database Optimization Card -->
+            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between hover:border-blue-500/30 transition-all group">
+                <div class="mb-4">
+                    <div class="flex items-center gap-2 text-blue-400 font-bold text-sm mb-1">
+                        <span class="material-symbols-outlined text-[18px]">speed</span>
+                        Optimize & Re-Index
+                    </div>
+                    <p class="text-xs text-gray-400 leading-relaxed">
+                        Executes SQLite query optimizer and schema analysis pragmas to speed up playlist lookups and user queries.
+                    </p>
+                </div>
+                <button onclick="optimizeDatabase()" id="btn-opt-main" class="w-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-bold text-xs h-9 rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">bolt</span>
+                    <span>Run PRAGMA Optimize</span>
+                </button>
+            </div>
+
+            <!-- Download DB Backup Card -->
+            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between hover:border-primary/30 transition-all group">
+                <div class="mb-4">
+                    <div class="flex items-center gap-2 text-primary font-bold text-sm mb-1">
+                        <span class="material-symbols-outlined text-[18px]">cloud_download</span>
+                        Full Database Snapshot
+                    </div>
+                    <p class="text-xs text-gray-400 leading-relaxed">
+                        Instantly streams a point-in-time snapshot of <code class="text-gray-300 font-mono text-[11px]">database.db</code> directly to your local computer.
+                    </p>
+                </div>
+                <a href="/api/admin/system/backup-db" class="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-bold text-xs h-9 rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">download</span>
+                    <span>Download Snapshot</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Insights & Trending Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Top 5 Tracks -->
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="size-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center">
+                        <span class="material-symbols-outlined text-[18px]">trending_up</span>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white tracking-tight">Top Requested Tracks</h3>
+                        <p class="text-[11px] text-gray-500">Most played & downloaded songs across Lyraz</p>
+                    </div>
+                </div>
+                <span class="text-[11px] font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">All Time</span>
+            </div>
+
+            <div class="divide-y divide-white/5">
+                {% if trending_data.top_tracks %}
+                    {% for track in trending_data.top_tracks %}
+                    <div class="py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] px-2 rounded-xl transition-colors">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="size-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs font-mono font-bold {% if loop.index == 1 %}text-primary{% elif loop.index == 2 %}text-blue-400{% elif loop.index == 3 %}text-amber-400{% else %}text-gray-400{% endif %}">
+                                #{{ loop.index }}
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs font-bold text-white truncate max-w-[200px] md:max-w-[280px]" title="{{ track.title }}">{{ track.title }}</h4>
+                                <p class="text-[11px] text-gray-400 truncate">{{ track.performer or 'Unknown Artist' }}</p>
+                            </div>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            <span class="text-xs font-mono font-bold text-white">{{ track.request_count }}</span>
+                            <span class="text-[10px] text-gray-500 block">plays</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="py-8 text-center text-gray-500 text-xs">
+                        <span class="material-symbols-outlined text-[28px] text-gray-600 mb-1 block">music_off</span>
+                        No download history recorded yet.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Top 5 Artists -->
+        <div class="glass-panel rounded-2xl p-5 border border-white/5">
+            <div class="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="size-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                        <span class="material-symbols-outlined text-[18px]">artist</span>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white tracking-tight">Top Featured Artists</h3>
+                        <p class="text-[11px] text-gray-500">Most requested performers in user playlists</p>
+                    </div>
+                </div>
+                <span class="text-[11px] font-mono font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">Catalog</span>
+            </div>
+
+            <div class="divide-y divide-white/5">
+                {% if trending_data.top_artists %}
+                    {% for artist in trending_data.top_artists %}
+                    <div class="py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] px-2 rounded-xl transition-colors">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="size-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs font-mono font-bold {% if loop.index == 1 %}text-purple-400{% else %}text-gray-400{% endif %}">
+                                #{{ loop.index }}
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs font-bold text-white truncate max-w-[200px] md:max-w-[280px]" title="{{ artist.performer }}">{{ artist.performer }}</h4>
+                                <p class="text-[11px] text-gray-400 font-mono">{{ artist.unique_tracks }} unique track{{ 's' if artist.unique_tracks != 1 else '' }}</p>
+                            </div>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            <span class="text-xs font-mono font-bold text-white">{{ artist.total_requests }}</span>
+                            <span class="text-[10px] text-gray-500 block">requests</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="py-8 text-center text-gray-500 text-xs">
+                        <span class="material-symbols-outlined text-[28px] text-gray-600 mb-1 block">person_off</span>
+                        No artist data available yet.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+
+</div>

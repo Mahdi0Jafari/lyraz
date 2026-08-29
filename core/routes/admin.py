@@ -6,7 +6,7 @@ import math
 import requests
 import logging
 from collections import deque
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, Response
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, Response, send_file
 from core.models import get_db
 from core.config import Config
 from core.services.admin_service import admin_analytics
@@ -55,6 +55,8 @@ def dashboard():
     
     # گرفتن آمار تحلیلی مربوط به کاربران از سرویس جدید
     user_stats = admin_analytics.get_dashboard_summary()
+    system_health = admin_analytics.get_system_health()
+    trending_data = admin_analytics.get_trending_analytics()
 
     # 3. لیست کانال‌ها
     channels = db.execute("SELECT * FROM channels ORDER BY is_active DESC, title ASC").fetchall()
@@ -101,6 +103,8 @@ def dashboard():
         stats={'tracks': total_tracks, 'channels': total_channels, 'devices': total_devices},
         user_stats=user_stats,
         users_data=users_data,
+        system_health=system_health,
+        trending_data=trending_data,
         page=page, 
         total_pages=total_pages,
         search_query=search_query,
@@ -333,3 +337,55 @@ def update_channel_template():
     db.execute("UPDATE channels SET caption_template = ? WHERE chat_id = ?", (data.get('template'), data.get('chat_id')))
     db.commit()
     return jsonify({'status': 'success'})
+
+# ==========================================
+# 🩺 SYSTEM HEALTH & MAINTENANCE APIs
+# ==========================================
+
+@admin_bp.route('/api/admin/system/health', methods=['GET'])
+def get_system_health_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    health = admin_analytics.get_system_health()
+    return jsonify({'status': 'success', 'data': health})
+
+@admin_bp.route('/api/admin/system/purge-cache', methods=['POST'])
+def purge_system_cache_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    result = admin_analytics.purge_cache()
+    return jsonify(result)
+
+@admin_bp.route('/api/admin/system/optimize-db', methods=['POST'])
+def optimize_db_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    result = admin_analytics.optimize_database()
+    return jsonify(result)
+
+@admin_bp.route('/api/admin/system/backup-db', methods=['GET'])
+def backup_database_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db_path = Config.DATABASE_URI
+    if not os.path.exists(db_path):
+        return jsonify({'status': 'error', 'message': 'Database file not found'}), 404
+    
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    download_filename = f"lyraz_backup_{timestamp}.db"
+    return send_file(db_path, as_attachment=True, download_name=download_filename)
+
+@admin_bp.route('/api/admin/users/update_quota', methods=['POST'])
+def update_user_quota_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json
+    target_id = data.get('user_id')
+    quota = data.get('quota')
+    
+    if target_id is None or quota is None:
+        return jsonify({'status': 'error', 'message': 'Missing user_id or quota'}), 400
+        
+    try:
+        quota_int = int(quota)
+        success = admin_analytics.update_user_status(target_id, 'quota', quota_int)
+        if success:
+            return jsonify({'status': 'success', 'quota': quota_int})
+        return jsonify({'status': 'error', 'message': 'Update failed in database'}), 500
+    except ValueError:
+        return jsonify({'status': 'error', 'message': 'Invalid quota number'}), 400
