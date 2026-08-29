@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html class="dark" lang="en" dir="ltr">
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
@@ -8,11 +8,123 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="Lyraz Hub">
-    
+
+    <!-- Primary SEO Metadata (2026 Standards) -->
+    <title>Lyraz | High-Res Synchronized Music Player & Audio Hub</title>
+    <meta name="description" content="Stream, sync, and control lossless 320kbps music across your screens with Lyraz. Zero latency, synchronized live lyrics, and Telegram audio integration.">
+    <meta name="keywords" content="Lyraz, music player, web player, synchronized audio, 320kbps download, live lyrics, telegram music bot, LyrazBot, LyrazMusic, spotify web player">
+    <meta name="author" content="Lyraz">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+
+    <!-- Canonical & Multilingual Alternate Hreflang -->
+    <link rel="canonical" href="https://lyraz.ir/">
+    <link rel="alternate" hreflang="en" href="https://lyraz.ir/">
+    <link rel="alternate" hreflang="fa" href="https://lyraz.ir/">
+    <link rel="alternate" hreflang="x-default" href="https://lyraz.ir/">
+
+    <!-- Open Graph / Facebook Metadata -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Lyraz">
+    <meta property="og:url" content="https://lyraz.ir/">
+    <meta property="og:title" content="Lyraz | High-Res Synchronized Music Player & Audio Hub">
+    <meta property="og:description" content="Stream, sync, and control lossless 320kbps music across your screens with Lyraz. Zero latency, synchronized live lyrics, and Telegram audio integration.">
+    <meta property="og:image" content="https://lyraz.ir/static/images/og-banner.jpg">
+    <meta property="og:image:secure_url" content="https://lyraz.ir/static/images/og-banner.jpg">
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="714">
+    <meta property="og:image:alt" content="Lyraz High-Res Music Player & Audio Hub Banner">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="fa_IR">
+
+    <!-- Twitter Card Metadata -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Lyraz | High-Res Synchronized Music Player & Audio Hub">
+    <meta name="twitter:description" content="Stream, sync, and control lossless 320kbps music across your screens with Lyraz. Zero latency, synchronized live lyrics, and Telegram audio integration.">
+    <meta name="twitter:image" content="https://lyraz.ir/static/images/og-banner.jpg">
+    <meta name="twitter:image:alt" content="Lyraz High-Res Music Player & Audio Hub Banner">
+
+    <!-- PWA & App Icons -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192x192.png') }}">
-    
-    <title>Lyraz Live Hub</title>
+    <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('static', filename='icons/icon-48x48.png') }}">
+    <link rel="apple-touch-icon" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192x192.png') }}">
+
+    <!-- Structured Data: JSON-LD (Knowledge Graph, WebApp, Organization, FAQ) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://lyraz.ir/#organization",
+          "name": "Lyraz",
+          "url": "https://lyraz.ir",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://lyraz.ir/static/icons/icon-512x512.png",
+            "width": 512,
+            "height": 512
+          },
+          "sameAs": [
+            "https://t.me/LyrazMusic",
+            "https://t.me/LyrazBot"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://lyraz.ir/#website",
+          "url": "https://lyraz.ir",
+          "name": "Lyraz",
+          "publisher": { "@id": "https://lyraz.ir/#organization" },
+          "description": "High-Resolution Synchronized Audio Streaming & Collaborative Music Hub"
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://lyraz.ir/#webapp",
+          "url": "https://lyraz.ir",
+          "name": "Lyraz Live Hub",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "All (Web, iOS, Android, macOS, Windows, Smart TV)",
+          "browserRequirements": "Requires JavaScript. Requires HTML5 Audio.",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://lyraz.ir/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is Lyraz?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Lyraz is a high-resolution synchronized music streaming platform and web audio hub that allows users to play, sync, and control 320kbps audio across multiple screens with synchronized live lyrics."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How do I connect a device to Lyraz?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Open lyraz.ir on your display screen or Smart TV, then scan the displayed QR code with your phone or Telegram camera to connect and control playback instantly."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How does the Telegram bot integration work?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Send any Spotify or YouTube music link to @LyrazBot on Telegram. The audio is instantly processed and streamed live on your connected Lyraz Web Hub screens."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet"/>
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet"/>
@@ -126,7 +238,7 @@
             </div>
 
             <div class="w-full text-center space-y-2 px-2">
-                <h1 id="track-title" class="text-3xl lg:text-4xl font-display font-bold truncate leading-tight tracking-tight drop-shadow-lg">Ready to Play</h1>
+                <h2 id="track-title" class="text-3xl lg:text-4xl font-display font-bold truncate leading-tight tracking-tight drop-shadow-lg">Ready to Play</h2>
                 <p id="track-artist" class="text-lg lg:text-xl text-gray-400 truncate font-medium">Waiting for tracks...</p>
                 <p id="track-adder" class="text-xs font-mono text-gray-500 mt-3 hidden items-center justify-center gap-1.5 bg-white/5 inline-flex px-3 py-1.5 rounded-lg">
                     <i class="ri-user-smile-line text-primary"></i> Added by <span id="added-by-name" class="text-gray-300 font-bold"></span>
@@ -224,6 +336,39 @@
             <div id="mini-qrcode" class="w-24 h-24 mix-blend-multiply flex justify-center items-center"></div>
         </div>
     </div>
+
+    <!-- Semantic SEO & GEO Architecture (2026 Standards for Search & AI Engines) -->
+    <footer class="sr-only">
+        <section aria-label="About Lyraz Platform">
+            <h2>About Lyraz Live Hub</h2>
+            <p>Lyraz (https://lyraz.ir) is a decentralized web audio player and live collaborative music platform. It enables zero-latency synchronized audio streaming across multiple screens, including mobile devices, desktops, and Smart TVs.</p>
+        </section>
+        <section aria-label="Key Features">
+            <h3>Key Features of Lyraz</h3>
+            <ul>
+                <li><strong>Zero-Latency Synchronization:</strong> Stream music synchronously across connected screens using Server-Sent Events (SSE).</li>
+                <li><strong>High-Resolution Audio:</strong> Stream lossless audio at 320kbps and 192kbps bitrates.</li>
+                <li><strong>Synchronized Real-Time Lyrics:</strong> Dynamic, millisecond-accurate lyrics rendering with hardware-accelerated ambient glow.</li>
+                <li><strong>Telegram Bot Vault (@LyrazBot):</strong> Instantly queue and download tracks and Spotify playlists via Telegram.</li>
+                <li><strong>Curated Music Magazine (@LyrazMusic):</strong> Discover hand-picked tracks, timeless sounds, and audio stories.</li>
+            </ul>
+        </section>
+        <section aria-label="Frequently Asked Questions">
+            <h3>Frequently Asked Questions</h3>
+            <article>
+                <h4>What is Lyraz?</h4>
+                <p>Lyraz is a high-resolution synchronized music streaming platform and web audio hub for personal and party listening.</p>
+            </article>
+            <article>
+                <h4>How do I connect a device?</h4>
+                <p>Scan the QR code displayed on the screen using your mobile phone or Telegram camera to connect and control playback.</p>
+            </article>
+            <article>
+                <h4>How does the Telegram bot work?</h4>
+                <p>Send any Spotify or YouTube music link to @LyrazBot on Telegram. The audio is instantly processed and streamed live on your connected Lyraz Web Hub screens.</p>
+            </article>
+        </section>
+    </footer>
 
     <script src="{{ url_for('static', filename='js/lyrics.js') }}"></script>
     <script type="module" src="{{ url_for('static', filename='js/player.js') }}"></script>
