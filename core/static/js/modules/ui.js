@@ -196,7 +196,25 @@ export function updateControlButtons() {
 export function showLoginQR(url) {
     if(elements.qrContainer && typeof QRCode !== 'undefined') {
         elements.qrContainer.innerHTML = "";
-        new QRCode(elements.qrContainer, { text: url, width: 256, height: 256, colorDark: "#000", colorLight: "#fff", correctLevel: QRCode.CorrectLevel.L });
+        new QRCode(elements.qrContainer, { 
+            text: url, 
+            width: 256, 
+            height: 256, 
+            colorDark: "#000000", 
+            colorLight: "#ffffff", 
+            correctLevel: QRCode.CorrectLevel.M 
+        });
+        
+        // Force responsive scaling on generated canvas/image
+        const qrEl = elements.qrContainer.querySelector('img') || elements.qrContainer.querySelector('canvas');
+        if (qrEl) {
+            qrEl.style.width = '100%';
+            qrEl.style.height = '100%';
+            qrEl.style.maxWidth = '100%';
+            qrEl.style.maxHeight = '100%';
+            qrEl.style.objectFit = 'contain';
+            qrEl.style.display = 'block';
+        }
     }
 }
 

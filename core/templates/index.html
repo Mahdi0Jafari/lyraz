@@ -21,6 +21,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        #qrcode, #mini-qrcode {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        #qrcode canvas, #qrcode img, #mini-qrcode canvas, #mini-qrcode img {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            object-fit: contain !important;
+            display: block !important;
+        }
+    </style>
     
     <script>
         tailwind.config = {
@@ -71,8 +86,8 @@
     <div id="login-overlay" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-3xl transition-opacity duration-700 p-6 {% if session and session.status == 'active' %}hidden opacity-0 pointer-events-none{% endif %}">
         <div class="relative group cursor-pointer transform hover:scale-105 transition-transform duration-500">
             <div class="absolute -inset-1 bg-gradient-to-r from-primary to-blue-500 rounded-[2.2rem] blur-xl opacity-40 group-hover:opacity-75 transition duration-1000"></div>
-            <div class="relative bg-white p-5 rounded-[2rem] shadow-2xl mb-8">
-                <div id="qrcode" class="w-[50vw] h-[50vw] max-w-[240px] max-h-[240px] flex items-center justify-center overflow-hidden"></div>
+            <div class="relative bg-white p-5 rounded-[2rem] shadow-2xl mb-8 flex items-center justify-center">
+                <div id="qrcode" class="w-[55vw] h-[55vw] max-w-[220px] max-h-[220px] aspect-square flex items-center justify-center"></div>
             </div>
         </div>
         <h1 class="text-4xl lg:text-6xl font-display font-bold mb-4 tracking-tight text-white drop-shadow-lg text-center leading-tight">Start the Party</h1>
