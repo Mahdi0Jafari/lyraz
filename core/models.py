@@ -67,7 +67,7 @@ def init_db():
                 username TEXT,
                 role TEXT DEFAULT 'user',
                 current_session TEXT DEFAULT NULL,
-                daily_quota INTEGER DEFAULT 20,
+                daily_quota INTEGER DEFAULT 25,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
 
@@ -161,9 +161,20 @@ def init_db():
                 source TEXT,
                 updated_at INTEGER
             )''')
+
+            # 8. Referrals Table (Viral Growth Engine)
+            c.execute('''CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER,
+                referred_id INTEGER UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(referred_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);')
             
             conn.commit()
-            print("✅ Database Schema V4.2 Optimized & Ready (WAL + Foreign Keys + Session Routing)")
+            print("✅ Database Schema V4.3 Optimized & Ready (WAL + Foreign Keys + Referral Engine)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")

@@ -389,3 +389,11 @@ def update_user_quota_api():
         return jsonify({'status': 'error', 'message': 'Update failed in database'}), 500
     except ValueError:
         return jsonify({'status': 'error', 'message': 'Invalid quota number'}), 400
+
+@admin_bp.route('/api/admin/users/<int:user_id>/referrals', methods=['GET'])
+def get_user_referrals_api(user_id):
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = admin_analytics.get_user_referral_network(user_id)
+    if not data:
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
+    return jsonify({'status': 'success', 'data': data})

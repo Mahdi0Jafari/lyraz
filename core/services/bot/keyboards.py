@@ -11,7 +11,8 @@ def get_main_menu_keyboard():
     keyboard = [
         [KeyboardButton("🔍 Search Music"), KeyboardButton("📥 Download Link")],
         [KeyboardButton("🎛 Remote Control"), KeyboardButton("📋 Queue")],
-        [KeyboardButton("📺 My Hubs"), KeyboardButton("📖 Setup Guide")]
+        [KeyboardButton("📺 My Hubs"), KeyboardButton("📖 Setup Guide")],
+        [KeyboardButton("🎁 Invite Friends")]
     ]
     return ReplyKeyboardMarkup(
         keyboard,
