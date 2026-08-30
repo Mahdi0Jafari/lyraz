@@ -145,7 +145,7 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
             'youtube_id': video_id,
             'bitrate': cached['bitrate']
         }
-        await process_track_and_queue(update, context, track_meta)
+        await process_track_and_queue(update, context, track_meta, is_upload=False, source='cache_hit')
         return
 
     # 2. Cache Miss (Fallback Download)
@@ -210,12 +210,13 @@ async def ensure_track_and_process(update, context, video_id, title, artist):
         await status.edit_text("❌ Download from source failed.")
 
 
-async def process_track_and_queue(update, context, track_meta):
+async def process_track_and_queue(update, context, track_meta, is_upload=False, source='bot'):
     """
     Core Processing Hub:
     1. Register track in DB.
-    2. Add to Hub queue & Broadcast Sync Signal.
-    3. Send audio file back to the user.
+    2. Add to Hub queue & Broadcast Sync Signal (if connected to hub).
+    3. Log user download (unless it's an uploaded file).
+    4. Send audio file back to the user.
     """
     user = update.effective_user
     
@@ -264,15 +265,17 @@ async def process_track_and_queue(update, context, track_meta):
         session = get_session_info(target_token) if target_token else None
         
         if track_id:
-            if session:
-                hub_owner_id = session['admin_id'] if session.get('admin_id') else internal_uid
-            else:
-                hub_owner_id = internal_uid
-                
-            bot_db_exec("""
-                INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
-                VALUES (?, ?, ?, ?)
-            """, (hub_owner_id, track_id, internal_uid, target_token))
+            # اگر فایل آپلودی خود کاربر نباشد، به عنوان دانلود ثبت می‌شود
+            if not is_upload and user:
+                from core.services.bot.database import log_user_download
+                log_user_download(telegram_id=user.id, track_id=track_id, source=source, first_name=user.first_name, username=user.username)
+
+            if target_token:
+                hub_owner_id = session['admin_id'] if session and session.get('admin_id') else internal_uid
+                bot_db_exec("""
+                    INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
+                    VALUES (?, ?, ?, ?)
+                """, (hub_owner_id, track_id, internal_uid, target_token))
             
         return internal_uid, track_id, target_token, session
 
