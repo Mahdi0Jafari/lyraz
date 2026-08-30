@@ -377,7 +377,19 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             try: await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
             except: pass
 
-        # ۵. تزریق به هاب
+        # ۵. ثبت دانلود کاربر در جدول اختصاصی user_downloads
+        track_db_id = None
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
+            t_res = cur.fetchone()
+            if t_res: track_db_id = t_res[0]
+
+        if track_db_id and user_id:
+            from core.services.bot.database import log_user_download
+            source_tag = 'spotify_playlist' if is_batch else 'bot'
+            log_user_download(telegram_id=user_id, track_id=track_db_id, source=source_tag, first_name=user_first_name)
+
+        # ۶. تزریق به هاب (در صورت فعال بودن سشن وب‌پلیر)
         reply_markup = None
         d_name = "Hub"
         if session_token:
@@ -389,12 +401,6 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
             base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
-
-            track_db_id = None
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
-                t_res = cur.fetchone()
-                if t_res: track_db_id = t_res[0]
 
             if track_db_id:
                 internal_user_id = get_user_id(user_id)
@@ -556,6 +562,10 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 if cached:
                     d_name = "Hub"
                     reply_markup = None
+
+                    if user_id:
+                        from core.services.bot.database import log_user_download
+                        await asyncio.to_thread(log_user_download, user_id, cached['id'], 'spotify_playlist', user_first_name)
 
                     if session_token:
                         def update_hub():

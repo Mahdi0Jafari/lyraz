@@ -58,6 +58,50 @@ def get_user_id(telegram_id):
         logger.error(f"Get User ID Error: {e}")
         return None
 
+def ensure_user_exists(telegram_id, first_name=None, username=None):
+    """تضمین وجود کاربر در دیتابیس و دریافت ID داخلی"""
+    conn = get_db_connection()
+    if not conn or not telegram_id: return None
+    try:
+        with conn:
+            res = conn.execute("SELECT id FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+            if res:
+                if first_name or username:
+                    conn.execute(
+                        "UPDATE users SET first_name = COALESCE(?, first_name), username = COALESCE(?, username) WHERE id = ?",
+                        (first_name, username, res['id'])
+                    )
+                return res['id']
+            
+            c = conn.cursor()
+            c.execute(
+                "INSERT INTO users (telegram_id, first_name, username) VALUES (?, ?, ?)",
+                (telegram_id, first_name, username)
+            )
+            return c.lastrowid
+    except sqlite3.Error as e:
+        logger.error(f"Ensure User Exists Error: {e}")
+        return None
+
+def log_user_download(telegram_id, track_id, source='bot', first_name=None, username=None):
+    """ثبت قطعی دانلود کاربر در جدول اختصاصی user_downloads"""
+    if not telegram_id or not track_id: return False
+    internal_uid = ensure_user_exists(telegram_id, first_name=first_name, username=username)
+    if not internal_uid: return False
+    
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO user_downloads (user_id, track_id, source) VALUES (?, ?, ?)",
+                (internal_uid, track_id, source)
+            )
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Log User Download Error: {e}")
+        return False
+
 def get_user_role(telegram_id):
     """دریافت نقش کاربر (Admin, Pro, User) برای کنترل کیفیت دانلود و محدودیت‌ها"""
     conn = get_db_connection()
@@ -87,10 +131,10 @@ def check_user_quota_status(telegram_id):
             
         max_quota = user['daily_quota'] if user['daily_quota'] is not None else 25
         
-        # تعداد دانلودهای امروز کاربر (بر اساس ساعت محلی سرور)
+        # تعداد دانلودهای امروز کاربر از جدول رویدادهای user_downloads
         res = conn.execute("""
-            SELECT COUNT(*) FROM playlist_items 
-            WHERE added_by = ? AND date(created_at, 'localtime') = date('now', 'localtime')
+            SELECT COUNT(*) FROM user_downloads 
+            WHERE user_id = ? AND date(downloaded_at, 'localtime') = date('now', 'localtime')
         """, (user['id'],)).fetchone()
         
         current_count = res[0] if res else 0

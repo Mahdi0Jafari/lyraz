@@ -172,9 +172,23 @@ def init_db():
                 FOREIGN KEY(referred_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
             c.execute('CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);')
+
+            # 9. User Downloads Table (Clean Many-to-Many Event Architecture)
+            c.execute('''CREATE TABLE IF NOT EXISTS user_downloads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                track_id INTEGER NOT NULL,
+                source TEXT DEFAULT 'bot',
+                downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+            )''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_user ON user_downloads(user_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_track ON user_downloads(track_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_date ON user_downloads(downloaded_at);')
             
             conn.commit()
-            print("✅ Database Schema V4.3 Optimized & Ready (WAL + Foreign Keys + Referral Engine)")
+            print("✅ Database Schema V4.4 Optimized & Ready (WAL + Foreign Keys + Referral Engine + User Downloads)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")

@@ -56,6 +56,31 @@ class AdminAnalyticsService:
         except Exception as e:
             logger.error(f"Error ensuring referrals schema: {e}")
 
+        try:
+            db.execute('''CREATE TABLE IF NOT EXISTS user_downloads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                track_id INTEGER NOT NULL,
+                source TEXT DEFAULT 'bot',
+                downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+            )''')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_downloads_user ON user_downloads(user_id);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_downloads_track ON user_downloads(track_id);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_downloads_date ON user_downloads(downloaded_at);')
+
+            # مایگریشن خودکار داده‌های قبلی (یک‌بار اجرا در صورت خالی بودن جدول)
+            db.execute('''
+                INSERT INTO user_downloads (user_id, track_id, source, downloaded_at)
+                SELECT added_by, track_id, 'web_hub', created_at
+                FROM playlist_items
+                WHERE added_by IS NOT NULL AND track_id IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM user_downloads LIMIT 1);
+            ''')
+        except Exception as e:
+            logger.error(f"Error ensuring user_downloads schema: {e}")
+
         db.commit()
         
         # پس از یک بار بررسی موفق، فلگ را تغییر می‌دهیم تا کوئری‌های اضافی به دیتابیس زده نشود
@@ -106,11 +131,11 @@ class AdminAnalyticsService:
         hubs_created = db.execute("SELECT COUNT(DISTINCT admin_id) FROM sessions").fetchone()[0]
         conversion_rate = round((hubs_created / total_users * 100), 1) if total_users > 0 else 0
         
-        # ۳. فعالان امروز (محاسبه هوشمند بر اساس تایم‌زون سرور)
+        # ۳. فعالان امروز (محاسبه هوشمند بر اساس جدول رویدادهای دانلود)
         active_today = db.execute("""
-            SELECT COUNT(DISTINCT added_by) 
-            FROM playlist_items 
-            WHERE datetime(created_at, 'localtime') >= datetime('now', '-1 day', 'localtime')
+            SELECT COUNT(DISTINCT user_id) 
+            FROM user_downloads 
+            WHERE datetime(downloaded_at, 'localtime') >= datetime('now', '-1 day', 'localtime')
         """).fetchone()[0]
 
         return {
@@ -121,8 +146,7 @@ class AdminAnalyticsService:
 
     def get_users_analytics(self, page=1, per_page=50, search_query=None, sort_by="tracks"):
         """
-        واکشی کامل لیست کاربران همراه با 10 فیچر تحلیلی (Interdisciplinary Join).
-        این کوئری ۳ جدول users، playlist_items و tracks را به هم می‌دوزد.
+        واکشی کامل لیست کاربران همراه با آمار دقیق دانلودها و وضعیت مصرف دیتابیس.
         """
         self._ensure_schema()  # 🔥 فراخوانی ایمن
         db = get_db()
@@ -131,14 +155,12 @@ class AdminAnalyticsService:
         base_query = """
             SELECT 
                 u.id, u.telegram_id, u.first_name, u.username, u.role, u.is_banned, u.daily_quota, u.created_at as join_date,
-                COUNT(pi.id) as total_tracks,
-                COUNT(DISTINCT pi.session_token) as hubs_connected,
-                MAX(pi.created_at) as last_activity,
-                SUM(t.file_size) as total_storage_bytes,
+                (SELECT COUNT(*) FROM user_downloads ud WHERE ud.user_id = u.id) as total_tracks,
+                (SELECT COUNT(DISTINCT pi.session_token) FROM playlist_items pi WHERE pi.added_by = u.id) as hubs_connected,
+                (SELECT MAX(ud.downloaded_at) FROM user_downloads ud WHERE ud.user_id = u.id) as last_activity,
+                (SELECT COALESCE(SUM(t.file_size), 0) FROM user_downloads ud JOIN tracks t ON ud.track_id = t.id WHERE ud.user_id = u.id) as total_storage_bytes,
                 (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id) as referral_count
             FROM users u
-            LEFT JOIN playlist_items pi ON u.id = pi.added_by
-            LEFT JOIN tracks t ON pi.track_id = t.id
         """
         
         params = []
@@ -153,8 +175,6 @@ class AdminAnalyticsService:
         if where_clauses:
             base_query += " WHERE " + " AND ".join(where_clauses)
             
-        base_query += " GROUP BY u.id"
-        
         # موتور رتبه‌بندی و مرتب‌سازی
         if sort_by == "recent":
             base_query += " ORDER BY last_activity DESC NULLS LAST, join_date DESC"
@@ -162,11 +182,11 @@ class AdminAnalyticsService:
             base_query += " ORDER BY total_storage_bytes DESC NULLS LAST"
         elif sort_by == "referrals":
             base_query += " ORDER BY referral_count DESC, total_tracks DESC"
-        else: # پیش‌فرض: بیشترین مشارکت (tracks)
+        else: # پیش‌فرض: بیشترین دانلود (tracks)
             base_query += " ORDER BY total_tracks DESC, hubs_connected DESC"
             
         # محاسبه تعداد کل رکوردها برای صفحه‌بندی (Pagination)
-        count_query = f"SELECT COUNT(*) FROM (SELECT u.id FROM users u {'WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''} GROUP BY u.id)"
+        count_query = f"SELECT COUNT(*) FROM users u {'WHERE ' + ' AND '.join(where_clauses) if where_clauses else ''}"
         total_records = db.execute(count_query, params).fetchone()[0]
         total_pages = (total_records + per_page - 1) // per_page
         
@@ -403,13 +423,13 @@ class AdminAnalyticsService:
         self._ensure_schema()
         db = get_db()
 
-        # ۱. تاپ ۵ موزیک پرطرفدار بر اساس تکرار در دانلودها و هاب‌ها
+        # ۱. تاپ ۵ موزیک پرطرفدار بر اساس تکرار در دانلودها
         top_tracks_rows = db.execute("""
             SELECT 
                 t.id, t.title, t.performer, t.duration, t.file_size,
-                COUNT(pi.id) as request_count
+                COUNT(ud.id) as request_count
             FROM tracks t
-            JOIN playlist_items pi ON t.id = pi.track_id
+            JOIN user_downloads ud ON t.id = ud.track_id
             GROUP BY t.id
             ORDER BY request_count DESC
             LIMIT 5
@@ -419,10 +439,10 @@ class AdminAnalyticsService:
         top_artists_rows = db.execute("""
             SELECT 
                 t.performer,
-                COUNT(pi.id) as total_requests,
+                COUNT(ud.id) as total_requests,
                 COUNT(DISTINCT t.id) as unique_tracks
             FROM tracks t
-            JOIN playlist_items pi ON t.id = pi.track_id
+            JOIN user_downloads ud ON t.id = ud.track_id
             WHERE t.performer IS NOT NULL AND TRIM(t.performer) != '' AND LOWER(t.performer) != 'unknown'
             GROUP BY t.performer
             ORDER BY total_requests DESC

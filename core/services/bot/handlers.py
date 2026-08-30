@@ -739,7 +739,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'thumb_id': audio.thumbnail.file_id if audio.thumbnail else None,
         'youtube_id': None
     }
-    await process_track_and_queue(update, context, meta)
+    await process_track_and_queue(update, context, meta, is_upload=True)
 
 async def inline_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
