@@ -122,11 +122,19 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
                         await local_bot.delete_message(chat_id=Config.STORAGE_CHANNEL_ID, message_id=fwd.message_id)
                     except Exception:
                         pass
-                    return await local_bot.send_audio(
-                        chat_id=chat_id, audio=new_file_id, caption=user_caption,
-                        title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=reply_markup
-                    )
+                    try:
+                        return await local_bot.send_audio(
+                            chat_id=chat_id, audio=new_file_id, caption=user_caption,
+                            title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=reply_markup
+                        )
+                    except Exception as healed_md_err:
+                        clean_caption = user_caption.replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
+                        return await local_bot.send_audio(
+                            chat_id=chat_id, audio=new_file_id, caption=clean_caption,
+                            title=title, performer=artist, parse_mode=None,
+                            reply_markup=reply_markup
+                        )
             except Exception as heal_err:
                 logger.error(f"Self-healing failed: {heal_err}")
         raise send_err
@@ -280,6 +288,68 @@ async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_n
             logger.info(f"✅ Auto-Broadcast sent to {channel_id}: {title}")
     except Exception as e:
         logger.error(f"❌ Auto-Broadcast Engine Error: {e}")
+
+# ==========================================
+# 🌟 BACKGROUND TASK: ARTIST DISCOGRAPHY INGESTION
+# ==========================================
+
+@huey.task()
+def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel_id):
+    """پردازش ناهمگام و تزریق پس‌زمینه ترک‌های یک خواننده بدون مسدود کردن وب سرور"""
+    logger.info(f"🌟 Starting Background Ingest for Campaign {campaign_id}: {artist_name} ({len(tracks)} tracks)")
+    from core.services.crawler import crawler_service
+    import sqlite3
+
+    for trk in tracks:
+        title = trk.get('title')
+        artist = trk.get('artist_string') or (', '.join(trk.get('artists', [])) if trk.get('artists') else artist_name)
+        cover_url = (trk.get('album') or {}).get('cover_url') or trk.get('cover_url')
+        duration_sec = trk.get('duration_seconds') or (trk.get('duration_ms', 0) // 1000)
+        album_name = (trk.get('album') or {}).get('name') or trk.get('album_name') or ''
+        release_date = (trk.get('album') or {}).get('release_date') or trk.get('release_date') or ''
+        spotify_url = trk.get('spotify_url') or ''
+
+        # ۱. سرچ هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID
+        query = f"{artist} {title}"
+        yt_res = crawler_service.yt.search(query)
+        if not yt_res:
+            continue
+            
+        vid = yt_res[0].get('videoId')
+        if not vid:
+            continue
+
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            # ۲. ثبت در جدول campaign_tracks
+            conn.execute("""
+                INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, youtube_id, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+            """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
+
+            # ۳. ثبت در جدول صف ingestion_logs
+            cur = conn.execute("""
+                INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+                VALUES (?, ?, ?, ?, 'queued')
+            """, (title, artist, vid, f"artist_hub:{artist_name[:20]}"))
+            log_id = cur.lastrowid
+            conn.commit()
+
+        # ۴. ارسال ترک به صف اصلی دانلود و تحویل
+        download_and_process_track(
+            video_id=vid,
+            title=title,
+            artist=artist,
+            user_id=0,
+            user_first_name="ArtistHub",
+            session_token=None,
+            chat_id=None,
+            message_id=None,
+            quality=None,
+            cover_url=cover_url,
+            duration=duration_sec,
+            log_id=log_id,
+            target_channel_id=target_channel_id
+        )
 
 # ==========================================
 # 🎧 MAIN TASK: SINGLE TRACK DOWNLOAD
@@ -504,13 +574,14 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
         if target_channel_id:
             try:
+                channel_caption = f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @LyrazMusic\n🤖 @LyrazBot"
                 await deliver_audio_safe(
                     local_bot=local_bot,
                     chat_id=target_channel_id,
                     track_row=track_meta,
                     title=final_title,
                     artist=final_artist,
-                    user_caption=f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @lyraz_ir"
+                    user_caption=channel_caption
                 )
                 logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
             except Exception as ch_err:
