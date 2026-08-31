@@ -155,22 +155,22 @@
     <!-- ========================================== -->
     <!-- 🧭 TOP NAVIGATION -->
     <!-- ========================================== -->
-    <header class="sticky top-0 z-50 w-full border-b border-white/5 bg-black/50 backdrop-blur-2xl">
-        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+    <header class="sticky top-0 z-50 w-full border-b border-white/5 bg-black/60 backdrop-blur-2xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
             
             <!-- Brand Identity -->
-            <a href="https://lyraz.ir" class="flex items-center gap-3 group">
-                <div class="size-10 rounded-2xl bg-gradient-to-br from-primary/25 to-primary/5 border border-primary/40 flex items-center justify-center shadow-[0_0_25px_rgba(13,242,51,0.25)] group-hover:scale-105 transition-transform">
-                    <span class="material-symbols-rounded text-2xl text-primary">graphic_eq</span>
+            <a href="https://lyraz.ir" class="flex items-center gap-2.5 sm:gap-3 group">
+                <div class="size-9 sm:size-10 rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary/25 to-primary/5 border border-primary/40 flex items-center justify-center shadow-[0_0_25px_rgba(13,242,51,0.25)] group-hover:scale-105 transition-transform">
+                    <span class="material-symbols-rounded text-xl sm:text-2xl text-primary">graphic_eq</span>
                 </div>
-                <div class="flex items-baseline gap-2">
-                    <span class="font-display font-black text-2xl tracking-tighter text-white">LYRAZ</span>
-                    <span class="text-[10px] font-mono font-bold tracking-widest text-primary/80 uppercase">CONNECT</span>
+                <div class="flex items-baseline gap-1.5 sm:gap-2">
+                    <span class="font-display font-black text-xl sm:text-2xl tracking-tighter text-white">LYRAZ</span>
+                    <span class="text-[9px] sm:text-[10px] font-mono font-bold tracking-widest text-primary/80 uppercase">CONNECT</span>
                 </div>
             </a>
 
             <!-- Nav Links (Desktop) -->
-            <nav class="hidden md:flex items-center gap-9 text-sm font-semibold text-gray-400">
+            <nav class="hidden lg:flex items-center gap-9 text-sm font-semibold text-gray-400">
                 <a href="#how-it-works" class="hover:text-white transition">Architecture</a>
                 <a href="#features" class="hover:text-white transition">Features</a>
                 <a href="#usecases" class="hover:text-white transition">Venues & Use Cases</a>
@@ -181,14 +181,15 @@
             </nav>
 
             <!-- Actions -->
-            <div class="flex items-center gap-3">
-                <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white px-4 py-2.5 rounded-full border border-white/10 hover:border-white/20 transition">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <a href="https://t.me/{{ bot_username }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-bold text-gray-300 hover:text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-full border border-white/10 hover:border-white/20 transition">
                     <i class="ri-robot-2-line text-sm text-tg"></i>
-                    <span>Open @{{ bot_username }}</span>
+                    <span class="hidden xs:inline">@{{ bot_username }}</span>
+                    <span class="xs:hidden">Bot</span>
                 </a>
-                <a href="https://lyraz.ir" class="btn-glow-emerald inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs uppercase tracking-wider font-extrabold">
-                    <span class="material-symbols-rounded text-base">tv</span>
-                    <span>Launch Live Hub</span>
+                <a href="https://lyraz.ir" class="btn-glow-emerald inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full text-[11px] sm:text-xs uppercase tracking-wider font-extrabold">
+                    <span class="material-symbols-rounded text-sm sm:text-base">tv</span>
+                    <span>Live Hub</span>
                 </a>
             </div>
 
@@ -198,38 +199,38 @@
     <!-- ========================================== -->
     <!-- ⚡️ HERO SECTION -->
     <!-- ========================================== -->
-    <main class="relative z-10 w-full max-w-7xl mx-auto px-6 pt-16 md:pt-24 pb-24 flex flex-col items-center text-center">
+    <main class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16 md:pt-24 pb-16 sm:pb-24 flex flex-col items-center text-center">
         
         <!-- Live Status Pill -->
-        <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl mb-8 shadow-inner">
-            <span class="relative flex h-2 w-2">
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl mb-6 sm:mb-8 shadow-inner max-w-full">
+            <span class="relative flex h-2 w-2 shrink-0">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            <span class="text-xs font-mono font-medium tracking-wide text-gray-300">
-                PTP Clock Synchronization &bull; Zero-Latency Audio Grid
+            <span class="text-[11px] sm:text-xs font-mono font-medium tracking-wide text-gray-300 truncate">
+                PTP Clock Sync &bull; Zero-Latency Audio Grid
             </span>
         </div>
 
         <!-- Headline -->
-        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08] max-w-5xl mb-7">
+        <h1 class="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.12] sm:leading-[1.08] max-w-5xl mb-5 sm:mb-7">
             The collaborative jukebox <br class="hidden sm:block">
             <span class="text-gradient">for every screen &amp; every crowd.</span>
         </h1>
 
         <!-- Subtitle -->
-        <p class="text-base sm:text-xl text-gray-400 max-w-3xl leading-relaxed mb-12 font-normal">
+        <p class="text-sm sm:text-lg md:text-xl text-gray-400 max-w-3xl leading-relaxed mb-8 sm:mb-12 font-normal px-2">
             Open <strong class="text-white font-semibold">lyraz.ir</strong> on your Smart TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-semibold">@LyrazBot</strong>. No apps to install. No Bluetooth fights.
         </p>
 
         <!-- CTA Action Bar -->
-        <div class="flex flex-col sm:flex-row items-center gap-4 w-full justify-center max-w-lg mb-20">
-            <a href="https://lyraz.ir" class="btn-glow-emerald w-full sm:w-auto px-8 py-4 rounded-2xl flex items-center justify-center gap-3 text-sm tracking-wide uppercase font-black">
-                <span class="material-symbols-rounded text-xl">cast_connected</span>
+        <div class="flex flex-col sm:flex-row items-center gap-3.5 sm:gap-4 w-full justify-center max-w-lg mb-12 sm:mb-20">
+            <a href="https://lyraz.ir" class="btn-glow-emerald w-full sm:w-auto px-7 py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2.5 text-xs sm:text-sm tracking-wide uppercase font-black">
+                <span class="material-symbols-rounded text-lg sm:text-xl">cast_connected</span>
                 <span>Open Live Hub (Display)</span>
             </a>
-            <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-glow-tg w-full sm:w-auto px-8 py-4 rounded-2xl flex items-center justify-center gap-3 text-sm tracking-wide font-bold">
-                <i class="ri-telegram-fill text-xl"></i>
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-glow-tg w-full sm:w-auto px-7 py-3.5 sm:py-4 rounded-2xl flex items-center justify-center gap-2.5 text-xs sm:text-sm tracking-wide font-bold">
+                <i class="ri-telegram-fill text-lg sm:text-xl"></i>
                 <span>Connect via @{{ bot_username }}</span>
             </a>
         </div>
