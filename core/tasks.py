@@ -10,7 +10,7 @@ import sqlite3
 import random
 import time
 import re
-from huey import SqliteHuey
+from huey import SqliteHuey, crontab
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
@@ -275,19 +275,19 @@ async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_n
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None):
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None):
     """ورکر تسک برای دانلود و پردازش یک آهنگ (Non-blocking)"""
     logger.info(f"🚀 Task Started: {title} ({video_id})")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration)
+            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration, log_id=log_id)
         )
     finally:
         loop.close()
 
-async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None):
+async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None, log_id=None):
     """
     is_batch: اگر True باشد، پیام وضعیتی که در هندلر ساخته شده (message_id) پاک نمی‌شود، 
     چون آن پیام قرار است به عنوان نوار پیشرفت کل پلی‌لیست عمل کند. اما فایل صوتی حتماً ارسال می‌شود.
@@ -295,6 +295,14 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
     path = None
     local_bot = get_bot_instance()
     
+    if log_id:
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("UPDATE ingestion_logs SET status = 'downloading' WHERE id = ?", (log_id,))
+                conn.commit()
+        except Exception:
+            pass
+
     try:
         # ۱. تثبیت عنوان و خواننده اصلی (اگر از قبل مشخص است، قفل می‌شود و نباید تغییر کند)
         is_known_title = bool(title and title not in ['Unknown Track', 'YouTube Track'])
@@ -320,6 +328,12 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
         
         if not path:
+            if log_id:
+                try:
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Download failed' WHERE id = ?", (log_id,))
+                        conn.commit()
+                except Exception: pass
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
             return False
@@ -327,6 +341,12 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
         tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
         if not tg_audio:
+            if log_id:
+                try:
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Telegram storage archive failed' WHERE id = ?", (log_id,))
+                        conn.commit()
+                except Exception: pass
             if message_id and not is_batch:
                 await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
             return False
@@ -365,6 +385,13 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             storage_msg_id
         ))
         
+        if log_id:
+            try:
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    conn.execute("UPDATE ingestion_logs SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (log_id,))
+                    conn.commit()
+            except Exception: pass
+
         if rich_metadata.get('lyrics'):
              try:
                  with sqlite3.connect(Config.DATABASE_URI) as conn:
@@ -377,14 +404,14 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             try: await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
             except: pass
 
-        # ۵. ثبت دانلود کاربر در جدول اختصاصی user_downloads
+        # ۵. ثبت دانلود کاربر در جدول اختصاصی user_downloads (فقط برای کاربران واقعی، نه عملیات سیستمی)
         track_db_id = None
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             cur = conn.execute("SELECT id FROM tracks WHERE youtube_id=?", (video_id,))
             t_res = cur.fetchone()
             if t_res: track_db_id = t_res[0]
 
-        if track_db_id and user_id:
+        if track_db_id and user_id and user_id != 0:
             from core.services.bot.database import log_user_download
             source_tag = 'spotify_playlist' if is_batch else 'bot'
             log_user_download(telegram_id=user_id, track_id=track_db_id, source=source_tag, first_name=user_first_name)
@@ -713,3 +740,42 @@ async def _async_bulk_broadcast(target_telegram_ids, message_text):
     logger.info(f"✅ Broadcast Completed. Success: {success_count} | Failed: {failed_count}")
     try: await local_bot.initialize() ; await local_bot.shutdown()
     except: pass
+
+
+# ==========================================
+# ⏰ AUTONOMOUS CATALOG PRE-WARMER SCHEDULER
+# ==========================================
+
+@huey.periodic_task(crontab(minute='0'))
+def check_crawler_schedule():
+    """
+    تسک زمان‌بندی‌شده دوره‌ای: بررسی اجرای کرولر خودکار بر اساس ساعت تنظیم‌شده در پنل ادمین
+    """
+    try:
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+            if not settings or 'crawler_enabled' not in settings.keys() or not settings['crawler_enabled']:
+                return
+
+            import datetime
+            now_str = datetime.datetime.now().strftime("%H:00")
+            sched_str = settings['crawler_schedule_hour'] or '04:00'
+            
+            # تطابق ساعت اجرای مشخص‌شده
+            if now_str[:2] == sched_str[:2]:
+                logger.info(f"🚀 [Auto-Prewarmer] Triggering Scheduled Crawler for {sched_str}...")
+                from core.services.crawler import crawler_service
+                source = settings['crawler_source'] or 'global_top_50'
+                max_tracks = settings['crawler_max_tracks'] or 15
+                
+                if source == 'persian_trending':
+                    tracks = crawler_service.get_persian_trending(limit=max_tracks * 2)
+                else:
+                    chart_res = crawler_service.get_spotify_chart(source)
+                    tracks = chart_res.get('tracks', [])
+                    
+                res = crawler_service.ingest_tracks_one_by_one(tracks, source_label=f"auto_{source}", max_limit=max_tracks)
+                logger.info(f"✅ [Auto-Prewarmer] Dispatched: {res['queued']} queued, {res['skipped']} skipped.")
+    except Exception as e:
+        logger.error(f"Error in check_crawler_schedule: {e}")
