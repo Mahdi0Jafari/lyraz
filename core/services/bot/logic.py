@@ -271,7 +271,7 @@ async def process_track_and_queue(update, context, track_meta, is_upload=False, 
                 log_user_download(telegram_id=user.id, track_id=track_id, source=source, first_name=user.first_name, username=user.username)
 
             if target_token:
-                hub_owner_id = session['admin_id'] if session and session.get('admin_id') else internal_uid
+                hub_owner_id = session['admin_id'] if (session and session['admin_id']) else internal_uid
                 bot_db_exec("""
                     INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) 
                     VALUES (?, ?, ?, ?)
@@ -290,6 +290,11 @@ async def process_track_and_queue(update, context, track_meta, is_upload=False, 
     # ==========================
     if not target_token:
         # User not connected to Hub -> just return file
+        base_url = Config.BASE_URL.rstrip('/') if Config.BASE_URL else "http://localhost:5000"
+        hub_reply_markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🌐 Open Web Player & Connect", url=base_url)
+        ]])
+
         if track_meta.get('youtube_id'):
             # await context.bot.send_chat_action(chat_id=user.id, action=ChatAction.UPLOAD_VOICE)
             try:
@@ -298,11 +303,17 @@ async def process_track_and_queue(update, context, track_meta, is_upload=False, 
                 await context.bot.send_audio(
                     chat_id=user.id, audio=track_meta['file_id'],
                     title=track_meta['title'], performer=track_meta['performer'],
-                    caption=caption, parse_mode=ParseMode.MARKDOWN
+                    caption=caption, parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=hub_reply_markup
                 )
             except Exception: pass
             
-        await context.bot.send_message(user.id, "⚠️ Track saved. To play this synchronously, connect to a Live Hub first from the menu.")
+        await context.bot.send_message(
+            user.id, 
+            "⚠️ *Track saved!*\n\nTo play this synchronously on the site, open the Web Player, scan the QR code to connect your bot, then send tracks.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=hub_reply_markup
+        )
         return
 
     if session:
