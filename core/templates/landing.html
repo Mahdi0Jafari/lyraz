@@ -1,25 +1,32 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" class="dark scroll-smooth">
+<html lang="en" class="dark scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     
-    <!-- SEO Master Metadata -->
-    <title>لایراز (Lyraz) | اکوسیستم هوشمند پخش و استریم گروهی موزیک</title>
-    <meta name="description" content="لایراز یک پلتفرم نسل جدید برای پخش همگام موزیک در کافه‌ها، پارتی‌ها، خانه و محل کار است. کنترل از طریق تلگرام @LyrazBot، پخش زنده لیریکس و کیفیت 320kbps.">
-    <meta name="keywords" content="لایراز, موزیک پلیر, لیریکس زنده, بات تلگرام موزیک, Lyraz, LyrazBot, LyrazMusic, spotify web player, synchronized music">
+    <!-- Primary SEO Metadata -->
+    <title>Lyraz — Decentralized Collaborative Audio & Synchronized Jukebox</title>
+    <meta name="description" content="Turn any screen into a collaborative live audio hub. Guests scan, drop songs via Telegram @LyrazBot, and listen in millisecond-accurate sync with real-time lyrics.">
+    <meta name="keywords" content="Lyraz, collaborative music player, party jukebox, spotify connect alternative, synchronized web audio, telegram music bot, live lyrics screen, social dj">
+    <meta name="author" content="Lyraz">
     <meta name="robots" content="index, follow">
 
-    <!-- Social & Open Graph -->
-    <meta property="og:title" content="لایراز (Lyraz) | سینک زنده موزیک، بدون مرز">
-    <meta property="og:description" content="تلویزیون رو باز کن، با تلگرام آهنگ بفرست، همه باهم گوش بدید و لیریکس زنده رو ببینید!">
+    <!-- Open Graph & Social Cards -->
+    <meta property="og:title" content="Lyraz — The Collaborative Music Hub for Every Screen">
+    <meta property="og:description" content="Put music on the big screen. Everyone queues songs from Telegram. Zero apps to download, zero latency.">
     <meta property="og:url" content="https://lyraz.ir/landing">
     <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
 
-    <!-- Fonts & Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&family=Vazirmatn:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0" rel="stylesheet" />
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -28,19 +35,20 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Vazirmatn', 'sans-serif'],
-                        display: ['Space Grotesk', 'Vazirmatn', 'sans-serif'],
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"Space Grotesk"', 'monospace'],
+                        display: ['"Plus Jakarta Sans"', 'sans-serif'],
                     },
                     colors: {
                         primary: '#0df233',
+                        primaryHover: '#00d924',
                         tg: '#2AABEE',
-                        dark: '#060709',
-                        surface: '#0f1115',
-                        surfaceHover: '#161920',
+                        dark: '#050608',
+                        card: 'rgba(15, 17, 23, 0.7)',
+                        cardBorder: 'rgba(255, 255, 255, 0.08)',
                     },
                     backgroundImage: {
-                        'hero-glow': 'radial-gradient(circle at 50% 10%, rgba(13, 242, 51, 0.15) 0%, rgba(6, 7, 9, 0) 65%)',
-                        'tg-glow': 'radial-gradient(circle at 50% 50%, rgba(42, 171, 238, 0.12) 0%, rgba(6, 7, 9, 0) 70%)',
+                        'grid-pattern': "radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)",
                     }
                 }
             }
@@ -48,224 +56,319 @@
     </script>
 
     <style>
+        :root {
+            color-scheme: dark;
+        }
         body {
-            background-color: #060709;
-            color: #f1f3f7;
-            font-family: 'Vazirmatn', sans-serif;
+            background-color: #050608;
+            color: #e6e8ee;
+            font-family: 'Plus Jakarta Sans', sans-serif;
             overflow-x: hidden;
-            selection-background-color: #0df233;
-            selection-color: #000;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .glass-card {
-            background: rgba(17, 19, 24, 0.65);
+        /* Glassmorphic Surfaces */
+        .glass-panel {
+            background: rgba(14, 17, 24, 0.65);
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.07);
         }
 
-        .glow-btn {
-            box-shadow: 0 0 35px rgba(13, 242, 51, 0.35);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .glass-card-hover {
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .glow-btn:hover {
-            box-shadow: 0 0 50px rgba(13, 242, 51, 0.55);
+        .glass-card-hover:hover {
+            transform: translateY(-4px);
+            border-color: rgba(13, 242, 51, 0.3);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8), 0 0 30px rgba(13, 242, 51, 0.08);
+        }
+
+        /* High-End Glow Buttons */
+        .btn-glow-emerald {
+            background: linear-gradient(135deg, #0df233 0%, #00c926 100%);
+            color: #050608;
+            font-weight: 800;
+            box-shadow: 0 0 30px rgba(13, 242, 51, 0.35);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .btn-glow-emerald:hover {
+            box-shadow: 0 0 45px rgba(13, 242, 51, 0.55);
             transform: translateY(-2px);
         }
 
-        .tg-btn {
-            box-shadow: 0 0 35px rgba(42, 171, 238, 0.25);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .btn-glow-tg {
+            background: linear-gradient(135deg, #2AABEE 0%, #229ED9 100%);
+            color: #ffffff;
+            font-weight: 700;
+            box-shadow: 0 0 30px rgba(42, 171, 238, 0.25);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .tg-btn:hover {
-            box-shadow: 0 0 50px rgba(42, 171, 238, 0.45);
+        .btn-glow-tg:hover {
+            box-shadow: 0 0 45px rgba(42, 171, 238, 0.45);
             transform: translateY(-2px);
         }
 
-        .custom-gradient-text {
-            background: linear-gradient(135deg, #ffffff 30%, #0df233 100%);
+        /* Shimmering Text Gradient */
+        .text-gradient {
+            background: linear-gradient(135deg, #ffffff 40%, #a3a8b8 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        @keyframes pulse-gentle {
-            0%, 100% { transform: scale(1); opacity: 0.8; }
-            50% { transform: scale(1.05); opacity: 1; }
+        .text-gradient-emerald {
+            background: linear-gradient(135deg, #0df233 0%, #7eff97 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        .animate-gentle {
-            animation: pulse-gentle 4s ease-in-out infinite;
+
+        /* Ambient Glow Blobs */
+        @keyframes float-pulse {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+            50% { transform: translate(20px, -20px) scale(1.1); opacity: 0.8; }
+        }
+        .ambient-blob-1 {
+            animation: float-pulse 8s ease-in-out infinite;
+        }
+        .ambient-blob-2 {
+            animation: float-pulse 10s ease-in-out infinite reverse;
+        }
+
+        /* Grid Background Texture */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
         }
     </style>
 </head>
-<body class="bg-hero-glow bg-no-repeat bg-top min-h-screen flex flex-col justify-between">
+<body class="bg-[#050608] min-h-screen relative flex flex-col justify-between selection:bg-primary selection:text-black">
 
-    <!-- Ambient Lighting Blobs -->
-    <div class="fixed inset-0 pointer-events-none z-0">
-        <div class="absolute -top-40 right-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[140px] animate-gentle"></div>
-        <div class="absolute top-1/3 left-10 w-[400px] h-[400px] bg-tg/10 rounded-full blur-[140px] animate-gentle" style="animation-delay: 2s;"></div>
+    <!-- Ambient Visual Glows -->
+    <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-primary/10 rounded-full blur-[160px] ambient-blob-1"></div>
+        <div class="absolute top-[45%] -left-32 w-[600px] h-[600px] bg-tg/8 rounded-full blur-[180px] ambient-blob-2"></div>
+        <div class="absolute bottom-10 right-0 w-[500px] h-[500px] bg-purple-500/8 rounded-full blur-[180px]"></div>
     </div>
 
     <!-- ========================================== -->
-    <!-- 🧭 NAVIGATION BAR -->
+    <!-- 🧭 TOP NAVIGATION -->
     <!-- ========================================== -->
-    <header class="relative z-50 w-full px-6 py-5 max-w-7xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="size-10 rounded-2xl bg-primary/20 border border-primary/40 flex items-center justify-center shadow-[0_0_20px_rgba(13,242,51,0.3)]">
-                <i class="ri-disc-line text-2xl text-primary animate-spin" style="animation-duration: 10s;"></i>
+    <header class="sticky top-0 z-50 w-full border-b border-white/5 bg-black/50 backdrop-blur-2xl">
+        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            
+            <!-- Brand Identity -->
+            <a href="https://lyraz.ir" class="flex items-center gap-3 group">
+                <div class="size-10 rounded-2xl bg-gradient-to-br from-primary/25 to-primary/5 border border-primary/40 flex items-center justify-center shadow-[0_0_25px_rgba(13,242,51,0.25)] group-hover:scale-105 transition-transform">
+                    <span class="material-symbols-rounded text-2xl text-primary">graphic_eq</span>
+                </div>
+                <div class="flex items-baseline gap-2">
+                    <span class="font-display font-black text-2xl tracking-tighter text-white">LYRAZ</span>
+                    <span class="text-[10px] font-mono font-bold tracking-widest text-primary/80 uppercase">CONNECT</span>
+                </div>
+            </a>
+
+            <!-- Nav Links (Desktop) -->
+            <nav class="hidden md:flex items-center gap-9 text-sm font-semibold text-gray-400">
+                <a href="#how-it-works" class="hover:text-white transition">Architecture</a>
+                <a href="#features" class="hover:text-white transition">Features</a>
+                <a href="#usecases" class="hover:text-white transition">Venues & Use Cases</a>
+                <a href="https://t.me/{{ channel_username }}" target="_blank" class="hover:text-tg transition flex items-center gap-1.5">
+                    <i class="ri-telegram-fill text-base text-tg"></i>
+                    <span>@{{ channel_username }}</span>
+                </a>
+            </nav>
+
+            <!-- Actions -->
+            <div class="flex items-center gap-3">
+                <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white px-4 py-2.5 rounded-full border border-white/10 hover:border-white/20 transition">
+                    <i class="ri-robot-2-line text-sm text-tg"></i>
+                    <span>Open @{{ bot_username }}</span>
+                </a>
+                <a href="https://lyraz.ir" class="btn-glow-emerald inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs uppercase tracking-wider font-extrabold">
+                    <span class="material-symbols-rounded text-base">tv</span>
+                    <span>Launch Live Hub</span>
+                </a>
             </div>
-            <span class="font-display font-black text-2xl tracking-tight text-white">LYRAZ</span>
-            <span class="text-[11px] font-mono font-bold bg-white/10 text-gray-300 px-2 py-0.5 rounded-full border border-white/10">v4.4</span>
-        </div>
 
-        <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-300">
-            <a href="#how-it-works" class="hover:text-primary transition-colors">نحوه کارکرد</a>
-            <a href="#features" class="hover:text-primary transition-colors">قابلیت‌ها</a>
-            <a href="#usecases" class="hover:text-primary transition-colors">کجاها کاربرد داره؟</a>
-            <a href="https://t.me/{{ channel_username }}" target="_blank" class="hover:text-tg transition-colors flex items-center gap-1">
-                <i class="ri-telegram-line text-lg"></i>
-                کانال @{{ channel_username }}
-            </a>
-        </nav>
-
-        <div class="flex items-center gap-3">
-            <a href="https://lyraz.ir" class="glow-btn hidden sm:inline-flex items-center gap-2 bg-primary text-black font-extrabold px-5 py-2.5 rounded-full text-xs transition">
-                <i class="ri-play-fill text-base"></i>
-                ورود به وب‌پلیر
-            </a>
-            <a href="https://t.me/{{ bot_username }}" target="_blank" class="tg-btn inline-flex items-center gap-2 bg-tg text-black font-extrabold px-5 py-2.5 rounded-full text-xs transition">
-                <i class="ri-telegram-fill text-base"></i>
-                @{{ bot_username }}
-            </a>
         </div>
     </header>
 
     <!-- ========================================== -->
-    <!-- 🚀 HERO SECTION -->
+    <!-- ⚡️ HERO SECTION -->
     <!-- ========================================== -->
-    <main class="relative z-10 w-full max-w-7xl mx-auto px-6 pt-12 pb-20 flex flex-col items-center text-center">
+    <main class="relative z-10 w-full max-w-7xl mx-auto px-6 pt-16 md:pt-24 pb-24 flex flex-col items-center text-center">
         
-        <!-- Live Pill Badge -->
-        <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md mb-8">
-            <span class="relative flex h-2.5 w-2.5">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+        <!-- Live Status Pill -->
+        <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl mb-8 shadow-inner">
+            <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            <span class="text-xs font-mono font-bold text-gray-200">
-                پخش همگام زنده موزیک با ساعت جهانی (PTP)
+            <span class="text-xs font-mono font-medium tracking-wide text-gray-300">
+                PTP Clock Synchronization &bull; Zero-Latency Audio Grid
             </span>
         </div>
 
-        <!-- Hero Headline -->
-        <h1 class="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.2] max-w-5xl mb-6">
-            دیگه هیچ‌وقت تنهایی موزیک گوش نده! <br>
-            <span class="custom-gradient-text">یک پارتی مشترک روی تمام صفحه‌ها</span>
+        <!-- Headline -->
+        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08] max-w-5xl mb-7">
+            The collaborative jukebox <br class="hidden sm:block">
+            <span class="text-gradient">for every screen &amp; every crowd.</span>
         </h1>
 
-        <!-- Hero Subtitle -->
-        <p class="text-base sm:text-xl text-gray-400 max-w-2xl leading-relaxed mb-10">
-            روی تلویزیون یا مانیتور <strong class="text-white">lyraz.ir</strong> رو باز کن. هر کسی توی اتاق یا کافه می‌تونه با <strong class="text-tg">@LyrazBot</strong> آهنگ، ویس یا پلی‌لیست بفرسته تا همه همزمان گوش بدن!
+        <!-- Subtitle -->
+        <p class="text-base sm:text-xl text-gray-400 max-w-3xl leading-relaxed mb-12 font-normal">
+            Open <strong class="text-white font-semibold">lyraz.ir</strong> on your Smart TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-semibold">@LyrazBot</strong>. No apps to install. No Bluetooth fights.
         </p>
 
-        <!-- CTA Buttons -->
-        <div class="flex flex-col sm:flex-row items-center gap-4 w-full justify-center max-w-md mb-16">
-            <a href="https://lyraz.ir" class="glow-btn w-full sm:w-auto px-8 py-4 rounded-2xl bg-primary text-black font-black text-base flex items-center justify-center gap-3">
-                <i class="ri-tv-line text-2xl"></i>
-                شروع پخش زنده (Live Hub)
+        <!-- CTA Action Bar -->
+        <div class="flex flex-col sm:flex-row items-center gap-4 w-full justify-center max-w-lg mb-20">
+            <a href="https://lyraz.ir" class="btn-glow-emerald w-full sm:w-auto px-8 py-4 rounded-2xl flex items-center justify-center gap-3 text-sm tracking-wide uppercase font-black">
+                <span class="material-symbols-rounded text-xl">cast_connected</span>
+                <span>Open Live Hub (Display)</span>
             </a>
-            <a href="https://t.me/{{ bot_username }}" target="_blank" class="tg-btn w-full sm:w-auto px-8 py-4 rounded-2xl bg-surface border border-white/10 hover:border-tg/50 text-white font-bold text-base flex items-center justify-center gap-3">
-                <i class="ri-telegram-fill text-2xl text-tg"></i>
-                ربات تلگرام @{{ bot_username }}
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-glow-tg w-full sm:w-auto px-8 py-4 rounded-2xl flex items-center justify-center gap-3 text-sm tracking-wide font-bold">
+                <i class="ri-telegram-fill text-xl"></i>
+                <span>Connect via @{{ bot_username }}</span>
             </a>
         </div>
 
         <!-- ========================================== -->
-        <!-- 📺 INTERACTIVE MOCKUP PREVIEW -->
+        <!-- 🖥️ HERO INTERACTIVE MOCKUP DISPLAY -->
         <!-- ========================================== -->
         <div class="w-full max-w-5xl relative group">
-            <div class="absolute -inset-1 bg-gradient-to-r from-primary via-tg to-primary rounded-[2.5rem] blur-2xl opacity-25 group-hover:opacity-45 transition duration-1000"></div>
             
-            <div class="relative glass-card rounded-[2.2rem] p-4 sm:p-8 border border-white/10 shadow-2xl overflow-hidden text-right">
+            <!-- Gradient Backlight Halo -->
+            <div class="absolute -inset-1.5 bg-gradient-to-r from-primary via-tg to-purple-500 rounded-[2.5rem] blur-3xl opacity-20 group-hover:opacity-40 transition-opacity duration-1000"></div>
+
+            <!-- Television / Desktop Frame -->
+            <div class="relative glass-panel rounded-[2rem] p-5 sm:p-8 border border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.8)] overflow-hidden text-left">
                 
-                <!-- Mockup Top Bar -->
-                <div class="flex items-center justify-between pb-6 border-b border-white/10 mb-6">
-                    <div class="flex items-center gap-2">
-                        <div class="size-3 rounded-full bg-red-500/80"></div>
-                        <div class="size-3 rounded-full bg-yellow-500/80"></div>
-                        <div class="size-3 rounded-full bg-green-500/80"></div>
-                        <span class="text-xs text-gray-500 font-mono mr-3">https://lyraz.ir/live/demo</span>
+                <!-- Screen Header / Navigation Bar -->
+                <div class="flex items-center justify-between pb-5 border-b border-white/10 mb-8">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-1.5">
+                            <div class="size-3 rounded-full bg-red-500/80"></div>
+                            <div class="size-3 rounded-full bg-yellow-500/80"></div>
+                            <div class="size-3 rounded-full bg-green-500/80"></div>
+                        </div>
+                        <span class="text-xs font-mono text-gray-500 ml-2">lyraz.ir/live/cafemood</span>
                     </div>
-                    <div class="flex items-center gap-2 text-xs font-mono text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-                        <i class="ri-broadcast-line"></i>
-                        <span>LIVE SYNC ACTIVE</span>
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-1.5 text-[11px] font-mono text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                            <span class="material-symbols-rounded text-xs animate-spin" style="animation-duration: 3s;">sync</span>
+                            <span>SYNC ENGINE: 0.04ms OFFSET</span>
+                        </div>
+                        <div class="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 bg-white/5 px-2.5 py-1 rounded-full border border-white/5">
+                            <span class="material-symbols-rounded text-xs">devices</span>
+                            <span>8 CONNECTED</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Mockup Content Grid -->
+                <!-- Main Player Mockup Grid -->
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                     
-                    <!-- Cover Art (Left on desktop) -->
-                    <div class="lg:col-span-4 flex flex-col items-center">
-                        <div class="relative w-48 sm:w-60 aspect-square rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)] border border-white/10 group-hover:scale-105 transition-transform duration-700">
-                            <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=600&auto=format&fit=crop&q=80" alt="Mock Album Art" class="w-full h-full object-cover">
-                            <div class="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-mono border border-white/10 text-white">
-                                🎧 320 kbps
+                    <!-- Left: Album Art & DJ Credential -->
+                    <div class="lg:col-span-4 flex flex-col items-center lg:items-start text-center lg:text-left">
+                        <div class="relative w-52 sm:w-64 aspect-square rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.7)] border border-white/10 group-hover:scale-[1.02] transition-transform duration-500">
+                            <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=700&auto=format&fit=crop&q=80" alt="Concert Atmosphere" class="w-full h-full object-cover">
+                            
+                            <!-- Quality Badge -->
+                            <div class="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border border-white/10 text-primary uppercase flex items-center gap-1">
+                                <span class="size-1.5 rounded-full bg-primary animate-pulse"></span>
+                                FLAC &bull; 320k
                             </div>
                         </div>
-                        <h3 class="text-xl font-bold mt-4 text-white">Mountains</h3>
-                        <p class="text-sm text-gray-400">Message To Bears</p>
-                        <div class="mt-2 text-xs font-mono text-gray-400 bg-white/5 px-3 py-1 rounded-full border border-white/5 inline-flex items-center gap-1.5">
-                            <i class="ri-user-smile-line text-primary"></i> فرستاده شده توسط <span class="text-white font-bold">مهدی</span>
+
+                        <div class="mt-5 space-y-1 w-full">
+                            <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-white truncate">Starlight Symphony</h3>
+                            <p class="text-sm text-gray-400 font-medium truncate">M83 &bull; Junk (Deluxe Edition)</p>
+                            
+                            <!-- DJ Contributor Pill -->
+                            <div class="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 font-mono">
+                                <div class="size-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">M</div>
+                                <span>Queued by <strong class="text-white font-bold">Mahdi</strong></span>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Center: Lyrics & Scrubbing -->
-                    <div class="lg:col-span-5 flex flex-col justify-between py-2 space-y-6">
-                        <div class="space-y-3 font-medium text-center">
-                            <p class="text-gray-500 text-sm">And we could run away</p>
-                            <p class="text-primary text-xl sm:text-2xl font-bold font-display drop-shadow-[0_0_20px_rgba(13,242,51,0.4)]">Before the light of day</p>
-                            <p class="text-gray-500 text-sm">You know we always could</p>
+                    <!-- Center: Dynamic Synchronized Lyrics -->
+                    <div class="lg:col-span-5 flex flex-col justify-between py-2 space-y-7 text-center">
+                        
+                        <!-- Lyrics Lines -->
+                        <div class="space-y-3 font-semibold px-4">
+                            <p class="text-gray-500 text-sm transition-all">We drift across the quiet night</p>
+                            <p class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-[0_0_25px_rgba(13,242,51,0.5)] text-primary">
+                                Chasing echoes in the neon light
+                            </p>
+                            <p class="text-gray-500 text-sm transition-all">Until tomorrow comes again</p>
                         </div>
 
-                        <!-- Player Scrubber -->
-                        <div class="w-full space-y-2">
-                            <div class="h-2 bg-white/10 rounded-full overflow-hidden relative">
-                                <div class="h-full bg-primary rounded-full w-[45%] shadow-[0_0_15px_#0df233]"></div>
+                        <!-- Progress Bar & Scrubbing -->
+                        <div class="w-full space-y-2 px-2">
+                            <div class="h-2.5 bg-white/10 rounded-full overflow-hidden relative">
+                                <div class="h-full bg-primary rounded-full w-[62%] shadow-[0_0_20px_#0df233]"></div>
                             </div>
-                            <div class="flex justify-between text-xs font-mono text-gray-400">
-                                <span>1:42</span>
-                                <span>3:55</span>
+                            <div class="flex justify-between text-xs font-mono text-gray-400 font-bold px-0.5">
+                                <span>2:14</span>
+                                <span>3:48</span>
                             </div>
                         </div>
 
-                        <!-- Player Buttons Mock -->
-                        <div class="flex items-center justify-center gap-6">
-                            <i class="ri-skip-back-fill text-2xl text-gray-400"></i>
-                            <div class="size-14 rounded-full bg-primary text-black flex items-center justify-center text-2xl shadow-[0_0_25px_rgba(13,242,51,0.4)]">
-                                <i class="ri-play-fill ml-0.5"></i>
+                        <!-- Controls Display -->
+                        <div class="flex items-center justify-center gap-6 text-gray-400">
+                            <button class="hover:text-white transition"><span class="material-symbols-rounded text-2xl">shuffle</span></button>
+                            <button class="hover:text-white transition"><span class="material-symbols-rounded text-3xl">skip_previous</span></button>
+                            <div class="size-14 rounded-full bg-white text-black flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.3)]">
+                                <span class="material-symbols-rounded text-3xl fill-1 ml-0.5">pause</span>
                             </div>
-                            <i class="ri-skip-forward-fill text-2xl text-gray-400"></i>
+                            <button class="hover:text-white transition"><span class="material-symbols-rounded text-3xl">skip_next</span></button>
+                            <button class="hover:text-white transition"><span class="material-symbols-rounded text-2xl">repeat</span></button>
                         </div>
                     </div>
 
-                    <!-- Right: Live Queue -->
-                    <div class="lg:col-span-3 bg-white/5 rounded-2xl p-4 border border-white/5 space-y-3">
-                        <div class="flex items-center justify-between text-xs font-bold border-b border-white/10 pb-2">
-                            <span>صف پخش (Queue)</span>
-                            <span class="font-mono bg-white/10 px-2 py-0.5 rounded text-[10px]">4 ترک</span>
+                    <!-- Right: Collaborative Queue Stream -->
+                    <div class="lg:col-span-3 bg-black/40 rounded-2xl p-4 border border-white/5 space-y-3">
+                        <div class="flex items-center justify-between text-xs font-bold text-gray-400 border-b border-white/10 pb-2.5">
+                            <div class="flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-sm text-primary">queue_music</span>
+                                <span>Live Queue</span>
+                            </div>
+                            <span class="font-mono text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-white">4 Up Next</span>
                         </div>
+
                         <div class="space-y-2 text-xs">
-                            <div class="p-2 rounded-xl bg-primary/10 border border-primary/20 flex items-center gap-2">
-                                <div class="size-2 rounded-full bg-primary animate-ping"></div>
-                                <span class="truncate font-bold text-white">Mountains</span>
+                            <div class="p-2.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between">
+                                <div class="truncate pr-2">
+                                    <p class="font-bold text-white truncate">Starlight Symphony</p>
+                                    <p class="text-[10px] text-gray-400 truncate">Now Playing</p>
+                                </div>
+                                <span class="material-symbols-rounded text-primary text-base">equalizer</span>
                             </div>
-                            <div class="p-2 rounded-xl bg-white/5 flex items-center justify-between text-gray-400">
-                                <span class="truncate">The Woods - Hollow Coves</span>
-                                <span class="text-[10px] font-mono">سارا</span>
+
+                            <div class="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition flex items-center justify-between text-gray-300">
+                                <div class="truncate pr-2">
+                                    <p class="font-medium text-white truncate">Instant Crush</p>
+                                    <p class="text-[10px] text-gray-500 truncate">Daft Punk &bull; Julian Casablancas</p>
+                                </div>
+                                <span class="text-[10px] font-mono text-gray-400 shrink-0">@alex</span>
                             </div>
-                            <div class="p-2 rounded-xl bg-white/5 flex items-center justify-between text-gray-400">
-                                <span class="truncate">Belter - Gerry Cinnamon</span>
-                                <span class="text-[10px] font-mono">علی</span>
+
+                            <div class="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition flex items-center justify-between text-gray-300">
+                                <div class="truncate pr-2">
+                                    <p class="font-medium text-white truncate">Midnight City</p>
+                                    <p class="text-[10px] text-gray-500 truncate">M83</p>
+                                </div>
+                                <span class="text-[10px] font-mono text-gray-400 shrink-0">@elena</span>
                             </div>
+                        </div>
+
+                        <!-- Mini QR Preview -->
+                        <div class="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                            <span>Scan TV to drop song</span>
+                            <span class="material-symbols-rounded text-base text-primary">qr_code_scanner</span>
                         </div>
                     </div>
 
@@ -277,120 +380,150 @@
     </main>
 
     <!-- ========================================== -->
-    <!-- ⚡️ HOW IT WORKS (3 STEPS) -->
+    <!-- 🏗️ 3-STEP ARCHITECTURE ("HOW IT WORKS") -->
     <!-- ========================================== -->
-    <section id="how-it-works" class="relative z-10 w-full max-w-6xl mx-auto px-6 py-20">
-        <div class="text-center mb-16">
-            <h2 class="text-3xl sm:text-4xl font-extrabold text-white mb-3">۳ ثانیه تا شروع مهمانی</h2>
-            <p class="text-gray-400 text-sm sm:text-base">بدون نیاز به نصب اپلیکیشن یا ثبت‌نام پیچیده</p>
+    <section id="how-it-works" class="relative z-10 w-full max-w-7xl mx-auto px-6 py-24 border-t border-white/5 bg-grid">
+        <div class="text-center max-w-2xl mx-auto mb-20">
+            <span class="text-xs font-mono font-bold tracking-widest text-primary uppercase">Zero Setup Friction</span>
+            <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white mt-2 mb-4">How Lyraz Works</h2>
+            <p class="text-gray-400 text-sm sm:text-base">
+                No apps to download from the App Store. No Bluetooth pairing headaches. Ready in 5 seconds on any browser.
+            </p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             
             <!-- Step 1 -->
-            <div class="glass-card rounded-3xl p-8 flex flex-col items-start relative overflow-hidden group hover:border-primary/40 transition">
-                <div class="size-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-2xl font-bold mb-6 group-hover:scale-110 transition">
-                    ۱
+            <div class="glass-panel glass-card-hover rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden">
+                <div>
+                    <div class="size-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-mono text-2xl font-black mb-7">
+                        01
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2">Open the Screen</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">
+                        Launch <strong class="text-white">lyraz.ir</strong> on your Smart TV, laptop, or soundbar. A unique permanent Hub session and instant QR code appear.
+                    </p>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">باز کردن صفحه تلویزیون</h3>
-                <p class="text-sm text-gray-400 leading-relaxed">
-                    روی مرورگر تلویزیون، لپ‌تاپ یا هر دستگاه دیگری آدرس <strong class="text-white">lyraz.ir</strong> را باز کنید تا هاب زنده و کد QR ظاهر شود.
-                </p>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center gap-2 text-xs font-mono text-gray-500">
+                    <span class="material-symbols-rounded text-sm text-primary">check_circle</span>
+                    Smart TVs, Mac, Windows, Linux
+                </div>
             </div>
 
             <!-- Step 2 -->
-            <div class="glass-card rounded-3xl p-8 flex flex-col items-start relative overflow-hidden group hover:border-tg/40 transition">
-                <div class="size-14 rounded-2xl bg-tg/10 border border-tg/20 flex items-center justify-center text-tg text-2xl font-bold mb-6 group-hover:scale-110 transition">
-                    ۲
+            <div class="glass-panel glass-card-hover rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden">
+                <div>
+                    <div class="size-14 rounded-2xl bg-tg/10 border border-tg/20 flex items-center justify-center text-tg font-mono text-2xl font-black mb-7">
+                        02
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2">Scan &amp; Connect via Telegram</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">
+                        Anyone in the room scans the QR with their camera to immediately link into the room via <strong class="text-tg">@LyrazBot</strong>.
+                    </p>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">اسکن با گوشی و ورود به تلگرام</h3>
-                <p class="text-sm text-gray-400 leading-relaxed">
-                    هر کسی با دوربین گوشی کد QR را اسکن کند، مستقیم به ربات تلگرام <strong class="text-tg">@LyrazBot</strong> متصل می‌شود.
-                </p>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center gap-2 text-xs font-mono text-gray-500">
+                    <span class="material-symbols-rounded text-sm text-tg">check_circle</span>
+                    Powered by @LyrazBot
+                </div>
             </div>
 
             <!-- Step 3 -->
-            <div class="glass-card rounded-3xl p-8 flex flex-col items-start relative overflow-hidden group hover:border-primary/40 transition">
-                <div class="size-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-2xl font-bold mb-6 group-hover:scale-110 transition">
-                    ۳
+            <div class="glass-panel glass-card-hover rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden">
+                <div>
+                    <div class="size-14 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-mono text-2xl font-black mb-7">
+                        03
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2">Queue &amp; Social Jukebox</h3>
+                    <p class="text-sm text-gray-400 leading-relaxed">
+                        Send any audio file, voice note, or Spotify track link to the bot. It instantly buffers and streams on the main speakers with contributor credits.
+                    </p>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">ارسال موزیک و ریموت کنترل</h3>
-                <p class="text-sm text-gray-400 leading-relaxed">
-                    هر فایل موزیک، وویس، لینک یوتیوب یا اسپاتیفای که به ربات بفرستید، بلافاصله در صف تلویزیون با اسم شما پخش می‌شود!
-                </p>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center gap-2 text-xs font-mono text-gray-500">
+                    <span class="material-symbols-rounded text-sm text-purple-400">check_circle</span>
+                    320kbps Hi-Fi Audio Quality
+                </div>
             </div>
 
         </div>
     </section>
 
     <!-- ========================================== -->
-    <!-- 🌟 FEATURES HIGHLIGHT -->
+    <!-- 💎 CORE PILLARS & FEATURES -->
     <!-- ========================================== -->
-    <section id="features" class="relative z-10 w-full max-w-6xl mx-auto px-6 py-20 border-t border-white/5">
-        <div class="text-center mb-16">
-            <h2 class="text-3xl sm:text-4xl font-extrabold text-white mb-3">چرا لایراز منحصر‌به‌فرد است؟</h2>
-            <p class="text-gray-400 text-sm sm:text-base">شاهکار مهندسی صوت و همگام‌سازی ابری</p>
+    <section id="features" class="relative z-10 w-full max-w-7xl mx-auto px-6 py-24 border-t border-white/5">
+        <div class="text-center max-w-2xl mx-auto mb-20">
+            <span class="text-xs font-mono font-bold tracking-widest text-primary uppercase">Engineered for Perfection</span>
+            <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white mt-2 mb-4">Under the Hood</h2>
+            <p class="text-gray-400 text-sm sm:text-base">
+                Built on high-performance distributed streaming standards used by modern audio titans.
+            </p>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 text-right">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
             
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-primary/15 text-primary flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-time-line"></i>
+            <!-- Feature 1 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">timer</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">سینک میلی‌ثانیه‌ای (PTP Engine)</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    با الگوریتم کالیبراسیون ساعت جهانی، حتی با اینترنت‌های مختلف، تمام دیوایس‌ها دقیقا در یک صدم ثانیه باهم پلی می‌شوند.
+                <h4 class="text-lg font-bold text-white mb-2">Atomic Clock Synchronization (PTP)</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Our Network Time Protocol calibration ensures multi-room and multi-device audio play within milliseconds of each other. No echo, no drift.
                 </p>
             </div>
 
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-tg/15 text-tg flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-telegram-fill"></i>
+            <!-- Feature 2 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-tg/10 text-tg flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">smartphone</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">مینی‌اپ و ریموت موبایل</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    سازنده هاب یک ریموت اختصاصی فوق‌سریع در تلگرام دریافت می‌کند تا بتواند آهنگ‌ها را عوض کند، ولوم را تنظیم یا آهنگ‌ها را جابجا کند.
+                <h4 class="text-lg font-bold text-white mb-2">Host Mini-App Remote Control</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    The session owner receives a dedicated Telegram Mini-App remote with instant zero-latency optimistic track skipping, volume control, and seek scrubbing.
                 </p>
             </div>
 
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-subtitles-line"></i>
+            <!-- Feature 3 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">subtitles</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">لیریکس زنده و هوشمند</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    متن آهنگ‌ها کلمه به کلمه همگام با صدای خواننده با افکت نئونی روی مانیتور بزرگ نمایش داده می‌شود.
+                <h4 class="text-lg font-bold text-white mb-2">Hardware-Accelerated Live Lyrics</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Dynamic time-coded synced lyrics render on the big screen with ambient neon glows, matching the vocalist note-for-note.
                 </p>
             </div>
 
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-yellow-500/15 text-yellow-400 flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-hq-line"></i>
+            <!-- Feature 4 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-yellow-500/10 text-yellow-400 flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">music_note</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">کیفیت صدای بی‌نظیر (Lossless 320k)</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    فایل‌های صوتی با بالاترین بیت‌ریت ممکن (320kbps) مستقیما استریم و پخش می‌شوند.
+                <h4 class="text-lg font-bold text-white mb-2">Lossless Audio Pipeline</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Direct streaming pipeline supporting lossless 320kbps and 192kbps audio with automated background normalization and zero transcoding degradation.
                 </p>
             </div>
 
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-pink-500/15 text-pink-400 flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-spotify-fill"></i>
+            <!-- Feature 5 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">groups</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">پشتیبانی از لینک‌های اسپاتیفای</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    لینک هر آهنگ، آلبوم یا پلی‌لیست از Spotify یا YouTube را به @LyrazBot بفرستید تا در چند ثانیه لود شود.
+                <h4 class="text-lg font-bold text-white mb-2">Social DJ Credits &amp; Presence</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Every song displayed on the screen clearly credits the sender's Telegram avatar and name, turning music into a shared conversation.
                 </p>
             </div>
 
-            <div class="glass-card rounded-2xl p-6">
-                <div class="size-12 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-2xl mb-4">
-                    <i class="ri-user-shared-line"></i>
+            <!-- Feature 6 -->
+            <div class="glass-panel glass-card-hover rounded-3xl p-7">
+                <div class="size-12 rounded-2xl bg-pink-500/10 text-pink-400 flex items-center justify-center mb-5">
+                    <span class="material-symbols-rounded text-2xl">link</span>
                 </div>
-                <h4 class="text-lg font-bold text-white mb-2">شفافیت فرستنده (DJ Credits)</h4>
-                <p class="text-xs text-gray-400 leading-relaxed">
-                    نام و عکس هر کسی که آهنگ فرستاده روی مانیتور نشان داده می‌شود تا در جمع همه بدانند آهنگ سلیقه چه کسی بوده است!
+                <h4 class="text-lg font-bold text-white mb-2">Instant Spotify &amp; YouTube Ingestion</h4>
+                <p class="text-sm text-gray-400 leading-relaxed">
+                    Drop Spotify track links, albums, or YouTube URLs directly into <strong class="text-tg">@LyrazBot</strong>. Our crawler extracts metadata and feeds the live queue.
                 </p>
             </div>
 
@@ -398,70 +531,91 @@
     </section>
 
     <!-- ========================================== -->
-    <!-- ☕️ USE CASES -->
+    <!-- 📍 VENUES & USE CASES -->
     <!-- ========================================== -->
-    <section id="usecases" class="relative z-10 w-full max-w-6xl mx-auto px-6 py-20 border-t border-white/5">
-        <div class="text-center mb-16">
-            <h2 class="text-3xl sm:text-4xl font-extrabold text-white mb-3">لایراز کجاها می‌درخشد؟</h2>
-            <p class="text-gray-400 text-sm sm:text-base">از یک دورهمی خودمانی تا بزرگ‌ترین کافه‌ها</p>
+    <section id="usecases" class="relative z-10 w-full max-w-7xl mx-auto px-6 py-24 border-t border-white/5">
+        <div class="text-center max-w-2xl mx-auto mb-20">
+            <span class="text-xs font-mono font-bold tracking-widest text-primary uppercase">Built For Social Listening</span>
+            <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white mt-2 mb-4">Where Lyraz Shines</h2>
+            <p class="text-gray-400 text-sm sm:text-base">
+                Transform any environment into an interactive sound stage.
+            </p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             
-            <div class="glass-card rounded-3xl p-8 flex flex-col justify-between">
-                <div>
-                    <div class="text-4xl mb-4">☕️</div>
-                    <h3 class="text-xl font-bold text-white mb-2">کافه‌ها و رستوران‌ها</h3>
+            <!-- Cafe Card -->
+            <div class="glass-panel rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden group">
+                <div class="space-y-4">
+                    <div class="size-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-3xl">
+                        ☕️
+                    </div>
+                    <h3 class="text-2xl font-bold text-white">Cafes, Bars &amp; Lounges</h3>
                     <p class="text-sm text-gray-400 leading-relaxed">
-                        کد QR لایراز را روی میزها یا دیوار کافه قرار دهید. مشتریان با تلگرام آهنگ محبوب‌شان را درخواست می‌دهند و تجربه کافه شما تعاملی و متمایز می‌شود!
+                        Place a branded Lyraz QR code on customer tables. Customers choose what plays next via Telegram while dining, driving community engagement and repeat visits without staff intervention.
                     </p>
                 </div>
-                <div class="mt-6 pt-4 border-t border-white/10 text-xs font-mono text-primary">#CafeVibes #InteractiveMusic</div>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-xs font-mono text-primary">
+                    <span>#InteractiveVenue</span>
+                    <span class="material-symbols-rounded text-base">storefront</span>
+                </div>
             </div>
 
-            <div class="glass-card rounded-3xl p-8 flex flex-col justify-between">
-                <div>
-                    <div class="text-4xl mb-4">🎉</div>
-                    <h3 class="text-xl font-bold text-white mb-2">پارتی‌ها و مهمانی‌ها</h3>
+            <!-- Party Card -->
+            <div class="glass-panel rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden group">
+                <div class="space-y-4">
+                    <div class="size-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-3xl">
+                        🎉
+                    </div>
+                    <h3 class="text-2xl font-bold text-white">House Parties &amp; Events</h3>
                     <p class="text-sm text-gray-400 leading-relaxed">
-                        دیگر نیازی نیست گوشی یک نفر به اسپیکر وصل باشد و هی مزاحمش شوند! تلویزیون را وصل کنید، همه به صف مشترک دسترسی دارند و اسم‌شان نمایش داده می‌شود.
+                        No one has to sacrifice their phone to the AUX cord. Cast the living room TV to Lyraz, and let all 50 guests build the collaborative soundtrack of the night.
                     </p>
                 </div>
-                <div class="mt-6 pt-4 border-t border-white/10 text-xs font-mono text-primary">#PartyHub #SocialDJ</div>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-xs font-mono text-primary">
+                    <span>#CrowdsourcedDJ</span>
+                    <span class="material-symbols-rounded text-base">celebration</span>
+                </div>
             </div>
 
-            <div class="glass-card rounded-3xl p-8 flex flex-col justify-between">
-                <div>
-                    <div class="text-4xl mb-4">🏠</div>
-                    <h3 class="text-xl font-bold text-white mb-2">خانه و محل کار</h3>
+            <!-- Home / Studio Card -->
+            <div class="glass-panel rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden group">
+                <div class="space-y-4">
+                    <div class="size-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-3xl">
+                        🏠
+                    </div>
+                    <h3 class="text-2xl font-bold text-white">Homes &amp; Creative Studios</h3>
                     <p class="text-sm text-gray-400 leading-relaxed">
-                        لپ‌تاپ یا تلویزیون اتاق را روشن بگذارید و حین کار، آشپزی یا استراحت، با ربات تلگرام گوشی‌تان بدون دست زدن به کامپیوتر موزیک‌ها را عوض کنید.
+                        Keep your workstation speakers playing while controlling everything seamlessly from your smartphone using @LyrazBot without context switching or opening tabs.
                     </p>
                 </div>
-                <div class="mt-6 pt-4 border-t border-white/10 text-xs font-mono text-primary">#HomeAudio #SmartLiving</div>
+                <div class="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-xs font-mono text-primary">
+                    <span>#SmartWorkspace</span>
+                    <span class="material-symbols-rounded text-base">home</span>
+                </div>
             </div>
 
         </div>
     </section>
 
     <!-- ========================================== -->
-    <!-- 📢 CHANNEL & COMMUNITY CALLOUT -->
+    <!-- 📢 COMMUNITY & TELEGRAM BANNER -->
     <!-- ========================================== -->
-    <section class="relative z-10 w-full max-w-4xl mx-auto px-6 py-12">
-        <div class="glass-card rounded-3xl p-8 sm:p-12 border border-tg/30 bg-tg-glow bg-no-repeat bg-center flex flex-col sm:flex-row items-center justify-between gap-8 text-center sm:text-right">
+    <section class="relative z-10 w-full max-w-5xl mx-auto px-6 py-12">
+        <div class="glass-panel rounded-[2.5rem] p-8 sm:p-14 border border-tg/30 shadow-[0_20px_60px_rgba(42,171,238,0.15)] flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left">
             <div class="space-y-3">
-                <div class="inline-flex items-center gap-2 text-xs font-mono text-tg bg-tg/10 px-3 py-1 rounded-full border border-tg/20">
-                    <i class="ri-telegram-fill"></i>
-                    کانال رسمی لایراز موزیک
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-tg/15 border border-tg/30 text-tg text-xs font-mono font-bold uppercase">
+                    <i class="ri-telegram-fill text-sm"></i>
+                    Official Music Channel
                 </div>
-                <h3 class="text-2xl sm:text-3xl font-extrabold text-white">به جامعه شنوندگان لایراز بپیوندید</h3>
-                <p class="text-sm text-gray-400 max-w-md">
-                    موزیک‌های دست‌چین، پلی‌لیست‌های اختصاصی و آخرین اخبار ویژگی‌های جدید در کانال تلگرام <strong>@{{ channel_username }}</strong>
+                <h3 class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">Join the Lyraz Community</h3>
+                <p class="text-sm text-gray-400 max-w-lg leading-relaxed">
+                    Discover hand-picked curated playlists, timeless discographies, and audio updates on our official channel: <strong class="text-white">@{{ channel_username }}</strong>.
                 </p>
             </div>
-            <a href="https://t.me/{{ channel_username }}" target="_blank" class="tg-btn whitespace-nowrap bg-tg text-black font-black px-8 py-4 rounded-2xl flex items-center gap-2 shrink-0">
+            <a href="https://t.me/{{ channel_username }}" target="_blank" class="btn-glow-tg px-8 py-4 rounded-2xl flex items-center gap-2.5 text-sm font-extrabold uppercase tracking-wider shrink-0">
                 <i class="ri-telegram-fill text-xl"></i>
-                عضویت در @{{ channel_username }}
+                <span>Join @{{ channel_username }}</span>
             </a>
         </div>
     </section>
@@ -469,24 +623,25 @@
     <!-- ========================================== -->
     <!-- 🏁 FOOTER -->
     <!-- ========================================== -->
-    <footer class="relative z-10 w-full border-t border-white/10 bg-black/60 backdrop-blur-xl py-12 px-6 mt-16">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-right">
+    <footer class="relative z-10 w-full border-t border-white/5 bg-black/60 backdrop-blur-2xl py-12 px-6 mt-16">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+            
             <div class="flex items-center gap-3">
-                <div class="size-8 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center">
-                    <i class="ri-disc-line text-primary"></i>
+                <div class="size-8 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                    <span class="material-symbols-rounded text-primary text-lg">graphic_eq</span>
                 </div>
                 <span class="font-display font-black text-xl text-white">LYRAZ</span>
-                <span class="text-xs text-gray-500 font-mono">| Synchronized Sound Ecosystem</span>
+                <span class="text-xs text-gray-500 font-mono">| High-Res Collaborative Audio Hub</span>
             </div>
 
-            <div class="flex items-center gap-6 text-xs text-gray-400 font-mono">
+            <div class="flex items-center gap-7 text-xs font-mono font-semibold text-gray-400">
                 <a href="https://lyraz.ir" class="hover:text-primary transition">Web Player</a>
                 <a href="https://t.me/{{ bot_username }}" target="_blank" class="hover:text-tg transition">@{{ bot_username }}</a>
                 <a href="https://t.me/{{ channel_username }}" target="_blank" class="hover:text-tg transition">@{{ channel_username }}</a>
             </div>
 
             <p class="text-xs text-gray-600 font-mono">
-                &copy; 2026 Lyraz. All rights reserved.
+                &copy; 2026 Lyraz Platform. All rights reserved.
             </p>
         </div>
     </footer>
