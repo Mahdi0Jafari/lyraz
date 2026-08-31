@@ -81,6 +81,34 @@ class AdminAnalyticsService:
         except Exception as e:
             logger.error(f"Error ensuring user_downloads schema: {e}")
 
+        try:
+            for col, col_type, default_val in [
+                ('crawler_enabled', 'BOOLEAN', '0'),
+                ('crawler_schedule_hour', 'TEXT', "'04:00'"),
+                ('crawler_max_tracks', 'INTEGER', '15'),
+                ('crawler_source', 'TEXT', "'global_top_50'")
+            ]:
+                try:
+                    db.execute(f"ALTER TABLE settings ADD COLUMN {col} {col_type} DEFAULT {default_val}")
+                except:
+                    pass
+
+            db.execute('''CREATE TABLE IF NOT EXISTS ingestion_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                performer TEXT NOT NULL,
+                youtube_id TEXT,
+                source TEXT DEFAULT 'crawler',
+                status TEXT DEFAULT 'queued',
+                error_msg TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP
+            )''')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_status ON ingestion_logs(status);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_created ON ingestion_logs(created_at);')
+        except Exception as e:
+            logger.error(f"Error ensuring ingestion schema: {e}")
+
         db.commit()
         
         # پس از یک بار بررسی موفق، فلگ را تغییر می‌دهیم تا کوئری‌های اضافی به دیتابیس زده نشود

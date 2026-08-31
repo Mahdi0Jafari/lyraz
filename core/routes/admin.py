@@ -397,3 +397,97 @@ def get_user_referrals_api(user_id):
     if not data:
         return jsonify({'status': 'error', 'message': 'User not found'}), 404
     return jsonify({'status': 'success', 'data': data})
+
+
+# ==========================================
+# ⚡️ CATALOG PRE-WARMER & QUEUE APIS
+# ==========================================
+
+@admin_bp.route('/api/admin/crawler/status', methods=['GET'])
+def get_crawler_status_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    from core.services.crawler import crawler_service
+    data = crawler_service.get_queue_and_stats()
+    return jsonify({'status': 'success', 'data': data})
+
+@admin_bp.route('/api/admin/crawler/trigger', methods=['POST'])
+def trigger_crawler_chart_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    chart = data.get('chart', 'global_top_50')
+    limit = int(data.get('limit', 20))
+    
+    from core.services.crawler import crawler_service
+    if chart == 'persian_trending':
+        tracks = crawler_service.get_persian_trending(limit=limit * 2)
+    else:
+        chart_res = crawler_service.get_spotify_chart(chart)
+        tracks = chart_res.get('tracks', [])
+        
+    result = crawler_service.ingest_tracks_one_by_one(tracks, source_label=f"trend_{chart}", max_limit=limit)
+    return jsonify({'status': 'success', 'result': result})
+
+@admin_bp.route('/api/admin/crawler/ingest_artist', methods=['POST'])
+def ingest_artist_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    artist = (data.get('artist') or '').strip()
+    limit = int(data.get('limit', 10))
+    
+    if not artist:
+        return jsonify({'status': 'error', 'message': 'Artist name is required'}), 400
+        
+    from core.services.crawler import crawler_service
+    tracks = crawler_service.get_artist_top_tracks(artist, limit=limit)
+    if not tracks:
+        return jsonify({'status': 'error', 'message': f'No tracks found for {artist}'}), 404
+        
+    result = crawler_service.ingest_tracks_one_by_one(tracks, source_label=f"artist:{artist[:20]}", max_limit=limit)
+    return jsonify({'status': 'success', 'result': result})
+
+@admin_bp.route('/api/admin/crawler/ingest_link', methods=['POST'])
+def ingest_link_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    url = (data.get('url') or '').strip()
+    
+    if not url:
+        return jsonify({'status': 'error', 'message': 'URL is required'}), 400
+        
+    from core.services.crawler import crawler_service
+    tracks = crawler_service.parse_custom_link(url)
+    if not tracks:
+        return jsonify({'status': 'error', 'message': 'Could not parse link or collection is empty'}), 400
+        
+    result = crawler_service.ingest_tracks_one_by_one(tracks, source_label="custom_link", max_limit=50)
+    return jsonify({'status': 'success', 'result': result})
+
+@admin_bp.route('/api/admin/crawler/settings', methods=['POST'])
+def update_crawler_settings_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    
+    enabled = 1 if data.get('enabled') else 0
+    hour = data.get('hour', '04:00')
+    max_tracks = int(data.get('max_tracks', 15))
+    source = data.get('source', 'global_top_50')
+    
+    db = get_db()
+    db.execute("""
+        UPDATE settings SET 
+            crawler_enabled = ?,
+            crawler_schedule_hour = ?,
+            crawler_max_tracks = ?,
+            crawler_source = ?
+        WHERE id = 1
+    """, (enabled, hour, max_tracks, source))
+    db.commit()
+    return jsonify({'status': 'success'})
+
+@admin_bp.route('/api/admin/crawler/clear_logs', methods=['POST'])
+def clear_crawler_logs_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    db.execute("DELETE FROM ingestion_logs WHERE status IN ('completed', 'skipped')")
+    db.commit()
+    return jsonify({'status': 'success'})

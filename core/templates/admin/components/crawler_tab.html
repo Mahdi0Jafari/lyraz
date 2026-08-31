@@ -1,0 +1,507 @@
+<!-- core/templates/admin/components/crawler_tab.html -->
+
+<div class="space-y-8 pb-16">
+
+    <!-- ========================================== -->
+    <!-- 🚀 HEADER & STATS HERO                      -->
+    <!-- ========================================== -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
+        <div>
+            <div class="flex items-center gap-2">
+                <span class="size-2.5 rounded-full bg-primary animate-pulse"></span>
+                <h2 class="text-xl font-extrabold text-white tracking-tight">Catalog Pre-Warmer & Queue</h2>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Autonomous trend discovery, artist discography ingestion & standard worker queue monitor.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button onclick="loadCrawlerStatus()" class="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold text-gray-300 hover:text-white transition flex items-center gap-1.5 border border-white/10">
+                <span class="material-symbols-outlined text-[16px]">refresh</span> Refresh Status
+            </button>
+            <button onclick="clearFinishedLogs()" class="px-3 py-2 bg-white/5 hover:bg-red-500/10 hover:text-red-400 rounded-xl text-xs font-semibold text-gray-400 transition flex items-center gap-1 border border-white/5">
+                <span class="material-symbols-outlined text-[16px]">clear_all</span> Clear Finished
+            </button>
+        </div>
+    </div>
+
+    <!-- 4 Stats Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-panel p-4 rounded-2xl border border-white/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-400 font-medium">Currently Downloading</span>
+                <div class="size-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                </div>
+            </div>
+            <div class="text-2xl font-black text-white font-mono" id="stat-active">0</div>
+            <p class="text-[10px] text-gray-500 mt-1">Active worker tasks</p>
+        </div>
+
+        <div class="glass-panel p-4 rounded-2xl border border-white/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-400 font-medium">Queued in Line</span>
+                <div class="size-8 rounded-lg bg-yellow-500/20 text-yellow-400 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px]">hourglass_top</span>
+                </div>
+            </div>
+            <div class="text-2xl font-black text-white font-mono" id="stat-queued">0</div>
+            <p class="text-[10px] text-gray-500 mt-1">Waiting for download</p>
+        </div>
+
+        <div class="glass-panel p-4 rounded-2xl border border-white/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-400 font-medium">Ingested Today</span>
+                <div class="size-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                </div>
+            </div>
+            <div class="text-2xl font-black text-white font-mono" id="stat-completed">0</div>
+            <p class="text-[10px] text-gray-500 mt-1">Uploaded & cached</p>
+        </div>
+
+        <div class="glass-panel p-4 rounded-2xl border border-white/5 relative overflow-hidden group">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-400 font-medium">Deduplicated (Skipped)</span>
+                <div class="size-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px]">fast_forward</span>
+                </div>
+            </div>
+            <div class="text-2xl font-black text-white font-mono" id="stat-skipped">0</div>
+            <p class="text-[10px] text-gray-500 mt-1">Already in vault (0 KB used)</p>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- ⚙️ SECTION 1: SCHEDULER & SETTINGS          -->
+    <!-- ========================================== -->
+    <div class="glass-panel rounded-2xl p-6 border border-white/5 relative">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-6">
+            <div class="flex items-center gap-3">
+                <div class="size-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30">
+                    <span class="material-symbols-outlined text-[20px]">alarm</span>
+                </div>
+                <div>
+                    <h3 class="text-sm font-bold text-white">Autonomous Nightly Scheduler</h3>
+                    <p class="text-[11px] text-gray-400">Configure automated off-peak crawling & cache pre-warming.</p>
+                </div>
+            </div>
+            
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="sched-enabled" class="sr-only peer">
+                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                <span class="ml-3 text-xs font-bold text-white" id="sched-status-label">Inactive</span>
+            </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Daily Execution Time</label>
+                <input type="time" id="sched-hour" value="04:00" class="glass-input w-full h-11 px-4 rounded-xl text-sm font-mono text-white">
+                <p class="text-[10px] text-gray-500 mt-1.5">Recommended: 03:00 to 05:00 AM (server low traffic).</p>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Max New Tracks Per Run</label>
+                <select id="sched-max" class="glass-input w-full h-11 px-4 rounded-xl text-sm font-medium text-white appearance-none cursor-pointer">
+                    <option value="10">10 Tracks (Safe & Light)</option>
+                    <option value="15" selected>15 Tracks (Recommended)</option>
+                    <option value="25">25 Tracks (Balanced)</option>
+                    <option value="40">40 Tracks (Aggressive)</option>
+                </select>
+                <p class="text-[10px] text-gray-500 mt-1.5">Limits bandwidth & avoids YouTube throttling.</p>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Default Target Chart</label>
+                <select id="sched-source" class="glass-input w-full h-11 px-4 rounded-xl text-sm font-medium text-white appearance-none cursor-pointer">
+                    <option value="global_top_50">Spotify Top 50 - Global</option>
+                    <option value="todays_top_hits">Spotify Today's Top Hits</option>
+                    <option value="persian_trending">Persian Hot Hits (YouTube Music)</option>
+                </select>
+                <p class="text-[10px] text-gray-500 mt-1.5">The primary chart scanned every night.</p>
+            </div>
+        </div>
+
+        <div class="flex justify-end mt-6 pt-4 border-t border-white/5">
+            <button onclick="saveSchedulerSettings()" class="bg-primary hover:bg-[#0be02f] text-black px-6 py-2 rounded-xl font-bold text-xs transition shadow-[0_0_15px_rgba(13,242,51,0.2)] flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">save</span> Save Schedule
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- ⚡️ SECTION 2: 1-CLICK FAST TRIGGERS         -->
+    <!-- ========================================== -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between hover:border-primary/30 transition group">
+            <div>
+                <div class="flex items-center gap-2.5 mb-2">
+                    <span class="text-xl">🌍</span>
+                    <h4 class="text-sm font-bold text-white">Global Top 50</h4>
+                </div>
+                <p class="text-xs text-gray-400">Scrapes Spotify official Global Top 50. Skips cached songs and queues new entries.</p>
+            </div>
+            <button onclick="triggerChart('global_top_50', 20)" class="mt-4 w-full py-2 bg-white/5 hover:bg-primary hover:text-black rounded-xl text-xs font-bold text-white transition border border-white/10 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">download</span> Ingest Top 20
+            </button>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between hover:border-primary/30 transition group">
+            <div>
+                <div class="flex items-center gap-2.5 mb-2">
+                    <span class="text-xl">🇮🇷</span>
+                    <h4 class="text-sm font-bold text-white">Persian Hot Hits</h4>
+                </div>
+                <p class="text-xs text-gray-400">Fetches top trending Iranian & Persian tracks directly via YouTube Music engine.</p>
+            </div>
+            <button onclick="triggerChart('persian_trending', 20)" class="mt-4 w-full py-2 bg-white/5 hover:bg-primary hover:text-black rounded-xl text-xs font-bold text-white transition border border-white/10 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">download</span> Ingest Persian Hits
+            </button>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between hover:border-primary/30 transition group">
+            <div>
+                <div class="flex items-center gap-2.5 mb-2">
+                    <span class="text-xl">🌟</span>
+                    <h4 class="text-sm font-bold text-white">Today's Top Hits</h4>
+                </div>
+                <p class="text-xs text-gray-400">Spotify's biggest editorial playlist featuring viral hits and new chart entries.</p>
+            </div>
+            <button onclick="triggerChart('todays_top_hits', 20)" class="mt-4 w-full py-2 bg-white/5 hover:bg-primary hover:text-black rounded-xl text-xs font-bold text-white transition border border-white/10 flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">download</span> Ingest Top Hits
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 🎯 SECTION 3: CUSTOM INGESTION FORMS       -->
+    <!-- ========================================== -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Card A: Artist Discography Ingestion -->
+        <div class="glass-panel rounded-2xl p-6 border border-white/5">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="size-8 rounded-lg bg-white/10 text-primary flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px]">person_search</span>
+                </div>
+                <div>
+                    <h4 class="text-sm font-bold text-white">Artist Top Discography</h4>
+                    <p class="text-[11px] text-gray-400">Crawl best hit songs of any artist into the catalog.</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1 font-medium">Artist Name</label>
+                    <input type="text" id="custom-artist-input" placeholder="e.g. Shadmehr Aghili, Ebi, Taylor Swift..." class="glass-input w-full h-11 px-4 rounded-xl text-sm text-white">
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs text-gray-400 mb-1 font-medium">Song Limit</label>
+                        <select id="custom-artist-limit" class="glass-input w-full h-11 px-3 rounded-xl text-xs text-white appearance-none cursor-pointer">
+                            <option value="5">Top 5 Songs</option>
+                            <option value="10" selected>Top 10 Songs</option>
+                            <option value="20">Top 20 Songs</option>
+                        </select>
+                    </div>
+
+                    <button onclick="ingestArtist()" id="btn-ingest-artist" class="mt-5 px-6 h-11 bg-primary hover:bg-[#0be02f] text-black font-bold rounded-xl text-xs transition flex items-center gap-1.5 shadow-[0_0_15px_rgba(13,242,51,0.2)]">
+                        <span class="material-symbols-outlined text-[16px]">cloud_download</span> Fetch & Queue
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card B: Custom Playlist/Link Ingestion -->
+        <div class="glass-panel rounded-2xl p-6 border border-white/5">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="size-8 rounded-lg bg-white/10 text-primary flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[18px]">link</span>
+                </div>
+                <div>
+                    <h4 class="text-sm font-bold text-white">Custom Link / Collection</h4>
+                    <p class="text-[11px] text-gray-400">Paste any Spotify playlist, album, or YouTube link.</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1 font-medium">Collection URL</label>
+                    <input type="url" id="custom-link-input" placeholder="https://open.spotify.com/playlist/... or album/..." class="glass-input w-full h-11 px-4 rounded-xl text-sm font-mono text-white">
+                </div>
+
+                <div class="flex justify-end pt-5">
+                    <button onclick="ingestLink()" id="btn-ingest-link" class="w-full sm:w-auto px-6 h-11 bg-white/10 hover:bg-primary hover:text-black font-bold rounded-xl text-xs text-white transition flex items-center justify-center gap-1.5 border border-white/10">
+                        <span class="material-symbols-outlined text-[16px]">playlist_add</span> Ingest Collection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 📊 SECTION 4: LIVE ACTIVITY & QUEUE TABLE   -->
+    <!-- ========================================== -->
+    <div class="glass-panel rounded-2xl overflow-hidden border border-white/5">
+        <div class="p-4 border-b border-white/5 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px] text-primary">queue_music</span>
+                <h3 class="text-sm font-bold text-white">Live Ingestion Queue & History</h3>
+                <span class="text-[10px] text-gray-500 font-mono" id="queue-last-updated">Updated just now</span>
+            </div>
+            <span class="text-xs text-gray-400 font-mono" id="queue-total-count">0 items</span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/5 bg-black/20 text-gray-400 font-semibold uppercase tracking-wider text-[10px]">
+                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4">Title</th>
+                        <th class="py-3 px-4">Artist</th>
+                        <th class="py-3 px-4">Source</th>
+                        <th class="py-3 px-4">Video ID</th>
+                        <th class="py-3 px-4">Time</th>
+                    </tr>
+                </thead>
+                <tbody id="crawler-log-rows" class="divide-y divide-white/5">
+                    <tr>
+                        <td colspan="6" class="py-8 text-center text-gray-500 font-medium">
+                            No ingestion activities recorded yet. Trigger a chart or search an artist above!
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- ========================================== -->
+<!-- 💡 CRAWLER JAVASCRIPT LOGIC                 -->
+<!-- ========================================== -->
+<script>
+    let crawlerInterval = null;
+
+    function initCrawlerTab() {
+        loadCrawlerStatus();
+        if (crawlerInterval) clearInterval(crawlerInterval);
+        // Auto-refresh queue every 5 seconds when in this tab
+        crawlerInterval = setInterval(() => {
+            const tab = document.getElementById('tab-crawler');
+            if (tab && !tab.classList.contains('hidden')) {
+                loadCrawlerStatus(true);
+            }
+        }, 5000);
+    }
+
+    async function loadCrawlerStatus(silent = false) {
+        try {
+            const res = await fetch('/api/admin/crawler/status');
+            const result = await res.json();
+            if (result.status !== 'success') return;
+            
+            const data = result.data;
+            
+            // 1. Update stats
+            document.getElementById('stat-active').innerText = data.active_count;
+            document.getElementById('stat-queued').innerText = data.queued_count;
+            document.getElementById('stat-completed').innerText = data.completed_today;
+            document.getElementById('stat-skipped').innerText = data.skipped_today;
+            
+            // 2. Update scheduler inputs (if not silent to prevent overwriting user edits)
+            if (!silent && data.settings) {
+                const s = data.settings;
+                document.getElementById('sched-enabled').checked = s.enabled;
+                document.getElementById('sched-status-label').innerText = s.enabled ? 'Active' : 'Inactive';
+                document.getElementById('sched-status-label').className = s.enabled ? 'ml-3 text-xs font-bold text-primary' : 'ml-3 text-xs font-bold text-gray-400';
+                document.getElementById('sched-hour').value = s.hour || '04:00';
+                document.getElementById('sched-max').value = s.max_tracks || 15;
+                document.getElementById('sched-source').value = s.source || 'global_top_50';
+            }
+
+            // 3. Render table
+            renderCrawlerLogs(data.logs || []);
+            document.getElementById('queue-last-updated').innerText = 'Updated ' + new Date().toLocaleTimeString();
+        } catch (e) {
+            console.error('Crawler status error:', e);
+        }
+    }
+
+    function renderCrawlerLogs(logs) {
+        const tbody = document.getElementById('crawler-log-rows');
+        document.getElementById('queue-total-count').innerText = `${logs.length} items`;
+        
+        if (!logs.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-gray-500 font-medium">No queue activities found.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = logs.map(l => {
+            let badge = '';
+            if (l.status === 'downloading') {
+                badge = `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20"><span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span> Downloading</span>`;
+            } else if (l.status === 'queued') {
+                badge = `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20"><span class="material-symbols-outlined text-[12px]">hourglass_top</span> Queued</span>`;
+            } else if (l.status === 'completed') {
+                badge = `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20"><span class="material-symbols-outlined text-[12px]">check_circle</span> Cached</span>`;
+            } else if (l.status === 'skipped') {
+                badge = `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-white/5 px-2 py-0.5 rounded-full" title="${l.error_msg || 'Already in catalog'}"><span class="material-symbols-outlined text-[12px]">fast_forward</span> Skipped</span>`;
+            } else {
+                badge = `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full" title="${l.error_msg || ''}"><span class="material-symbols-outlined text-[12px]">error</span> Failed</span>`;
+            }
+
+            const timeStr = l.created_at ? l.created_at.split(' ')[1] || l.created_at : '';
+
+            return `
+                <tr class="hover:bg-white/[0.02] transition">
+                    <td class="py-2.5 px-4">${badge}</td>
+                    <td class="py-2.5 px-4 font-bold text-white truncate max-w-[200px]" title="${l.title}">${l.title}</td>
+                    <td class="py-2.5 px-4 text-gray-300 truncate max-w-[150px]" title="${l.performer}">${l.performer}</td>
+                    <td class="py-2.5 px-4 text-gray-500 font-mono text-[11px]">${l.source || 'crawler'}</td>
+                    <td class="py-2.5 px-4 font-mono text-gray-400 text-[11px]">${l.youtube_id || 'N/A'}</td>
+                    <td class="py-2.5 px-4 font-mono text-gray-500 text-[11px]">${timeStr}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function triggerChart(chart, limit) {
+        showToast(`Fetching ${chart}...`);
+        try {
+            const res = await fetch('/api/admin/crawler/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chart, limit })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`✅ Enqueued ${data.result.queued} new tracks (${data.result.skipped} deduplicated)!`);
+                loadCrawlerStatus();
+            } else {
+                showToast(`❌ ${data.message || 'Trigger failed'}`);
+            }
+        } catch (e) {
+            showToast('❌ Network error triggering chart');
+        }
+    }
+
+    async function ingestArtist() {
+        const input = document.getElementById('custom-artist-input');
+        const artist = input.value.trim();
+        const limit = document.getElementById('custom-artist-limit').value;
+        
+        if (!artist) {
+            showToast('⚠️ Please enter an artist name');
+            return;
+        }
+
+        const btn = document.getElementById('btn-ingest-artist');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Fetching...`;
+
+        try {
+            const res = await fetch('/api/admin/crawler/ingest_artist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ artist, limit: parseInt(limit) })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`✅ Added ${data.result.queued} songs of ${artist} to queue (${data.result.skipped} skipped)!`);
+                input.value = '';
+                loadCrawlerStatus();
+            } else {
+                showToast(`❌ ${data.message || 'Failed'}`);
+            }
+        } catch (e) {
+            showToast('❌ Error ingesting artist');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">cloud_download</span> Fetch & Queue`;
+        }
+    }
+
+    async function ingestLink() {
+        const input = document.getElementById('custom-link-input');
+        const url = input.value.trim();
+        
+        if (!url) {
+            showToast('⚠️ Please paste a valid URL');
+            return;
+        }
+
+        const btn = document.getElementById('btn-ingest-link');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Parsing...`;
+
+        try {
+            const res = await fetch('/api/admin/crawler/ingest_link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`✅ Queued ${data.result.queued} tracks from link (${data.result.skipped} skipped)!`);
+                input.value = '';
+                loadCrawlerStatus();
+            } else {
+                showToast(`❌ ${data.message || 'Failed to parse link'}`);
+            }
+        } catch (e) {
+            showToast('❌ Error parsing link');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">playlist_add</span> Ingest Collection`;
+        }
+    }
+
+    async function saveSchedulerSettings() {
+        const enabled = document.getElementById('sched-enabled').checked;
+        const hour = document.getElementById('sched-hour').value;
+        const max_tracks = document.getElementById('sched-max').value;
+        const source = document.getElementById('sched-source').value;
+
+        try {
+            const res = await fetch('/api/admin/crawler/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled, hour, max_tracks, source })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('✅ Scheduler configuration saved successfully!');
+                document.getElementById('sched-status-label').innerText = enabled ? 'Active' : 'Inactive';
+                document.getElementById('sched-status-label').className = enabled ? 'ml-3 text-xs font-bold text-primary' : 'ml-3 text-xs font-bold text-gray-400';
+            } else {
+                showToast('❌ Failed to save settings');
+            }
+        } catch (e) {
+            showToast('❌ Error saving schedule');
+        }
+    }
+
+    async function clearFinishedLogs() {
+        try {
+            const res = await fetch('/api/admin/crawler/clear_logs', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('Cleared completed and skipped logs.');
+                loadCrawlerStatus();
+            }
+        } catch (e) {
+            showToast('❌ Error clearing logs');
+        }
+    }
+
+    // Toggle label dynamically on click
+    document.getElementById('sched-enabled')?.addEventListener('change', function() {
+        document.getElementById('sched-status-label').innerText = this.checked ? 'Active' : 'Inactive';
+        document.getElementById('sched-status-label').className = this.checked ? 'ml-3 text-xs font-bold text-primary' : 'ml-3 text-xs font-bold text-gray-400';
+    });
+</script>

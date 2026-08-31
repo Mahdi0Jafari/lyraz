@@ -3,7 +3,7 @@ let isBulkMode = false;
 
 // --- 1. TABS SYSTEM ---
 function switchTab(tabName) {
-    const tabs = ['library', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
+    const tabs = ['library', 'crawler', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
     
     // Hide all tabs
     tabs.forEach(t => {
@@ -23,6 +23,7 @@ function switchTab(tabName) {
     // Update Header Title
     const titles = {
         'library': 'Music Library', 
+        'crawler': 'Catalog Pre-Warmer & Queue',
         'automation': 'Automation Rules', 
         'channels': 'Channel Manager',
         'devices': 'Device Manager',
@@ -32,8 +33,11 @@ function switchTab(tabName) {
     };
     const pageTitle = document.getElementById('page-title');
     if(pageTitle && titles[tabName]) {
-        // تغییر فقط متن اول بدون حذف کردن آیکون/بج (Badge) داخل هدر
         pageTitle.firstChild.nodeValue = titles[tabName] + " ";
+    }
+
+    if(tabName === 'crawler' && typeof initCrawlerTab === 'function') {
+        initCrawlerTab();
     }
 }
 

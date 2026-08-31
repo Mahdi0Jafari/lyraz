@@ -150,8 +150,23 @@ def init_db():
                 id INTEGER PRIMARY KEY,
                 auto_broadcast_channel_id TEXT,
                 default_caption TEXT,
-                is_auto_broadcast_enabled BOOLEAN DEFAULT 0
+                is_auto_broadcast_enabled BOOLEAN DEFAULT 0,
+                crawler_enabled BOOLEAN DEFAULT 0,
+                crawler_schedule_hour TEXT DEFAULT '04:00',
+                crawler_max_tracks INTEGER DEFAULT 15,
+                crawler_source TEXT DEFAULT 'global_top_50'
             )''')
+            for col, col_type, default_val in [
+                ('crawler_enabled', 'BOOLEAN', '0'),
+                ('crawler_schedule_hour', 'TEXT', "'04:00'"),
+                ('crawler_max_tracks', 'INTEGER', '15'),
+                ('crawler_source', 'TEXT', "'global_top_50'")
+            ]:
+                try:
+                    c.execute(f"ALTER TABLE settings ADD COLUMN {col} {col_type} DEFAULT {default_val}")
+                except sqlite3.OperationalError:
+                    pass
+
             c.execute("INSERT OR IGNORE INTO settings (id, default_caption, is_auto_broadcast_enabled) VALUES (1, '🎧 {title} - {artist}\n👤 Sent by: {sender}', 0)")
 
             # 7. Lyrics Cache Table
@@ -186,9 +201,24 @@ def init_db():
             c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_user ON user_downloads(user_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_track ON user_downloads(track_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_downloads_date ON user_downloads(downloaded_at);')
+
+            # 10. Ingestion Logs Table (Pre-warmer & Auto-Catalog Tracking)
+            c.execute('''CREATE TABLE IF NOT EXISTS ingestion_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                performer TEXT NOT NULL,
+                youtube_id TEXT,
+                source TEXT DEFAULT 'crawler',
+                status TEXT DEFAULT 'queued',
+                error_msg TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP
+            )''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_status ON ingestion_logs(status);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_created ON ingestion_logs(created_at);')
             
             conn.commit()
-            print("✅ Database Schema V4.4 Optimized & Ready (WAL + Foreign Keys + Referral Engine + User Downloads)")
+            print("✅ Database Schema V4.5 Optimized & Ready (WAL + Foreign Keys + Referrals + Downloads + Ingestion)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")
