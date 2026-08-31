@@ -575,78 +575,20 @@ def artist_hub_ingest_api():
     campaign_id = cur_camp.lastrowid
     db.commit()
 
-    for trk in tracks:
-        title = trk.get('title')
-        artist = trk.get('artist_string') or (', '.join(trk.get('artists', [])) if trk.get('artists') else artist_name)
-        cover_url = (trk.get('album') or {}).get('cover_url') or trk.get('cover_url')
-        duration_sec = trk.get('duration_seconds') or (trk.get('duration_ms', 0) // 1000)
-        album_name = (trk.get('album') or {}).get('name') or trk.get('album_name') or ''
-        release_date = (trk.get('album') or {}).get('release_date') or trk.get('release_date') or ''
-        spotify_url = trk.get('spotify_url') or ''
-
-        # ۱. سرچ هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID
-        query = f"{artist} {title}"
-        yt_res = crawler_service.yt.search(query)
-        if not yt_res:
-            continue
-            
-        vid = yt_res[0].get('videoId')
-        if not vid:
-            continue
-
-        # ۲. ثبت در جدول campaign_tracks (با کلید خارجی campaign_id)
-        cur_trk = db.execute("""
-            INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, youtube_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
-        """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
-        campaign_track_id = cur_trk.lastrowid
-
-        # ۳. ثبت در جدول صف ingestion_logs
-        cur = db.execute("""
-            INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
-            VALUES (?, ?, ?, ?, 'queued')
-        """, (title, artist, vid, f"artist_hub:{artist_name[:20]}"))
-        log_id = cur.lastrowid
-        db.commit()
-
-        # ۴. ارسال به Huey Queue با کانال هدف اختصاصی (ورکر کش را بررسی کرده و بدون دانلود مستقیم می‌فرستد)
-        download_and_process_track(
-            video_id=vid,
-            title=title,
-            artist=artist,
-            user_id=0,
-            user_first_name="ArtistHub",
-            session_token=None,
-            chat_id=None,
-            message_id=None,
-            quality=None,
-            cover_url=cover_url,
-            duration=duration_sec,
-            log_id=log_id,
-            target_channel_id=target_channel_id
-        )
-        queued_count += 1
-
-    # به‌روزرسانی اولیه آمار تکمیل شده‌ها (تکراری‌ها بلافاصله تکمیل محسوب می‌شوند)
-    db.execute("""
-        UPDATE artist_campaigns 
-        SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed'),
-            status = CASE 
-                WHEN (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed') >= total_tracks 
-                THEN 'completed' 
-                ELSE 'processing' 
-            END,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    """, (campaign_id, campaign_id, campaign_id))
-    db.commit()
+    # ۲. ایجاد تسک در ورکر پس‌زمینه بدون مسدود کردن ریکوئست وب
+    from core.tasks import ingest_artist_campaign_task
+    ingest_artist_campaign_task(
+        campaign_id=campaign_id,
+        tracks=tracks,
+        artist_name=artist_name,
+        target_channel_id=target_channel_id
+    )
 
     return jsonify({
         'status': 'success',
         'result': {
             'campaign_id': campaign_id,
-            'queued': queued_count,
-            'skipped': skipped_count,
+            'queued': len(tracks),
             'total': len(tracks),
             'target_channel': target_channel_id
         }
@@ -758,3 +700,52 @@ def verify_channel_api():
     except Exception as exc:
         logger.error(f"Channel verification error: {exc}")
         return jsonify({'status': 'error', 'verified': False, 'message': str(exc)}), 500
+
+@admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/retry_failed', methods=['POST'])
+def retry_campaign_failed_api(campaign_id):
+    """تلاش مجدد برای ارسال تمام آهنگ‌های خطا خورده یک کمپین"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    if not c_row:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    target_channel = c_row['target_channel_id']
+    failed_tracks = db.execute("""
+        SELECT * FROM campaign_tracks 
+        WHERE campaign_id = ? AND status = 'failed'
+    """, (campaign_id,)).fetchall()
+
+    if not failed_tracks:
+        return jsonify({'status': 'success', 'message': 'No failed tracks to retry', 'retried': 0})
+
+    from core.tasks import download_and_process_track
+    for trk in failed_tracks:
+        # تغییر وضعیت به queued
+        db.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL WHERE id = ?", (trk['id'],))
+        
+        # ثبت در ingestion_logs
+        cur = db.execute("""
+            INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+            VALUES (?, ?, ?, ?, 'queued')
+        """, (trk['title'], trk['artist'], trk['youtube_id'], f"retry:{c_row['artist_name'][:15]}"))
+        log_id = cur.lastrowid
+
+        download_and_process_track(
+            video_id=trk['youtube_id'],
+            title=trk['title'],
+            artist=trk['artist'],
+            user_id=0,
+            user_first_name="ArtistHubRetry",
+            session_token=None,
+            chat_id=None,
+            message_id=None,
+            quality=None,
+            cover_url=trk['cover_url'],
+            duration=trk['duration_seconds'],
+            log_id=log_id,
+            target_channel_id=target_channel
+        )
+
+    db.commit()
+    return jsonify({'status': 'success', 'retried': len(failed_tracks)})

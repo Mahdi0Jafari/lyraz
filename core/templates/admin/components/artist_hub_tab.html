@@ -224,10 +224,15 @@
         </div>
 
         <!-- Modal Footer -->
-        <div class="p-4 border-t border-white/10 bg-white/[0.01] flex items-center justify-between">
-            <button type="button" id="btn-delete-campaign" class="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px]">delete</span> Delete Campaign
-            </button>
+        <div class="p-4 border-t border-white/10 bg-white/[0.01] flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <button type="button" id="btn-delete-campaign" class="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px]">delete</span> Delete Campaign
+                </button>
+                <button type="button" id="btn-retry-failed" onclick="retryFailedCampaignTracks()" class="hidden px-4 py-2 rounded-xl bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 text-xs font-bold transition flex items-center gap-1.5 border border-yellow-500/20">
+                    <span class="material-symbols-outlined text-[16px]">replay</span> Retry Failed Tracks
+                </button>
+            </div>
             <button type="button" onclick="closeInspectModal()" class="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition">
                 Close
             </button>
@@ -617,11 +622,18 @@
                         </div>
 
                         <!-- Footer -->
-                        <div class="pt-4 border-t border-white/5 flex items-center justify-between mt-3">
+                        <div class="pt-4 border-t border-white/5 flex items-center justify-between mt-3 gap-2">
                             <span class="text-[10px] text-gray-500 font-mono">${c.created_at ? c.created_at.substring(0, 10) : ''}</span>
-                            <button type="button" onclick="openInspectModal(${c.id})" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-primary hover:text-black font-bold text-xs text-white transition flex items-center gap-1.5 shadow-sm">
-                                <span class="material-symbols-outlined text-[16px]">visibility</span> Inspect Tracks
-                            </button>
+                            <div class="flex items-center gap-2">
+                                ${c.live_failed > 0 ? `
+                                    <button type="button" onclick="quickRetryCampaign(${c.id}, event)" class="px-3 py-1.5 rounded-xl bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 font-bold text-xs transition flex items-center gap-1 border border-yellow-500/20 shadow-sm" title="Retry all failed tracks">
+                                        <span class="material-symbols-outlined text-[15px]">replay</span> Retry (${c.live_failed})
+                                    </button>
+                                ` : ''}
+                                <button type="button" onclick="openInspectModal(${c.id})" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-primary hover:text-black font-bold text-xs text-white transition flex items-center gap-1.5 shadow-sm">
+                                    <span class="material-symbols-outlined text-[16px]">visibility</span> Inspect Tracks
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -683,6 +695,14 @@
             } else {
                 badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse';
                 badge.innerText = 'In Progress';
+            }
+
+            const retryBtn = document.getElementById('btn-retry-failed');
+            if (failed > 0) {
+                retryBtn.classList.remove('hidden');
+                retryBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">replay</span> Retry ${failed} Failed Track${failed > 1 ? 's' : ''}`;
+            } else {
+                retryBtn.classList.add('hidden');
             }
 
             document.getElementById('btn-delete-campaign').onclick = () => deleteCampaign(campaignId);
@@ -752,6 +772,47 @@
             }
         } catch (e) {
             console.error('Delete error:', e);
+        }
+    }
+
+    async function retryFailedCampaignTracks() {
+        if (!currentModalCampaignId) return;
+        const btn = document.getElementById('btn-retry-failed');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Retrying...`;
+
+        try {
+            const res = await fetch(`/api/admin/artist_hub/campaign/${currentModalCampaignId}/retry_failed`, { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🔄 Retrying ${data.retried} failed tracks...`);
+                // Refresh modal data
+                await openInspectModal(currentModalCampaignId);
+                loadArtistCampaigns();
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ Failed to retry: ${data.message}`);
+            }
+        } catch (e) {
+            console.error('Retry error:', e);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function quickRetryCampaign(campaignId, event) {
+        if (event) event.stopPropagation();
+        try {
+            if (typeof showToast === 'function') showToast('🔄 Queuing failed tracks for retry...');
+            const res = await fetch(`/api/admin/artist_hub/campaign/${campaignId}/retry_failed`, { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`✅ Retrying ${data.retried} failed tracks!`);
+                loadArtistCampaigns();
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ Failed to retry: ${data.message}`);
+            }
+        } catch (e) {
+            console.error('Quick retry error:', e);
         }
     }
 </script>
