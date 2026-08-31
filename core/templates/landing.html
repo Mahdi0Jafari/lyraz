@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     
     <!-- Primary Metadata -->
-    <title>Lyraz — Collaborative Sound System &bull; Feel The Frequency</title>
-    <meta name="description" content="Put music on the screen. Everyone queues songs from Telegram @LyrazBot. Zero latency, real-time lyrics, 320kbps lossless audio.">
+    <title>Lyraz — Collaborative Audio System &bull; For Every Screen &amp; Every Crowd</title>
+    <meta name="description" content="Put music on the big screen. Everyone queues tracks, Spotify links, and voice notes via Telegram @LyrazBot. Lossless 320kbps audio with synchronized live karaoke lyrics.">
     <meta name="robots" content="index, follow">
 
-    <!-- Fonts: Anton (Ultra Bold Condensed Headline) + Plus Jakarta Sans + Space Grotesk -->
+    <!-- Fonts: Anton (Ultra Bold Editorial Condensed) + Plus Jakarta Sans + Space Grotesk -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Remix Icons -->
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
@@ -30,9 +30,11 @@
                         mono: ['"Space Grotesk"', 'monospace'],
                     },
                     colors: {
-                        stageBg: '#131128',
-                        stageCard: '#1a1738',
+                        deepDark: '#08080e',
+                        cardSurface: 'rgba(19, 21, 35, 0.75)',
+                        accentCyan: '#06b6d4',
                         accentBlue: '#38bdf8',
+                        accentPurple: '#a855f7',
                         tg: '#2AABEE',
                     }
                 }
@@ -41,346 +43,349 @@
     </script>
 
     <style>
+        :root {
+            color-scheme: dark;
+        }
         body {
-            background-color: #dcdde2;
+            background-color: #08080e;
             color: #ffffff;
             font-family: 'Plus Jakarta Sans', sans-serif;
             overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
         }
 
-        /* The Grand Poster Canvas Frame */
-        .hero-poster-canvas {
-            background-color: #131128;
-            background-image: 
-                radial-gradient(circle at 50% 35%, rgba(67, 56, 202, 0.28) 0%, transparent 65%),
-                radial-gradient(circle at 15% 85%, rgba(99, 102, 241, 0.15) 0%, transparent 50%);
-            box-shadow: 0 35px 80px -15px rgba(15, 13, 35, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+        /* Subtle ambient glow behind center hero */
+        .ambient-radial {
+            background: radial-gradient(circle at 50% 45%, rgba(99, 102, 241, 0.18) 0%, rgba(168, 85, 247, 0.08) 35%, transparent 70%);
         }
 
-        /* Pill Navigation Bar */
-        .capsule-btn-active {
+        /* Navigation Pills */
+        .nav-capsule {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.25s ease;
+        }
+        .nav-capsule:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        /* Circular Big Action Buttons */
+        .circle-action-white {
             background: #ffffff;
-            color: #131128;
-            font-weight: 700;
-            box-shadow: 0 4px 14px rgba(255, 255, 255, 0.25);
+            color: #08080e;
+            box-shadow: 0 10px 30px rgba(255, 255, 255, 0.2);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .circle-action-white:hover {
+            transform: scale(1.08);
+            box-shadow: 0 15px 40px rgba(255, 255, 255, 0.35);
         }
 
-        .capsule-btn-idle {
-            background: rgba(255, 255, 255, 0.07);
-            color: rgba(255, 255, 255, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            transition: all 0.2s ease;
-        }
-        .capsule-btn-idle:hover {
-            background: rgba(255, 255, 255, 0.15);
+        .circle-action-glass {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             color: #ffffff;
-            border-color: rgba(255, 255, 255, 0.25);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .circle-action-glass:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.08);
         }
 
-        /* Large Circle Action Buttons */
-        .action-circle-white {
-            background: #ffffff;
-            color: #131128;
-            font-weight: 800;
-            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
-            box-shadow: 0 12px 30px rgba(255, 255, 255, 0.18);
-        }
-        .action-circle-white:hover {
-            transform: scale(1.06);
-            box-shadow: 0 16px 40px rgba(255, 255, 255, 0.3);
-        }
-
-        .action-circle-glass {
-            background: rgba(255, 255, 255, 0.08);
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            font-weight: 700;
-            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-        .action-circle-glass:hover {
-            background: rgba(255, 255, 255, 0.15);
-            border-color: rgba(255, 255, 255, 0.35);
-            transform: scale(1.06);
-        }
-
-        /* Floating Audio Player Glass Card */
-        .glass-player-widget {
-            background: rgba(16, 14, 38, 0.72);
+        /* Floating Audio Player Widget */
+        .floating-player-card {
+            background: rgba(18, 20, 32, 0.75);
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.85);
         }
 
-        /* Sub-sections frame */
-        .sub-frame {
-            background: #131128;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 20px 40px -10px rgba(10, 8, 25, 0.4);
+        /* Modern Glass Section Cards */
+        .feature-card {
+            background: rgba(18, 20, 32, 0.55);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .feature-card:hover {
+            border-color: rgba(56, 189, 248, 0.3);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+        }
+
+        /* Character Float Animation */
+        @keyframes subtle-float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+        .animate-character {
+            animation: subtle-float 6s ease-in-out infinite;
         }
     </style>
 </head>
-<body class="min-h-screen p-3 sm:p-6 lg:p-10 flex flex-col items-center justify-between">
+<body class="min-h-screen flex flex-col justify-between selection:bg-accentBlue selection:text-black">
 
-    <!-- ======================================================= -->
-    <!-- 🖼️ HERO POSTER FRAME (MATCHING DRIBBBLE REFERENCE)     -->
-    <!-- ======================================================= -->
-    <div class="hero-poster-canvas w-full max-w-[1520px] rounded-[2.5rem] sm:rounded-[3.2rem] relative overflow-hidden flex flex-col justify-between min-h-[860px] lg:min-h-[920px]">
+    <!-- Ambient Glow Top & Center -->
+    <div class="fixed inset-0 pointer-events-none z-0 ambient-radial"></div>
 
-        <!-- ========================================== -->
-        <!-- 🧭 TOP HEADER BAR                          -->
-        <!-- ========================================== -->
-        <header class="relative z-30 px-6 sm:px-12 lg:px-14 pt-8 pb-4 flex items-center justify-between">
-            
-            <!-- Left: Brand Logo & Audio Waves -->
-            <a href="https://lyraz.ir" class="flex items-center gap-3 group">
-                <div class="flex items-end gap-1 h-6">
-                    <span class="w-1.5 h-4 bg-white rounded-full"></span>
-                    <span class="w-1.5 h-6 bg-white rounded-full"></span>
-                    <span class="w-1.5 h-5 bg-white rounded-full"></span>
-                    <span class="w-1.5 h-3 bg-white rounded-full"></span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="font-anton text-2xl sm:text-3xl tracking-wider text-white uppercase ml-1">LYRAZ</span>
-                    <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white/10 text-accentBlue uppercase tracking-widest hidden sm:inline-block">HUB</span>
-                </div>
+    <!-- ========================================== -->
+    <!-- 🧭 TOP MAIN NAVIGATION BAR                -->
+    <!-- ========================================== -->
+    <header class="relative z-30 w-full max-w-[1600px] mx-auto px-6 sm:px-12 py-6 flex items-center justify-between">
+        
+        <!-- Left: Logo Brand -->
+        <a href="https://lyraz.ir" class="flex items-center gap-3.5 group">
+            <div class="flex items-end gap-1 h-7">
+                <span class="w-1.5 h-4 bg-white rounded-full"></span>
+                <span class="w-1.5 h-7 bg-white rounded-full"></span>
+                <span class="w-1.5 h-5 bg-white rounded-full"></span>
+                <span class="w-1.5 h-3 bg-white rounded-full"></span>
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="font-anton text-3xl tracking-wider text-white uppercase">LYRAZ</span>
+                <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white/10 text-accentBlue uppercase tracking-wider">HUB</span>
+            </div>
+        </a>
+
+        <!-- Center: Capsule Category Navigation -->
+        <nav class="hidden md:flex items-center gap-2">
+            <a href="https://lyraz.ir" class="nav-capsule bg-white text-[#08080e] hover:bg-white/90 px-6 py-2.5 rounded-full text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                <i class="ri-tv-2-line text-sm"></i>
+                <span>Open Screen</span>
             </a>
+            <a href="#how-it-works" class="nav-capsule px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide text-gray-300 hover:text-white">
+                How It Works
+            </a>
+            <a href="#venues" class="nav-capsule px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide text-gray-300 hover:text-white">
+                Venues
+            </a>
+            <a href="https://t.me/{{ channel_username }}" target="_blank" class="nav-capsule px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide text-tg hover:text-white flex items-center gap-1.5">
+                <i class="ri-telegram-fill text-sm"></i>
+                <span>@{{ channel_username }}</span>
+            </a>
+        </nav>
 
-            <!-- Center: Capsule Category Navigation -->
-            <nav class="hidden md:flex items-center gap-2">
-                <a href="https://lyraz.ir" class="capsule-btn-active px-6 py-2.5 rounded-full text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <i class="ri-tv-2-line text-sm"></i>
-                    <span>Web Display</span>
-                </a>
-                <a href="#how-it-works" class="capsule-btn-idle px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide">
-                    How It Works
-                </a>
-                <a href="https://t.me/{{ bot_username }}" target="_blank" class="capsule-btn-idle px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide flex items-center gap-1.5">
-                    <i class="ri-robot-2-line text-tg text-sm"></i>
-                    <span>@{{ bot_username }}</span>
-                </a>
-                <a href="https://t.me/{{ channel_username }}" target="_blank" class="capsule-btn-idle px-5 py-2.5 rounded-full text-xs font-semibold tracking-wide flex items-center gap-1.5">
-                    <i class="ri-telegram-fill text-tg text-sm"></i>
-                    <span>@{{ channel_username }}</span>
-                </a>
-            </nav>
+        <!-- Right: Connect Bot Button -->
+        <div class="flex items-center gap-3">
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="nav-capsule px-5 py-2.5 rounded-full text-xs font-bold text-white flex items-center gap-2">
+                <i class="ri-send-plane-fill text-tg text-sm"></i>
+                <span>Queue Song @{{ bot_username }}</span>
+            </a>
+        </div>
 
-            <!-- Right: Direct Launch Pill Button -->
-            <div class="flex items-center gap-3">
-                <a href="https://t.me/{{ bot_username }}" target="_blank" class="capsule-btn-idle px-5 py-2.5 rounded-full text-xs font-bold text-white flex items-center gap-2">
-                    <i class="ri-send-plane-fill text-tg text-sm"></i>
-                    <span>Queue a Song</span>
-                </a>
-            </div>
+    </header>
 
-        </header>
-
-        <!-- ======================================================== -->
-        <!-- 🎸 MAIN HERO BODY (AUTHENTIC LYRAZ PRODUCT CONTENT)      -->
-        <!-- ======================================================== -->
-        <main class="relative z-20 px-6 sm:px-12 lg:px-14 py-6 sm:py-8 flex-1 flex flex-col justify-between">
+    <!-- ======================================================== -->
+    <!-- 🎸 MAIN HERO (FULL-WIDTH 3-COLUMN EDITORIAL COMPOSITION) -->
+    <!-- ======================================================== -->
+    <main class="relative z-20 w-full max-w-[1600px] mx-auto px-6 sm:px-12 pt-4 sm:pt-8 pb-12 flex-1 flex flex-col justify-between">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-4 items-end flex-1 relative min-h-[640px]">
             
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end flex-1 relative">
+            <!-- ========================================== -->
+            <!-- 👈 LEFT COLUMN: ACTION + COPY + BIG TITLE  -->
+            <!-- ========================================== -->
+            <div class="lg:col-span-4 flex flex-col justify-between h-full z-20 order-2 lg:order-1 pt-6 lg:pt-8">
                 
-                <!-- ========================================== -->
-                <!-- 👈 LEFT COLUMN: ACTION + VALUE + MASSIVE TITLE -->
-                <!-- ========================================== -->
-                <div class="lg:col-span-4 flex flex-col justify-between h-full z-20 order-2 lg:order-1 pt-6 lg:pt-10">
-                    
-                    <!-- Top: Circular Action Buttons -->
-                    <div class="flex items-center gap-4 mb-6 lg:mb-10">
-                        <a href="https://lyraz.ir" class="action-circle-white size-24 sm:size-28 rounded-full flex flex-col items-center justify-center text-xs sm:text-sm font-extrabold uppercase tracking-widest leading-tight text-center p-2">
-                            <i class="ri-tv-line text-xl mb-1"></i>
-                            <span>LIVE HUB</span>
-                        </a>
-                        <a href="https://t.me/{{ bot_username }}" target="_blank" class="action-circle-glass size-24 sm:size-28 rounded-full flex flex-col items-center justify-center text-xs sm:text-sm font-bold uppercase tracking-widest leading-tight text-center p-2">
-                            <i class="ri-telegram-fill text-xl text-tg mb-0.5"></i>
-                            <span>DROP SONG</span>
-                        </a>
-                    </div>
-
-                    <!-- Middle: Accurate Value Proposition from c1c7774 -->
-                    <div class="space-y-3 mb-6 lg:mb-10 max-w-sm">
-                        <p class="text-sm sm:text-base text-gray-200 font-medium leading-relaxed">
-                            Open <strong class="text-white font-bold">lyraz.ir</strong> on your Smart TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-bold">@{{ bot_username }}</strong>.
-                        </p>
-                        <p class="text-xs font-mono text-accentBlue flex items-center gap-1.5">
-                            <i class="ri-shield-check-fill"></i> Zero apps to install &bull; No Bluetooth fights
-                        </p>
-                    </div>
-
-                    <!-- Bottom: Massive Editorial Title -->
-                    <div class="mt-auto pb-4">
-                        <h1 class="font-anton text-5xl sm:text-6xl md:text-7xl xl:text-[88px] text-white tracking-tighter uppercase leading-[0.88] select-none">
-                            COLLABORATIVE<br>JUKEBOX
-                        </h1>
-                    </div>
-
+                <!-- Circular Action Buttons -->
+                <div class="flex items-center gap-4 mb-8 lg:mb-12">
+                    <a href="https://lyraz.ir" class="circle-action-white size-24 sm:size-28 rounded-full flex flex-col items-center justify-center text-xs sm:text-sm font-black uppercase tracking-widest leading-tight text-center p-2">
+                        <i class="ri-tv-line text-2xl mb-1"></i>
+                        <span>LIVE HUB</span>
+                    </a>
+                    <a href="https://t.me/{{ bot_username }}" target="_blank" class="circle-action-glass size-24 sm:size-28 rounded-full flex flex-col items-center justify-center text-xs sm:text-sm font-bold uppercase tracking-widest leading-tight text-center p-2">
+                        <i class="ri-telegram-fill text-2xl text-tg mb-1"></i>
+                        <span>DROP SONG</span>
+                    </a>
                 </div>
 
-                <!-- ========================================== -->
-                <!-- 🦊 CENTER: MASCOT SUBJECT (SEAMLESS BASE) -->
-                <!-- ========================================== -->
-                <div class="lg:col-span-4 flex justify-center items-end relative z-10 order-1 lg:order-2 h-full min-h-[380px] sm:min-h-[500px] lg:min-h-[640px] pointer-events-none">
-                    <!-- Spot Glow Behind Character -->
-                    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 w-[340px] sm:w-[480px] h-[340px] sm:h-[480px] bg-indigo-500/20 rounded-full blur-[110px] pointer-events-none"></div>
-
-                    <!-- Mascot Cutout Container -->
-                    <div class="relative w-full max-w-[480px] lg:max-w-[560px] flex items-end justify-center">
-                        <img 
-                            src="/static/images/brand/lyraz_fox_hero_blended.webp" 
-                            alt="Lyraz Music Mascot" 
-                            class="w-full h-auto max-h-[560px] lg:max-h-[680px] object-contain object-bottom drop-shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
-                        >
-                    </div>
+                <!-- True Lyraz Manifesto Copy -->
+                <div class="space-y-3 mb-8 lg:mb-12 max-w-sm">
+                    <p class="text-sm sm:text-base text-gray-300 font-normal leading-relaxed">
+                        Open <strong class="text-white font-semibold">lyraz.ir</strong> on your Smart TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-semibold">@{{ bot_username }}</strong>.
+                    </p>
+                    <p class="text-xs font-mono text-accentBlue flex items-center gap-1.5">
+                        <i class="ri-shield-check-fill text-sm"></i> Zero apps to install &bull; No Bluetooth fights
+                    </p>
                 </div>
 
-                <!-- ========================================== -->
-                <!-- 👉 RIGHT COLUMN: SYNC STATS + MOCKUP CARD  -->
-                <!-- ========================================== -->
-                <div class="lg:col-span-4 flex flex-col justify-between items-start lg:items-end h-full z-20 order-3 pt-6 lg:pt-10 space-y-8">
-                    
-                    <!-- Top Right: Precision Engineering Readout -->
-                    <div class="space-y-3 max-w-sm text-left lg:text-right">
-                        <!-- Translucent Sync Pill -->
-                        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 text-xs font-mono text-gray-200 border border-white/10">
-                            <span class="inline-block size-2 rounded-full bg-accentBlue animate-ping"></span>
-                            <span>SYNC ENGINE: 0.04ms OFFSET</span>
-                        </div>
-
-                        <!-- Headline -->
-                        <h2 class="font-anton text-3xl sm:text-4xl text-white tracking-wide uppercase flex items-center lg:justify-end gap-2">
-                            <span>FOR EVERY SCREEN</span>
-                        </h2>
-
-                        <!-- Subhead -->
-                        <p class="text-xs sm:text-sm text-gray-300 leading-relaxed">
-                            Turn any TV, tablet, or projector into a democratic party jukebox. Synchronized across devices with live streaming karaoke lyrics.
-                        </p>
-                    </div>
-
-                    <!-- Bottom Right: Live Social Audio Player Card -->
-                    <div class="glass-player-widget rounded-[2rem] p-6 w-full max-w-[320px] text-left space-y-4 mt-auto">
-                        
-                        <!-- Header & Quality Badge -->
-                        <div class="flex items-center justify-between text-[11px] font-mono text-gray-400">
-                            <span class="flex items-center gap-1.5 text-accentBlue font-bold">
-                                <i class="ri-broadcast-line"></i> LIVE ON SCREEN
-                            </span>
-                            <span class="bg-white/10 px-2 py-0.5 rounded text-[10px] text-white font-bold tracking-wider">
-                                FLAC &bull; 320K
-                            </span>
-                        </div>
-
-                        <!-- Track Title & DJ Credential -->
-                        <div class="space-y-1">
-                            <h3 class="font-bold text-lg text-white truncate">Starlight Symphony</h3>
-                            <div class="flex items-center justify-between text-xs text-gray-400">
-                                <span class="truncate">M83 &bull; Electronic</span>
-                                <span class="text-tg font-mono text-[11px] font-semibold flex items-center gap-1">
-                                    <i class="ri-user-smile-line"></i> Queued by Mahdi
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Synchronized Lyric Preview Card -->
-                        <div class="bg-white/5 rounded-xl px-3 py-2 border border-white/10 text-center">
-                            <p class="text-xs text-accentBlue font-semibold italic truncate">
-                                ♪ "Chasing echoes in the neon light"
-                            </p>
-                        </div>
-
-                        <!-- Progress Bar & Scrubber -->
-                        <div class="space-y-1.5 pt-1">
-                            <div class="h-1 bg-white/20 rounded-full overflow-hidden relative cursor-pointer">
-                                <div class="h-full bg-white rounded-full w-[62%] relative shadow-[0_0_12px_#ffffff]">
-                                    <span class="absolute right-0 top-1/2 -translate-y-1/2 size-2.5 bg-white rounded-full shadow"></span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-[11px] font-mono text-gray-400 font-semibold">
-                                <span>02:14</span>
-                                <span>03:48</span>
-                            </div>
-                        </div>
-
-                        <!-- Player Controls -->
-                        <div class="flex items-center justify-center gap-5 text-gray-300 pt-1">
-                            <i class="ri-skip-back-fill text-base hover:text-white cursor-pointer transition"></i>
-                            <div class="size-9 rounded-full bg-white text-[#131128] flex items-center justify-center text-lg shadow hover:scale-105 active:scale-95 transition cursor-pointer">
-                                <i class="ri-pause-fill ml-0.5"></i>
-                            </div>
-                            <i class="ri-skip-forward-fill text-base hover:text-white cursor-pointer transition"></i>
-                        </div>
-
-                        <!-- Card Footer -->
-                        <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-gray-400">
-                            <span>SCAN TV TO QUEUE</span>
-                            <i class="ri-qr-code-line text-accentBlue text-sm"></i>
-                        </div>
-                    </div>
-
+                <!-- Massive Editorial Headline -->
+                <div class="mt-auto pb-2">
+                    <h1 class="font-anton text-6xl sm:text-7xl md:text-8xl xl:text-[98px] text-white tracking-tighter uppercase leading-[0.88] select-none">
+                        COLLABORATIVE<br>JUKEBOX
+                    </h1>
                 </div>
 
             </div>
 
-        </main>
+            <!-- ========================================== -->
+            <!-- 🦊 CENTER: MASCOT SUBJECT (SEAMLESS CUTOUT) -->
+            <!-- ========================================== -->
+            <div class="lg:col-span-4 flex justify-center items-end relative z-10 order-1 lg:order-2 h-full min-h-[420px] sm:min-h-[540px] lg:min-h-[640px] pointer-events-none">
+                
+                <!-- Stage Spotlight Glow -->
+                <div class="absolute bottom-6 left-1/2 -translate-x-1/2 w-[340px] sm:w-[460px] h-[340px] sm:h-[460px] bg-indigo-600/25 rounded-full blur-[100px] pointer-events-none"></div>
 
-    </div>
+                <!-- Clean Transparent Mascot Cutout -->
+                <div class="relative w-full max-w-[420px] sm:max-w-[500px] flex items-end justify-center animate-character">
+                    <img 
+                        src="/static/images/brand/lyraz_fox_cutout.webp" 
+                        alt="Lyraz Rocker Fox Mascot" 
+                        class="w-full h-auto max-h-[580px] lg:max-h-[660px] object-contain object-bottom drop-shadow-[0_25px_60px_rgba(0,0,0,0.85)]"
+                    >
+                </div>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- 👉 RIGHT COLUMN: SYNC READOUT + LIVE CARD  -->
+            <!-- ========================================== -->
+            <div class="lg:col-span-4 flex flex-col justify-between items-start lg:items-end h-full z-20 order-3 pt-6 lg:pt-8 space-y-8">
+                
+                <!-- Top Right: Engineering Readout -->
+                <div class="space-y-3 max-w-sm text-left lg:text-right">
+                    <!-- Translucent Pill -->
+                    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 text-xs font-mono text-gray-200 border border-white/10">
+                        <span class="inline-block size-2 rounded-full bg-accentBlue animate-ping"></span>
+                        <span>SYNC ENGINE: 0.04ms OFFSET</span>
+                    </div>
+
+                    <!-- Headline -->
+                    <h2 class="font-anton text-3xl sm:text-4xl text-white tracking-wide uppercase flex items-center lg:justify-end gap-2">
+                        <span>FOR EVERY SCREEN</span>
+                    </h2>
+
+                    <!-- Subhead -->
+                    <p class="text-xs sm:text-sm text-gray-400 leading-relaxed">
+                        Turn any TV, tablet, or projector into a democratic party jukebox. Synchronized across devices with live streaming karaoke lyrics.
+                    </p>
+                </div>
+
+                <!-- Floating Live Social Player Card (Exact Replica of Reference Design) -->
+                <div class="floating-player-card rounded-[2rem] p-6 w-full max-w-[320px] text-left space-y-4 mt-auto">
+                    
+                    <!-- Track Header -->
+                    <div class="flex items-center justify-between text-[11px] font-mono text-gray-400">
+                        <span class="flex items-center gap-1.5 text-accentBlue font-bold">
+                            <i class="ri-broadcast-line"></i> LIVE ON SCREEN
+                        </span>
+                        <span class="bg-white/10 px-2 py-0.5 rounded text-[10px] text-white font-bold tracking-wider">
+                            FLAC &bull; 320K
+                        </span>
+                    </div>
+
+                    <!-- Track Details & DJ Contributor -->
+                    <div class="space-y-1">
+                        <h3 class="font-bold text-lg text-white truncate">Starlight Symphony</h3>
+                        <div class="flex items-center justify-between text-xs text-gray-400">
+                            <span class="truncate">M83 &bull; Electronic</span>
+                            <span class="text-tg font-mono text-[11px] font-semibold flex items-center gap-1">
+                                <i class="ri-user-smile-line"></i> Queued by Mahdi
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Live Synchronized Karaoke Lyric Card -->
+                    <div class="bg-white/5 rounded-xl px-3.5 py-2.5 border border-white/10 text-center">
+                        <p class="text-xs text-accentBlue font-semibold italic truncate">
+                            ♪ "Chasing echoes in the neon light"
+                        </p>
+                    </div>
+
+                    <!-- Scrubber Bar -->
+                    <div class="space-y-1.5 pt-1">
+                        <div class="h-1 bg-white/20 rounded-full overflow-hidden relative cursor-pointer">
+                            <div class="h-full bg-white rounded-full w-[62%] relative shadow-[0_0_12px_#ffffff]">
+                                <span class="absolute right-0 top-1/2 -translate-y-1/2 size-2.5 bg-white rounded-full shadow"></span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-[11px] font-mono text-gray-400 font-semibold">
+                            <span>02:14</span>
+                            <span>03:48</span>
+                        </div>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="flex items-center justify-center gap-5 text-gray-300 pt-1">
+                        <i class="ri-skip-back-fill text-base hover:text-white cursor-pointer transition"></i>
+                        <div class="size-9 rounded-full bg-white text-[#08080e] flex items-center justify-center text-lg shadow hover:scale-105 active:scale-95 transition cursor-pointer">
+                            <i class="ri-pause-fill ml-0.5"></i>
+                        </div>
+                        <i class="ri-skip-forward-fill text-base hover:text-white cursor-pointer transition"></i>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-gray-400">
+                        <span>SCAN TV TO QUEUE</span>
+                        <i class="ri-qr-code-line text-accentBlue text-sm"></i>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
 
     <!-- ======================================================= -->
-    <!-- 🏗️ SUB-SECTION: HOW IT WORKS (THE 3-STEP ARCHITECTURE)   -->
+    <!-- 🏗️ SUB-SECTION: HOW IT WORKS (3-STEP ARCHITECTURE)      -->
     <!-- ======================================================= -->
-    <section id="how-it-works" class="w-full max-w-[1520px] mx-auto py-20 px-4 sm:px-8">
+    <section id="how-it-works" class="w-full max-w-[1600px] mx-auto py-24 px-6 sm:px-12 border-t border-white/5">
         
         <div class="text-center max-w-2xl mx-auto mb-16">
             <span class="font-mono text-xs font-bold text-accentBlue uppercase tracking-widest">ZERO SETUP FRICTION</span>
-            <h2 class="font-anton text-3xl sm:text-5xl text-[#131128] tracking-wide uppercase mt-2 mb-4">HOW THE GRID WORKS</h2>
-            <p class="text-sm sm:text-base text-gray-600 font-medium">Zero apps to download. Zero Bluetooth pairing headaches. Pure decentralized music streaming.</p>
+            <h2 class="font-anton text-4xl sm:text-5xl text-white tracking-wide uppercase mt-2 mb-4">HOW THE GRID WORKS</h2>
+            <p class="text-sm sm:text-base text-gray-400">Zero apps to download. Zero Bluetooth pairing headaches. Pure decentralized music streaming.</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
             
             <!-- Step 1 -->
-            <div class="sub-frame rounded-3xl p-8 flex flex-col justify-between text-white">
+            <div class="feature-card rounded-3xl p-8 flex flex-col justify-between">
                 <div>
                     <span class="font-anton text-4xl text-accentBlue mb-4 block">01</span>
                     <h3 class="font-bold text-xl text-white mb-2">Open the Screen</h3>
-                    <p class="text-sm text-gray-300 leading-relaxed">
+                    <p class="text-sm text-gray-400 leading-relaxed">
                         Open <strong class="text-white">lyraz.ir</strong> on your Smart TV, projector, iPad, or browser. A permanent room session and high-contrast QR code generate instantly.
                     </p>
                 </div>
-                <div class="mt-8 pt-4 border-t border-white/10 text-xs font-mono text-gray-400">
+                <div class="mt-8 pt-4 border-t border-white/5 text-xs font-mono text-gray-500">
                     Works on Smart TV, Mac, Windows &amp; Linux
                 </div>
             </div>
 
             <!-- Step 2 -->
-            <div class="sub-frame rounded-3xl p-8 flex flex-col justify-between text-white">
+            <div class="feature-card rounded-3xl p-8 flex flex-col justify-between">
                 <div>
                     <span class="font-anton text-4xl text-white mb-4 block">02</span>
                     <h3 class="font-bold text-xl text-white mb-2">Scan &amp; Connect via Telegram</h3>
-                    <p class="text-sm text-gray-300 leading-relaxed">
+                    <p class="text-sm text-gray-400 leading-relaxed">
                         Guests simply point their phone camera at the screen. Telegram connects them to <strong class="text-tg font-semibold">@{{ bot_username }}</strong> with zero passwords or signups.
                     </p>
                 </div>
-                <div class="mt-8 pt-4 border-t border-white/10 text-xs font-mono text-gray-400">
+                <div class="mt-8 pt-4 border-t border-white/5 text-xs font-mono text-gray-500">
                     Deep-linked with zero registration friction
                 </div>
             </div>
 
             <!-- Step 3 -->
-            <div class="sub-frame rounded-3xl p-8 flex flex-col justify-between text-white">
+            <div class="feature-card rounded-3xl p-8 flex flex-col justify-between">
                 <div>
                     <span class="font-anton text-4xl text-accentBlue mb-4 block">03</span>
                     <h3 class="font-bold text-xl text-white mb-2">Queue &amp; Social Jukebox</h3>
-                    <p class="text-sm text-gray-300 leading-relaxed">
+                    <p class="text-sm text-gray-400 leading-relaxed">
                         Send any audio file, voice note, or Spotify track link to the bot. It buffers into the room's screen queue with live synchronized lyrics and contributor credits.
                     </p>
                 </div>
-                <div class="mt-8 pt-4 border-t border-white/10 text-xs font-mono text-gray-400">
+                <div class="mt-8 pt-4 border-t border-white/5 text-xs font-mono text-gray-500">
                     Lossless 320kbps + Live Karaoke Lyrics
                 </div>
             </div>
@@ -392,9 +397,9 @@
     <!-- ======================================================= -->
     <!-- 📍 VENUES & SOCIAL USE CASES                           -->
     <!-- ======================================================= -->
-    <section id="venues" class="w-full max-w-[1520px] mx-auto pb-16 px-4 sm:px-8">
+    <section id="venues" class="w-full max-w-[1600px] mx-auto pb-20 px-6 sm:px-12">
         
-        <div class="sub-frame rounded-[2.5rem] p-8 sm:p-14 mb-8">
+        <div class="feature-card rounded-[2.5rem] p-8 sm:p-14 mb-8">
             <div class="max-w-2xl mb-10">
                 <span class="font-mono text-xs font-bold text-accentBlue uppercase tracking-wider block mb-2">BUILT FOR EVERY VENUE</span>
                 <h3 class="font-anton text-3xl sm:text-5xl text-white uppercase tracking-tight">WHERE LYRAZ POWERS THE ROOM</h3>
@@ -406,7 +411,7 @@
                         <i class="ri-cup-line"></i>
                     </div>
                     <h4 class="font-bold text-lg text-white mb-1">Cafes, Bars &amp; Lounges</h4>
-                    <p class="text-xs text-gray-300 leading-relaxed">Guests request their favorite tracks right from their table QR code without bothering staff or bartenders.</p>
+                    <p class="text-xs text-gray-400 leading-relaxed">Guests request their favorite tracks right from their table QR code without bothering staff or bartenders.</p>
                 </div>
 
                 <div class="bg-white/5 rounded-2xl p-6 border border-white/5">
@@ -414,7 +419,7 @@
                         <i class="ri-fire-line"></i>
                     </div>
                     <h4 class="font-bold text-lg text-white mb-1">House Parties &amp; Events</h4>
-                    <p class="text-xs text-gray-300 leading-relaxed">End the war over the AUX cable. Everyone takes turns playing DJ while lyrics stream live on the TV.</p>
+                    <p class="text-xs text-gray-400 leading-relaxed">End the war over the AUX cable. Everyone takes turns playing DJ while lyrics stream live on the TV.</p>
                 </div>
 
                 <div class="bg-white/5 rounded-2xl p-6 border border-white/5">
@@ -422,13 +427,13 @@
                         <i class="ri-headphone-line"></i>
                     </div>
                     <h4 class="font-bold text-lg text-white mb-1">Homes &amp; Studios</h4>
-                    <p class="text-xs text-gray-300 leading-relaxed">Stream studio-grade 320kbps FLAC lossless audio directly from Telegram to your main speakers.</p>
+                    <p class="text-xs text-gray-400 leading-relaxed">Stream studio-grade 320kbps FLAC lossless audio directly from Telegram to your main speakers.</p>
                 </div>
             </div>
         </div>
 
         <!-- Telegram Vault Community Banner -->
-        <div class="sub-frame rounded-[2.5rem] p-8 sm:p-12 flex flex-col lg:flex-row items-center justify-between gap-8">
+        <div class="feature-card rounded-[2.5rem] p-8 sm:p-12 flex flex-col lg:flex-row items-center justify-between gap-8">
             <div class="space-y-3 max-w-xl text-center lg:text-left">
                 <span class="font-mono text-xs font-bold text-accentBlue uppercase tracking-wider inline-flex items-center gap-1.5">
                     <i class="ri-broadcast-fill"></i>
@@ -437,12 +442,12 @@
                 <h3 class="font-anton text-3xl sm:text-5xl text-white uppercase tracking-tight">
                     Join @{{ channel_username }}
                 </h3>
-                <p class="text-sm text-gray-300 leading-relaxed">
+                <p class="text-sm text-gray-400 leading-relaxed">
                     Exclusive lossless audio archives, artist discographies, and daily curated sound sessions on Telegram.
                 </p>
             </div>
 
-            <a href="https://t.me/{{ channel_username }}" target="_blank" class="action-circle-white size-28 sm:size-32 rounded-full flex flex-col items-center justify-center text-xs font-extrabold uppercase tracking-wider text-center shrink-0">
+            <a href="https://t.me/{{ channel_username }}" target="_blank" class="circle-action-white size-28 sm:size-32 rounded-full flex flex-col items-center justify-center text-xs font-black uppercase tracking-wider text-center shrink-0">
                 <i class="ri-telegram-fill text-2xl text-tg mb-1"></i>
                 <span>JOIN VAULT</span>
             </a>
@@ -452,14 +457,14 @@
     <!-- ======================================================= -->
     <!-- 🏁 FOOTER                                               -->
     <!-- ======================================================= -->
-    <footer class="w-full max-w-[1520px] mx-auto px-6 sm:px-12 py-8 border-t border-gray-300 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs text-gray-600">
+    <footer class="w-full max-w-[1600px] mx-auto px-6 sm:px-12 py-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-xs text-gray-500">
         <div class="flex items-center gap-3">
-            <span class="font-anton text-lg text-[#131128]">LYRAZ</span>
+            <span class="font-anton text-lg text-white">LYRAZ</span>
             <span>&bull; Collaborative Audio Network</span>
         </div>
 
         <div class="flex items-center gap-6">
-            <a href="https://lyraz.ir" class="hover:text-black transition">Web Player</a>
+            <a href="https://lyraz.ir" class="hover:text-white transition">Web Player</a>
             <a href="https://t.me/{{ bot_username }}" target="_blank" class="hover:text-tg transition">@{{ bot_username }}</a>
             <a href="https://t.me/{{ channel_username }}" target="_blank" class="hover:text-tg transition">@{{ channel_username }}</a>
         </div>
@@ -469,4 +474,5 @@
 
 </body>
 </html>
+
 
