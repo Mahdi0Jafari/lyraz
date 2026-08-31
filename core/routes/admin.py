@@ -601,35 +601,7 @@ def artist_hub_ingest_api():
         """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
         campaign_track_id = cur_trk.lastrowid
 
-        # ۳. بررسی تکراری نبودن در جدول tracks (اگر از قبل در مخزن موجود باشد)
-        existing = db.execute("SELECT * FROM tracks WHERE youtube_id = ?", (vid,)).fetchone()
-        if existing:
-            # اگر در مخزن هست اما کانال مقصد تعیین شده، فوراً به کانال بفرست بدون دانلود مجدد!
-            if target_channel_id:
-                try:
-                    from core.tasks import deliver_audio_safe, get_bot_instance
-                    import asyncio
-                    local_bot = get_bot_instance()
-                    asyncio.run(deliver_audio_safe(
-                        local_bot=local_bot,
-                        chat_id=target_channel_id,
-                        track_row=dict(existing),
-                        title=existing['title'],
-                        artist=existing['performer'],
-                        user_caption=f"🎵 *{existing['title']}*\n👤 {existing['performer']}\n\n📻 @lyraz_ir"
-                    ))
-                except Exception as deliv_err:
-                    logger.error(f"Failed to deliver existing track to target channel: {deliv_err}")
-
-            db.execute("UPDATE campaign_tracks SET status = 'completed', delivered_at = CURRENT_TIMESTAMP WHERE id = ?", (campaign_track_id,))
-            db.execute("""
-                INSERT INTO ingestion_logs (title, performer, youtube_id, source, status, error_msg, completed_at)
-                VALUES (?, ?, ?, ?, 'skipped', 'Already exists in vault', CURRENT_TIMESTAMP)
-            """, (title, artist, vid, f"artist_hub:{artist_name[:20]}"))
-            skipped_count += 1
-            continue
-
-        # ۴. ثبت در جدول صف ingestion_logs
+        # ۳. ثبت در جدول صف ingestion_logs
         cur = db.execute("""
             INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
             VALUES (?, ?, ?, ?, 'queued')
@@ -637,7 +609,7 @@ def artist_hub_ingest_api():
         log_id = cur.lastrowid
         db.commit()
 
-        # ۵. ارسال به Huey Queue با کانال هدف اختصاصی
+        # ۴. ارسال به Huey Queue با کانال هدف اختصاصی (ورکر کش را بررسی کرده و بدون دانلود مستقیم می‌فرستد)
         download_and_process_track(
             video_id=vid,
             title=title,

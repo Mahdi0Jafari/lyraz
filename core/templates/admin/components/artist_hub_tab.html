@@ -609,9 +609,10 @@
                             </div>
 
                             <!-- Real-time Queue Counters -->
-                            <div class="flex items-center gap-2 text-[10px] font-mono text-gray-400 my-2">
+                            <div class="flex items-center gap-2 text-[10px] font-mono text-gray-400 my-2 flex-wrap">
                                 <span class="px-2 py-0.5 rounded-md bg-white/5">⏳ Queued: ${c.live_queued}</span>
                                 <span class="px-2 py-0.5 rounded-md bg-white/5">⚡️ Active: ${c.live_downloading}</span>
+                                ${c.live_failed > 0 ? `<span class="px-2 py-0.5 rounded-md bg-red-500/20 text-red-400 font-bold">❌ Failed: ${c.live_failed}</span>` : ''}
                             </div>
                         </div>
 
@@ -660,17 +661,25 @@
             document.getElementById('modal-channel-label').innerText = c.target_channel_id ? `Target Channel: ${c.target_channel_id}` : `Target: Cloud Vault Only`;
 
             const completed = modalTracksData.filter(t => t.status === 'completed').length;
+            const failed = modalTracksData.filter(t => t.status === 'failed').length;
+            const queued = modalTracksData.filter(t => t.status === 'queued' || t.status === 'downloading').length;
             const total = modalTracksData.length;
             const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-            document.getElementById('modal-progress-text').innerText = `${pct}% (${completed} / ${total} delivered)`;
+            document.getElementById('modal-progress-text').innerHTML = `
+                <span class="text-primary font-bold">${pct}%</span> 
+                (${completed} delivered${failed > 0 ? `, <span class="text-red-400 font-bold">${failed} failed</span>` : ''}${queued > 0 ? `, ${queued} waiting` : ''} of ${total})
+            `;
             document.getElementById('modal-progress-bar').style.width = `${pct}%`;
             document.getElementById('modal-tracks-count').innerText = `${total} tracks`;
 
             const badge = document.getElementById('modal-status-badge');
-            if (pct >= 100) {
+            if (pct >= 100 && failed === 0) {
                 badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/20 text-primary border border-primary/30';
                 badge.innerText = 'Completed';
+            } else if (failed > 0 && queued === 0) {
+                badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30';
+                badge.innerText = 'Has Errors';
             } else {
                 badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse';
                 badge.innerText = 'In Progress';
@@ -691,6 +700,8 @@
                 statusBadge = `<span class="px-2 py-0.5 rounded-md bg-green-500/20 text-green-400 font-bold font-mono text-[10px] flex items-center gap-1"><span class="size-1.5 rounded-full bg-green-400"></span> Delivered</span>`;
             } else if (t.status === 'downloading') {
                 statusBadge = `<span class="px-2 py-0.5 rounded-md bg-yellow-500/20 text-yellow-300 font-bold font-mono text-[10px] flex items-center gap-1 animate-pulse"><span class="size-1.5 rounded-full bg-yellow-400"></span> Downloading</span>`;
+            } else if (t.status === 'failed') {
+                statusBadge = `<span class="px-2 py-0.5 rounded-md bg-red-500/20 text-red-400 font-bold font-mono text-[10px] flex items-center gap-1" title="${t.error_msg || 'Failed'}"><span class="size-1.5 rounded-full bg-red-400"></span> Failed</span>`;
             } else {
                 statusBadge = `<span class="px-2 py-0.5 rounded-md bg-white/5 text-gray-400 font-mono text-[10px]">In Line</span>`;
             }
