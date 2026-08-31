@@ -31,7 +31,12 @@ def remote_ui(token):
         </div>
         """, 404
     
-    return render_template('mobile_control.html', token=token, session=session)
+    from flask import make_response
+    resp = make_response(render_template('mobile_control.html', token=token, session=session))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 # ==========================================
@@ -213,6 +218,7 @@ def report_status():
         msg = {
             'type': 'status_update',
             'session_token': token,
+            'server_now': sync_time,
             'payload': {
                 'file_unique_id': unique_id,
                 'is_playing': is_playing,

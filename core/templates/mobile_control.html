@@ -4,6 +4,9 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
     <meta name="robots" content="noindex, follow"/>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
+    <meta http-equiv="Expires" content="0"/>
     <title>Lyraz Remote Control</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -132,9 +135,7 @@
             <div class="w-full max-w-sm space-y-1 px-2 mt-2">
                 <div class="relative h-6 flex items-center">
                     <input type="range" id="seek-slider" min="0" max="100" value="0" class="w-full z-10" 
-                           ontouchstart="startSeek()" onmousedown="startSeek()"
                            oninput="visualSeek(this.value)"
-                           ontouchend="commitSeek(this.value)" onmouseup="commitSeek(this.value)"
                            onchange="commitSeek(this.value)"> 
                     <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none transition-all" style="width: 0%"></div>
                 </div>
@@ -146,7 +147,7 @@
 
             <!-- Playback Controls -->
             <div class="flex items-center justify-center gap-8 w-full max-w-xs py-1">
-                <button onclick="sendCommand('prev')" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Previous">
+                <button onclick="goPrevTrack()" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Previous">
                     <span class="material-symbols-rounded text-4xl">skip_previous</span>
                 </button>
                 
@@ -154,7 +155,7 @@
                     <span class="material-symbols-rounded text-4xl fill-1 ml-1">play_arrow</span>
                 </button>
                 
-                <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Next">
+                <button onclick="goNextTrack()" class="text-gray-400 hover:text-white tap-effect p-3 transition" title="Next">
                     <span class="material-symbols-rounded text-4xl">skip_next</span>
                 </button>
             </div>
@@ -219,7 +220,7 @@
                     <button onclick="togglePlayState()" id="mini-play-btn" class="w-9 h-9 bg-white text-black rounded-full flex items-center justify-center tap-effect shadow-md">
                         <span class="material-symbols-rounded text-2xl fill-1 ml-0.5">play_arrow</span>
                     </button>
-                    <button onclick="sendCommand('next')" class="text-gray-400 hover:text-white p-2 tap-effect">
+                    <button onclick="goNextTrack()" class="text-gray-400 hover:text-white p-2 tap-effect">
                         <span class="material-symbols-rounded text-2xl">skip_next</span>
                     </button>
                 </div>
@@ -258,6 +259,8 @@
                 
                 playerBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all bg-white text-black shadow-sm flex items-center gap-1.5 tap-effect";
                 queueBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all text-gray-400 hover:text-white flex items-center gap-1.5 tap-effect";
+                
+                if (tg?.BackButton) tg.BackButton.hide();
             } else {
                 playerView.classList.add('hidden');
                 queueView.classList.remove('hidden');
@@ -265,6 +268,11 @@
                 queueBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all bg-white text-black shadow-sm flex items-center gap-1.5 tap-effect";
                 playerBtn.className = "px-3.5 py-1 rounded-full text-xs font-semibold transition-all text-gray-400 hover:text-white flex items-center gap-1.5 tap-effect";
                 
+                if (tg?.BackButton) {
+                    tg.BackButton.show();
+                    tg.BackButton.onClick(() => switchView('player'));
+                }
+
                 // Focus active song if exists
                 const activeEl = document.querySelector('.active-track');
                 if (activeEl) {
@@ -273,12 +281,19 @@
             }
         }
 
-        // --- Playback / Seeking Logic ---
-        function startSeek() {
-            isDraggingSlider = true;
+        // --- NTP-Inspired Clock Offset & Timing ---
+        let serverTimeOffset = 0; // ثانیه‌های تفاوت ساعت محلی گوشی با سرور
+
+        function calibrateServerClock(serverNow) {
+            if (!serverNow) return;
+            const localNow = Date.now() / 1000;
+            // اختلاف ساعت سرور با ساعت محلی
+            serverTimeOffset = serverNow - localNow;
         }
 
+        // --- Playback / Seeking Logic ---
         function visualSeek(percent) {
+            isDraggingSlider = true;
             document.getElementById('seek-fill').style.width = percent + '%';
             if (currentDuration > 0) {
                 const sec = (percent / 100) * currentDuration;
@@ -287,13 +302,13 @@
         }
 
         function commitSeek(percent) {
-            if (!isDraggingSlider) return;
-            isDraggingSlider = false;
             if (currentDuration > 0) {
                 const timeInSeconds = (percent / 100) * currentDuration;
                 if (navigator.vibrate) navigator.vibrate(20);
                 sendCommand('seek', timeInSeconds);
             }
+            // تاخیر کوچک تا پکت وضعیت سرور موقعیت اسلایدر را ریست نکند
+            setTimeout(() => { isDraggingSlider = false; }, 400);
         }
 
         function formatTime(seconds) {
@@ -335,7 +350,7 @@
                 
                 if (!currentTrackId && tracks.length > 0) {
                     const active = tracks.find(t => t.is_played === 0) || tracks[0];
-                    if (active) updateNowPlayingUI(active);
+                    if (active) updateNowPlayingUI(active, false);
                 }
             } catch(e) { 
                 console.error("Queue load error:", e); 
@@ -374,7 +389,7 @@
                 el.dataset.id = track.file_unique_id;
                 el.className = `flex items-center gap-3 p-2.5 rounded-2xl border transition-all cursor-pointer tap-effect ${
                     isActive 
-                        ? 'bg-primary/10 border-primary/40 shadow-[0_4px_20px_rgba(29,185,84,0.15)]' 
+                        ? 'active-track bg-primary/10 border-primary/40 shadow-[0_4px_20px_rgba(29,185,84,0.15)]' 
                         : isPlayed 
                             ? 'bg-white/[0.02] border-transparent opacity-50' 
                             : 'bg-white/[0.04] border-white/5 hover:bg-white/[0.08]'
@@ -431,8 +446,10 @@
             });
         }
 
-        function updateNowPlayingUI(track) {
+        // بدون تخریب و رندر مجدد کل DOM برای جلوگیری از پرش اسکرول کاربر
+        function updateNowPlayingUI(track, reRenderList = true) {
             if (!track) return;
+            const changed = currentTrackId !== track.file_unique_id;
             currentTrackId = track.file_unique_id;
             
             document.getElementById('current-cover').src = `/cover/${track.file_unique_id}`;
@@ -447,20 +464,71 @@
                 document.getElementById('duration-label').innerText = formatTime(track.duration);
             }
 
-            renderList(tracksData); 
+            // فقط اگر ترک عوض شده بود ظاهر آیتم‌های لیست تغییر کند نه اینکه کل لیست بازسازی شود
+            if (changed && reRenderList) {
+                renderList(tracksData);
+            }
         }
 
         async function playNow(track) {
             triggerHaptic('medium');
-            updateNowPlayingUI(track);
+            updateNowPlayingUI(track, true);
             isPlaying = true;
+            userActionLock = Date.now();
             updatePlayBtn();
             fetch(`/stream/warmup/${track.file_unique_id}`);
             sendCommand('jump', track.file_unique_id);
         }
 
+        // ⚡️ انتقال آنی و بدون تاخیر به آهنگ بعدی (Instant Optimistic Next)
+        function goNextTrack() {
+            triggerHaptic('medium');
+            userActionLock = Date.now();
+            
+            if (tracksData && tracksData.length > 0) {
+                const currentIdx = tracksData.findIndex(t => t.file_unique_id === currentTrackId);
+                const nextIdx = (currentIdx + 1) % tracksData.length;
+                const nextTrack = tracksData[nextIdx];
+                if (nextTrack) {
+                    updateNowPlayingUI(nextTrack, true);
+                    isPlaying = true;
+                    updatePlayBtn();
+                    // ریست فوری اسلایدر زمان
+                    document.getElementById('seek-slider').value = 0;
+                    document.getElementById('seek-fill').style.width = '0%';
+                    document.getElementById('current-time-label').innerText = "0:00";
+                }
+            }
+            sendCommand('next');
+        }
+
+        // ⚡️ انتقال آنی و بدون تاخیر به آهنگ قبلی (Instant Optimistic Previous)
+        function goPrevTrack() {
+            triggerHaptic('medium');
+            userActionLock = Date.now();
+            
+            if (tracksData && tracksData.length > 0) {
+                const currentIdx = tracksData.findIndex(t => t.file_unique_id === currentTrackId);
+                const prevIdx = (currentIdx - 1 + tracksData.length) % tracksData.length;
+                const prevTrack = tracksData[prevIdx];
+                if (prevTrack) {
+                    updateNowPlayingUI(prevTrack, true);
+                    isPlaying = true;
+                    updatePlayBtn();
+                    // ریست فوری اسلایدر زمان
+                    document.getElementById('seek-slider').value = 0;
+                    document.getElementById('seek-fill').style.width = '0%';
+                    document.getElementById('current-time-label').innerText = "0:00";
+                }
+            }
+            sendCommand('prev');
+        }
+
+        let userActionLock = 0; // جلوگیری از برگشت وضعیت توسط پکت‌های تاخیری SSE
+
         function togglePlayState() {
             isPlaying = !isPlaying;
+            userActionLock = Date.now(); // قفل خوش‌بینانه به مدت ۸۰۰ میلی‌ثانیه
             updatePlayBtn();
             sendCommand(isPlaying ? 'play' : 'pause');
         }
@@ -476,10 +544,16 @@
         async function sendCommand(cmd, payload = null) {
             try {
                 if (cmd !== 'volume' && cmd !== 'seek') triggerHaptic('light');
+                const clientTime = (Date.now() / 1000) + serverTimeOffset;
                 await fetch('/api/control/command', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ token: SESSION_TOKEN, action: cmd, payload: payload })
+                    body: JSON.stringify({ 
+                        token: SESSION_TOKEN, 
+                        action: cmd, 
+                        payload: payload,
+                        client_timestamp: clientTime
+                    })
                 });
             } catch(e) {
                 console.error("Command error:", e);
@@ -494,45 +568,99 @@
             await sendCommand('remove', dbId);
         }
 
-        // SSE Real-Time Sync
+        // ==========================================
+        // 📡 RESILIENT SSE & PTP REAL-TIME ENGINE
+        // ==========================================
+        let sseInstance = null;
+        let sseReconnectTimer = null;
+
         function initSSE() {
-            const eventSource = new EventSource(`/api/events/${SESSION_TOKEN}`);
-            eventSource.onmessage = (e) => {
+            if (sseInstance) {
+                try { sseInstance.close(); } catch(e) {}
+            }
+
+            sseInstance = new EventSource(`/api/events/${SESSION_TOKEN}`);
+            
+            sseInstance.onopen = () => {
+                console.log("⚡️ SSE Tunnel Connected & Active");
+            };
+
+            sseInstance.onmessage = (e) => {
                 try {
                     const data = JSON.parse(e.data);
                     if (data.session_token && data.session_token !== SESSION_TOKEN) return;
+
+                    // کالیبراسیون ساعت جهانی با سرور
+                    if (data.server_now) {
+                        calibrateServerClock(data.server_now);
+                    }
 
                     if (data.type === 'status_update') {
                         const status = data.payload;
                         currentDuration = status.duration; 
 
-                        if (isPlaying !== status.is_playing) {
-                            isPlaying = status.is_playing;
-                            updatePlayBtn();
+                        // اگر کاربر به تازگی دکمه پلی/پاز را لمس نکرده، وضعیت را اعمال کن
+                        if (Date.now() - userActionLock > 800) {
+                            if (isPlaying !== status.is_playing) {
+                                isPlaying = status.is_playing;
+                                updatePlayBtn();
+                            }
                         }
 
                         if (currentTrackId !== status.file_unique_id) {
                             const track = tracksData.find(t => t.file_unique_id === status.file_unique_id);
-                            if (track) updateNowPlayingUI(track);
+                            if (track) updateNowPlayingUI(track, true);
                             else loadQueue(); 
                         }
 
+                        // جبران تاخیر پینگ و ساعت جهانی در نمایش اسلایدر
                         if (!isDraggingSlider && status.duration > 0) {
-                            const percent = (status.current_time / status.duration) * 100;
+                            let liveCurrentTime = status.current_time;
+                            if (status.is_playing && data.server_now) {
+                                const localNow = (Date.now() / 1000) + serverTimeOffset;
+                                const elapsed = Math.max(0, localNow - data.server_now);
+                                if (elapsed < 5) liveCurrentTime += elapsed;
+                            }
+
+                            const percent = Math.min(100, (liveCurrentTime / status.duration) * 100);
                             document.getElementById('seek-slider').value = percent;
                             document.getElementById('seek-fill').style.width = percent + '%';
-                            document.getElementById('current-time-label').innerText = formatTime(status.current_time);
+                            document.getElementById('current-time-label').innerText = formatTime(liveCurrentTime);
                             document.getElementById('duration-label').innerText = formatTime(status.duration);
                         }
                     }
                     
-                    if (data.file_unique_id && !data.type) loadQueue(); 
-                    if (data.type === 'command' && ['next', 'prev', 'jump', 'remove'].includes(data.action)) setTimeout(loadQueue, 300);
+                    if (data.type === 'new_track' || (data.file_unique_id && !data.type)) {
+                        loadQueue(); 
+                    }
+                    if (data.type === 'command' && ['next', 'prev', 'jump', 'remove'].includes(data.action)) {
+                        setTimeout(loadQueue, 300);
+                    }
                 } catch(err) {
-                    console.error("SSE parse error:", err);
+                    // Ignore ping/heartbeat JSON errors
                 }
             };
+
+            sseInstance.onerror = () => {
+                console.warn("⚠️ SSE dropped. Auto-reconnecting in 2s...");
+                try { sseInstance.close(); } catch(e) {}
+                clearTimeout(sseReconnectTimer);
+                sseReconnectTimer = setTimeout(initSSE, 2000);
+            };
         }
+
+        // 🛡 بازیابی اتصال در صورت قفل شدن صفحه یا جابجایی تب تلگرام (Mobile Lifecycle)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log("📱 Mobile screen wake-up: re-syncing...");
+                loadQueue();
+                initSSE();
+            }
+        });
+        window.addEventListener('pageshow', () => {
+            loadQueue();
+            initSSE();
+        });
 
         // Telegram WebApp Integration & Haptic Feedback
         const tg = window.Telegram?.WebApp;
