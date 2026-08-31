@@ -157,8 +157,9 @@ class MetadataOrchestrator:
                 continue
             
             # تلورانس ۵ ثانیه‌ای برای اختلاف طول آهنگ در یوتیوب و اسپاتیفای
-            time_diff = abs(cand.get('duration', 0) - duration) if duration else 0
-            if duration and time_diff > 5: 
+            cand_dur = cand.get('duration')
+            time_diff = abs(int(cand_dur) - int(duration)) if (cand_dur is not None and duration is not None) else 0
+            if duration and cand_dur is not None and time_diff > 5: 
                 continue 
 
             t_sim = self._similarity(self.clean_title(cand.get('trackName', '')), search_title)

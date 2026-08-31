@@ -133,6 +133,12 @@ class CatalogCrawlerService:
                     logger.warning(f"Could not resolve video ID for {title} - {artist}")
                     continue
 
+                # فیلتر کردن میکس‌ها و پادکست‌های طولانی (بالای ۱۲ دقیقه / ۷۲۰ ثانیه) که از لیمیت ۵۰ مگابایت تلگرام بیشتر نشوند
+                dur = item.get('duration')
+                if dur and int(dur) > 720:
+                    logger.info(f"Skipping long mix/podcast: {title} ({dur}s)")
+                    continue
+
                 # ۱. بررسی تکراری نبودن در جدول tracks (Deduplication)
                 existing = conn.execute("SELECT id FROM tracks WHERE youtube_id = ?", (vid,)).fetchone()
                 if existing:
