@@ -52,8 +52,8 @@
 
     <style>
         body {
-            background-color: #08090b;
-            color: #f3f4f6;
+            background-color: #050505;
+            color: #ffffff;
             font-family: 'Plus Jakarta Sans', sans-serif;
             overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
@@ -61,31 +61,33 @@
 
         /* Ambient Glow Backdrop */
         .ambient-radial {
-            background: radial-gradient(circle at 80% 20%, rgba(13, 242, 51, 0.12) 0%, rgba(8, 9, 11, 0) 55%),
-                        radial-gradient(circle at 20% 70%, rgba(42, 171, 238, 0.08) 0%, rgba(8, 9, 11, 0) 50%);
+            background-color: #050505;
+            background-image: 
+                radial-gradient(circle at 85% 15%, rgba(13, 242, 51, 0.08) 0%, transparent 45%),
+                radial-gradient(circle at 15% 65%, rgba(42, 171, 238, 0.06) 0%, transparent 45%);
         }
 
-        /* Dribbble Frosted Glass Panel */
+        /* Dribbble Frosted Glass Panel - High Contrast Obsidian */
         .glass-widget {
-            background: rgba(18, 21, 26, 0.72);
-            backdrop-filter: blur(32px);
-            -webkit-backdrop-filter: blur(32px);
-            border: 1px solid rgba(255, 255, 255, 0.09);
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8),
-                        0 0 40px -10px rgba(13, 242, 51, 0.15);
+            background: rgba(18, 18, 20, 0.85);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.95),
+                        0 0 35px -10px rgba(13, 242, 51, 0.12);
         }
 
         .glass-card {
-            background: rgba(16, 18, 22, 0.65);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(18, 18, 20, 0.7);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .glass-card:hover {
             transform: translateY(-4px);
-            border-color: rgba(13, 242, 51, 0.25);
-            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8);
+            border-color: rgba(13, 242, 51, 0.35);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.9);
         }
 
         /* Vinyl Disc Continuous Spin */
@@ -122,41 +124,41 @@
         /* Glowing Pill Buttons */
         .btn-brand {
             background: #0df233;
-            color: #050608;
+            color: #000000;
             font-weight: 800;
-            box-shadow: 0 0 30px rgba(13, 242, 51, 0.35);
+            box-shadow: 0 0 30px rgba(13, 242, 51, 0.4);
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .btn-brand:hover {
-            box-shadow: 0 0 45px rgba(13, 242, 51, 0.55);
+            box-shadow: 0 0 45px rgba(13, 242, 51, 0.65);
             transform: translateY(-2px);
         }
 
         .btn-tg {
-            background: rgba(42, 171, 238, 0.12);
+            background: rgba(42, 171, 238, 0.15);
             color: #2AABEE;
-            border: 1px solid rgba(42, 171, 238, 0.3);
+            border: 1px solid rgba(42, 171, 238, 0.4);
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .btn-tg:hover {
-            background: rgba(42, 171, 238, 0.2);
-            border-color: rgba(42, 171, 238, 0.6);
-            box-shadow: 0 0 30px rgba(42, 171, 238, 0.25);
+            background: rgba(42, 171, 238, 0.25);
+            border-color: rgba(42, 171, 238, 0.8);
+            box-shadow: 0 0 30px rgba(42, 171, 238, 0.35);
             transform: translateY(-2px);
         }
     </style>
 </head>
-<body class="ambient-radial min-h-screen flex flex-col justify-between selection:bg-brand selection:text-black">
+<body class="ambient-radial bg-[#050505] min-h-screen flex flex-col justify-between selection:bg-brand selection:text-black">
 
     <!-- ========================================== -->
     <!-- 🧭 DRIBBBLE-STYLE NAVBAR -->
     <!-- ========================================== -->
-    <header class="w-full border-b border-white/5 bg-black/40 backdrop-blur-2xl sticky top-0 z-50">
+    <header class="w-full border-b border-white/10 bg-[#050505]/85 backdrop-blur-2xl sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-5 sm:px-8 h-20 flex items-center justify-between">
             
             <!-- Logo & Brand -->
             <a href="https://lyraz.ir" class="flex items-center gap-3 group">
-                <div class="size-10 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center shadow-[0_0_20px_rgba(13,242,51,0.25)] group-hover:scale-105 transition-transform">
+                <div class="size-10 rounded-2xl bg-brand/20 border border-brand/40 flex items-center justify-center shadow-[0_0_25px_rgba(13,242,51,0.3)] group-hover:scale-105 transition-transform">
                     <i class="ri-disc-fill text-2xl text-brand"></i>
                 </div>
                 <div class="flex items-baseline gap-1.5">
@@ -166,10 +168,10 @@
             </a>
 
             <!-- Central Nav Links (Desktop) -->
-            <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-gray-400">
-                <a href="#how-it-works" class="hover:text-white transition">How it Works</a>
-                <a href="#features" class="hover:text-white transition">Features</a>
-                <a href="#usecases" class="hover:text-white transition">Venues</a>
+            <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-gray-300">
+                <a href="#how-it-works" class="hover:text-brand transition">How it Works</a>
+                <a href="#features" class="hover:text-brand transition">Features</a>
+                <a href="#usecases" class="hover:text-brand transition">Venues</a>
                 <a href="https://t.me/{{ channel_username }}" target="_blank" class="hover:text-tg transition flex items-center gap-1.5">
                     <i class="ri-telegram-fill text-tg"></i>
                     <span>@{{ channel_username }}</span>
@@ -178,7 +180,7 @@
 
             <!-- Action Buttons -->
             <div class="flex items-center gap-3">
-                <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-gray-300 hover:text-white px-4 py-2.5 rounded-full border border-white/10 hover:border-white/20 transition">
+                <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex items-center gap-2 text-xs font-bold text-gray-200 hover:text-white px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition">
                     <i class="ri-telegram-line text-tg text-base"></i>
                     <span>@{{ bot_username }}</span>
                 </a>
@@ -203,14 +205,14 @@
                 
                 <!-- Pill Badges -->
                 <div class="flex flex-wrap items-center justify-center lg:justify-start gap-2 mb-6">
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand/10 border border-brand/20 text-brand text-xs font-mono font-bold">
+                    <span class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-brand/15 border border-brand/30 text-brand text-xs font-mono font-bold shadow-[0_0_15px_rgba(13,242,51,0.15)]">
                         <span class="size-1.5 rounded-full bg-brand animate-pulse"></span>
                         Social Audio Hub
                     </span>
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 text-xs font-mono font-medium">
+                    <span class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/10 border border-white/15 text-white text-xs font-mono font-medium">
                         PTP Millisecond Sync
                     </span>
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-tg/10 border border-tg/20 text-tg text-xs font-mono font-medium">
+                    <span class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-tg/15 border border-tg/30 text-tg text-xs font-mono font-medium shadow-[0_0_15px_rgba(42,171,238,0.15)]">
                         Telegram Bot Powered
                     </span>
                 </div>
@@ -218,12 +220,12 @@
                 <!-- Main Headline -->
                 <h1 class="font-display font-black text-4xl sm:text-6xl lg:text-7xl tracking-tight leading-[1.08] text-white mb-6">
                     Stream Together.<br>
-                    <span class="bg-gradient-to-r from-white via-gray-200 to-brand bg-clip-text text-transparent">Feel The Sound.</span>
+                    <span class="text-brand drop-shadow-[0_0_35px_rgba(13,242,51,0.35)]">Feel The Sound.</span>
                 </h1>
 
                 <!-- Crisp Subtitle -->
-                <p class="text-base sm:text-lg text-gray-400 max-w-xl leading-relaxed mb-10 font-normal">
-                    Put <strong class="text-white font-semibold">lyraz.ir</strong> on the room’s TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-semibold">@LyrazBot</strong>. No apps to download. No Bluetooth fights.
+                <p class="text-base sm:text-lg text-gray-300 max-w-xl leading-relaxed mb-10 font-normal">
+                    Put <strong class="text-white font-semibold underline decoration-brand/60 underline-offset-4">lyraz.ir</strong> on the room’s TV or sound system. Guests simply scan the QR code to queue tracks, Spotify links, and voice notes via <strong class="text-tg font-semibold">@LyrazBot</strong>. No apps to download. No Bluetooth fights.
                 </p>
 
                 <!-- Action Button Group -->
@@ -232,14 +234,14 @@
                         <i class="ri-tv-line text-lg"></i>
                         <span>Launch Live Hub</span>
                     </a>
-                    <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-tg w-full sm:w-auto px-8 py-4 rounded-full flex items-center justify-center gap-2.5 text-sm font-bold">
+                    <a href="https://t.me/{{ bot_username }}" target="_blank" class="btn-tg w-full sm:w-auto px-8 py-4 rounded-full flex items-center justify-center gap-2.5 text-sm font-bold bg-[#101924]">
                         <i class="ri-telegram-fill text-lg"></i>
                         <span>Start @{{ bot_username }}</span>
                     </a>
                 </div>
 
                 <!-- Live Metrics Proof -->
-                <div class="flex items-center gap-6 pt-6 border-t border-white/5 w-full justify-center lg:justify-start font-mono text-xs text-gray-500">
+                <div class="flex items-center gap-6 pt-6 border-t border-white/10 w-full justify-center lg:justify-start font-mono text-xs text-gray-400">
                     <div>
                         <span class="text-white font-bold text-sm block">FLAC &bull; 320k</span>
                         <span>Lossless Pipeline</span>
