@@ -298,8 +298,11 @@
         }
 
         // --- Playback / Seeking Logic ---
+        let seekActionLock = 0; // قفل محافظت از موقعیت اسلایدر پس از جابجایی توسط کاربر
+
         function visualSeek(percent) {
             isDraggingSlider = true;
+            seekActionLock = Date.now();
             document.getElementById('seek-fill').style.width = percent + '%';
             if (currentDuration > 0) {
                 const sec = (percent / 100) * currentDuration;
@@ -310,11 +313,14 @@
         function commitSeek(percent) {
             if (currentDuration > 0) {
                 const timeInSeconds = (percent / 100) * currentDuration;
+                lastReportedSec = timeInSeconds;
+                lastReportLocalTime = Date.now();
+                seekActionLock = Date.now(); // قفل تا ۲ ثانیه تا پکت‌های قبلی سرور آن را برنگردانند
+                
                 if (navigator.vibrate) navigator.vibrate(20);
                 sendCommand('seek', timeInSeconds);
             }
-            // تاخیر کوچک تا پکت وضعیت سرور موقعیت اسلایدر را ریست نکند
-            setTimeout(() => { isDraggingSlider = false; }, 400);
+            setTimeout(() => { isDraggingSlider = false; }, 300);
         }
 
         function formatTime(seconds) {
@@ -619,8 +625,9 @@
                             else loadQueue(); 
                         }
 
-                        // جبران تاخیر پینگ و ساعت جهانی در نمایش اسلایدر
-                        if (!isDraggingSlider && status.duration > 0) {
+                        // جبران تاخیر پینگ و ساعت جهانی در نمایش اسلایدر (فقط در صورتی که کاربر به تازگی Seek نکرده باشد)
+                        const isSeekLocked = (Date.now() - seekActionLock) < 2000;
+                        if (!isDraggingSlider && !isSeekLocked && status.duration > 0) {
                             let liveCurrentTime = status.current_time;
                             if (status.is_playing && data.server_now) {
                                 const localNow = (Date.now() / 1000) + serverTimeOffset;
