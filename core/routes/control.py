@@ -32,7 +32,9 @@ def remote_ui(token):
         """, 404
     
     from flask import make_response
-    resp = make_response(render_template('mobile_control.html', token=token, session=session))
+    from core.sse import announcer
+    device_count = max(1, announcer.get_listener_count(token))
+    resp = make_response(render_template('mobile_control.html', token=token, session=session, initial_device_count=device_count))
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
