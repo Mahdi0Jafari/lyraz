@@ -172,13 +172,15 @@
             </svg>
         </div>
 
-        <!-- Right: Clean Minimalist CTA Action -->
-        <div class="flex items-center gap-4">
-            <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex text-xs font-mono font-bold tracking-wider text-charcoal hover:text-limeAccent uppercase transition">
+        <!-- Right: Real Direct App Launch Action -->
+        <div class="flex items-center gap-3">
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="hidden sm:inline-flex text-xs font-mono font-bold tracking-wider text-charcoal hover:text-limeAccent uppercase transition items-center gap-1">
+                <i class="ri-telegram-fill text-tg text-sm"></i>
                 <span>@{{ bot_username }}</span>
             </a>
-            <a href="https://lyraz.ir" class="text-xs font-mono font-bold tracking-wider text-charcoal uppercase hover:bg-charcoal hover:text-white transition px-3.5 py-1.5 border border-charcoal/20 rounded-full">
-                GET EARLY ACCESS
+            <a href="https://lyraz.ir" class="text-xs font-mono font-black tracking-wider text-charcoal uppercase hover:bg-charcoal hover:text-white transition px-4 py-2 border border-charcoal/20 rounded-full flex items-center gap-1.5 shadow-sm">
+                <i class="ri-tv-line text-sm"></i>
+                <span>OPEN WEB PLAYER</span>
             </a>
         </div>
 
@@ -219,18 +221,18 @@
 
         </div>
 
-        <!-- BOTTOM METADATA & PARTNERSHIP ROW -->
+        <!-- BOTTOM METADATA & DIRECT LINKS ROW -->
         <div class="relative z-30 w-full flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 pt-8 sm:pt-12 text-left font-normal text-xs text-charcoal/80 reveal active reveal-delay-1">
             
             <p class="max-w-xs sm:max-w-sm leading-relaxed font-sans text-center sm:text-left">
-                Open <strong class="text-charcoal font-bold">lyraz.ir</strong> on any TV or sound system. Queue lossless 320kbps tracks, Spotify links, and voice notes instantly via <strong class="text-tg font-bold">@{{ bot_username }}</strong>.
+                Open <a href="https://lyraz.ir" class="text-charcoal font-bold underline decoration-limeAccent decoration-2 underline-offset-2 hover:text-limeAccent transition">lyraz.ir</a> on any TV or sound system. Queue lossless 320kbps tracks, Spotify links, and voice notes instantly via <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-tg font-bold hover:underline">@{{ bot_username }}</a>.
             </p>
 
             <div class="flex items-center gap-3">
-                <span class="text-[11px] font-medium text-charcoal/70">Seamless integration with Telegram &amp; Spotify</span>
-                <div class="flex items-center gap-1.5">
-                    <span class="size-7 rounded-full bg-charcoal/5 border border-charcoal/10 flex items-center justify-center text-xs font-bold text-charcoal hover:scale-110 transition-transform">L</span>
-                    <span class="size-7 rounded-full bg-charcoal/5 border border-charcoal/10 flex items-center justify-center text-xs font-bold text-tg hover:scale-110 transition-transform"><i class="ri-telegram-fill"></i></span>
+                <span class="text-[11px] font-medium text-charcoal/70">Connect &amp; Queue:</span>
+                <div class="flex items-center gap-2">
+                    <a href="https://lyraz.ir" class="size-8 rounded-full bg-charcoal/5 border border-charcoal/15 flex items-center justify-center text-xs font-black text-charcoal hover:bg-charcoal hover:text-white transition-all shadow-sm" title="Launch Lyraz Web Player">L</a>
+                    <a href="https://t.me/{{ bot_username }}" target="_blank" class="size-8 rounded-full bg-charcoal/5 border border-charcoal/15 flex items-center justify-center text-sm font-bold text-tg hover:bg-tg hover:text-white transition-all shadow-sm" title="Queue songs via @{{ bot_username }}"><i class="ri-telegram-fill"></i></a>
                 </div>
             </div>
 
@@ -281,7 +283,7 @@
     <!-- ======================================================= -->
     <section class="relative z-20 w-full max-w-[1400px] mx-auto px-6 sm:px-12 py-16 sm:py-24 flex flex-col items-center">
         
-        <div class="relative w-full max-w-5xl flex flex-col lg:flex-row items-center justify-center gap-10 min-h-[500px]">
+        <div class="relative w-full max-w-5xl flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-16 min-h-[500px]">
             
             <!-- Real High-End Hardware Device Image from gen_retro_player_transparent.webp -->
             <div class="relative z-20 w-full max-w-[320px] sm:max-w-[360px] flex justify-center group reveal" id="retroHardwareCard">
@@ -304,24 +306,40 @@
                 </div>
             </div>
 
-            <!-- Orbit Satellite & Feature System -->
+            <!-- Enhanced High-Tech Orbit Satellite & Feature System -->
             <div class="relative z-30 flex flex-col items-center lg:items-start text-center lg:text-left max-w-md space-y-6 reveal reveal-delay-1">
                 
-                <!-- Category Orbit Visual on Desktop with Continuous Rotation -->
-                <div class="relative size-64 sm:size-72 rounded-full border border-charcoal/10 flex items-center justify-center mx-auto lg:mx-0">
+                <!-- Upgraded Orbital Radar Visual -->
+                <div class="relative size-72 sm:size-80 rounded-full border border-charcoal/15 flex items-center justify-center mx-auto lg:mx-0 shadow-[0_0_30px_rgba(132,204,22,0.06)] bg-white/40 backdrop-blur-sm">
                     
-                    <div class="size-44 sm:size-48 rounded-full border border-dashed border-charcoal/20 flex items-center justify-center animate-orbit">
-                        <div class="size-20 sm:size-24 rounded-full bg-limeAccent/25 flex flex-col items-center justify-center animate-counter-orbit">
-                            <i class="ri-broadcast-fill text-limeAccent text-base"></i>
-                            <span class="text-[9px] font-mono font-bold text-charcoal uppercase mt-0.5">LYRAZ GRID</span>
+                    <!-- Middle Dotted Track -->
+                    <div class="absolute inset-6 rounded-full border border-dashed border-charcoal/20"></div>
+
+                    <!-- Rotating Inner Gyro -->
+                    <div class="size-48 sm:size-52 rounded-full border border-limeAccent/30 flex items-center justify-center animate-orbit">
+                        <div class="size-24 rounded-full bg-gradient-to-br from-limeAccent/30 to-limeAccent/10 border border-limeAccent/40 flex flex-col items-center justify-center shadow-inner animate-counter-orbit">
+                            <div class="size-2 rounded-full bg-limeAccent animate-ping mb-1"></div>
+                            <span class="text-[9px] font-mono font-black text-charcoal uppercase tracking-wider">LYRAZ GRID</span>
                         </div>
                     </div>
 
-                    <!-- Satellite Badges with Smooth Float -->
-                    <span class="absolute top-1 left-1/2 -translate-x-1/2 satellite-chip px-3 py-1 rounded-full text-[10px] font-bold text-charcoal">Venues</span>
-                    <span class="absolute right-0 top-1/2 -translate-y-1/2 satellite-chip px-3 py-1 rounded-full text-[10px] font-bold text-charcoal">Lossless 320K</span>
-                    <span class="absolute bottom-1 left-1/2 -translate-x-1/2 satellite-chip px-3 py-1 rounded-full text-[10px] font-bold text-charcoal">Karaoke</span>
-                    <span class="absolute left-0 top-1/2 -translate-y-1/2 satellite-chip px-3 py-1 rounded-full text-[10px] font-bold text-charcoal">Telegram</span>
+                    <!-- Satellite Badges with Rich Icons & Micro-Interactions -->
+                    <a href="#venues" class="absolute -top-3.5 left-1/2 -translate-x-1/2 satellite-chip px-3.5 py-1.5 rounded-full text-[10px] font-bold text-charcoal flex items-center gap-1.5">
+                        <i class="ri-community-line text-limeAccent"></i>
+                        <span>Venues</span>
+                    </a>
+                    <a href="https://lyraz.ir" class="absolute -right-3 top-1/2 -translate-y-1/2 satellite-chip px-3.5 py-1.5 rounded-full text-[10px] font-bold text-charcoal flex items-center gap-1.5">
+                        <i class="ri-disc-line text-accentBlue"></i>
+                        <span>Lossless 320K</span>
+                    </a>
+                    <a href="https://lyraz.ir" class="absolute -bottom-3.5 left-1/2 -translate-x-1/2 satellite-chip px-3.5 py-1.5 rounded-full text-[10px] font-bold text-charcoal flex items-center gap-1.5">
+                        <i class="ri-mic-line text-purple-600"></i>
+                        <span>Live Karaoke</span>
+                    </a>
+                    <a href="https://t.me/{{ bot_username }}" target="_blank" class="absolute -left-3 top-1/2 -translate-y-1/2 satellite-chip px-3.5 py-1.5 rounded-full text-[10px] font-bold text-charcoal flex items-center gap-1.5">
+                        <i class="ri-telegram-fill text-tg"></i>
+                        <span>@{{ bot_username }}</span>
+                    </a>
                 </div>
 
                 <!-- Text Description -->
