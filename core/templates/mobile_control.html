@@ -105,8 +105,14 @@
             </button>
         </div>
 
-        <div class="text-[10px] text-gray-400 font-mono bg-white/5 px-2 py-1 rounded border border-white/5">
-            {{ token[:4] }}
+        <div class="flex items-center gap-2">
+            <div id="device-count-badge" class="flex items-center gap-1 text-[10px] text-primary font-mono bg-primary/10 px-2 py-1 rounded-full border border-primary/20" title="Connected devices on this Hub">
+                <span class="material-symbols-rounded text-xs">devices</span>
+                <span id="device-count-val">{{ initial_device_count if initial_device_count else 1 }}</span>
+            </div>
+            <div class="text-[10px] text-gray-400 font-mono bg-white/5 px-2 py-1 rounded border border-white/5">
+                {{ token[:4] }}
+            </div>
         </div>
     </header>
 
@@ -622,12 +628,20 @@
                                 if (elapsed < 5) liveCurrentTime += elapsed;
                             }
 
+                            lastReportedSec = liveCurrentTime;
+                            lastReportLocalTime = Date.now();
+
                             const percent = Math.min(100, (liveCurrentTime / status.duration) * 100);
                             document.getElementById('seek-slider').value = percent;
                             document.getElementById('seek-fill').style.width = percent + '%';
                             document.getElementById('current-time-label').innerText = formatTime(liveCurrentTime);
                             document.getElementById('duration-label').innerText = formatTime(status.duration);
                         }
+                    }
+                    
+                    if (data.type === 'device_count' && data.count !== undefined) {
+                        const badgeVal = document.getElementById('device-count-val');
+                        if (badgeVal) badgeVal.innerText = data.count;
                     }
                     
                     if (data.type === 'new_track' || (data.file_unique_id && !data.type)) {
@@ -691,6 +705,23 @@
         loadQueue();
         initSSE();
         setInterval(loadQueue, 15000);
+
+        // ⏱ تیکر محلی ۱ ثانیه‌ای برای حرکت روان اسلایدر و ثانیه‌شمار گوشی (Smooth 1-Sec Progress)
+        let lastReportedSec = 0;
+        let lastReportLocalTime = Date.now();
+
+        setInterval(() => {
+            if (isPlaying && !isDraggingSlider && currentDuration > 0) {
+                const now = Date.now();
+                const delta = (now - lastReportLocalTime) / 1000;
+                const estimatedSec = Math.min(currentDuration, lastReportedSec + delta);
+                
+                const percent = Math.min(100, (estimatedSec / currentDuration) * 100);
+                document.getElementById('seek-slider').value = percent;
+                document.getElementById('seek-fill').style.width = percent + '%';
+                document.getElementById('current-time-label').innerText = formatTime(estimatedSec);
+            }
+        }, 500);
     </script>
 </body>
 </html>

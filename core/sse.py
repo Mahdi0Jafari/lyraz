@@ -25,29 +25,43 @@ class MessageAnnouncer:
     سازگار با Gevent و Multi-threading استاندارد بدون قفل شدن لوپ.
     """
     def __init__(self):
-        self.listeners = []
+        self.listeners = [] # list of (queue, token)
         self.lock = create_lock()
 
-    def listen(self):
+    def listen(self, token=None):
         """
-        ثبت‌نام یک کلاینت جدید.
+        ثبت‌نام یک کلاینت جدید با توکن هاب مربوطه.
         یک صف (Queue) اختصاصی برمی‌گرداند.
         """
         q = create_queue(maxsize=50)
         with self.lock:
-            self.listeners.append(q)
+            self.listeners.append((q, token))
+            count = sum(1 for _, t in self.listeners if t == token) if token else len(self.listeners)
+
+        if token:
+            import json
+            self.announce(f"data: {json.dumps({'type': 'device_count', 'session_token': token, 'count': count})}\n\n")
         return q
 
-    def unlisten(self, q):
+    def unlisten(self, q, token=None):
         """
-        حذف کلاینت از لیست شنوندگان پس از قطع ارتباط.
+        حذف کلاینت از لیست شنوندگان پس از قطع ارتباط و اطلاع‌رسانی تعداد باقیمانده.
         """
+        found_token = token
         with self.lock:
-            if q in self.listeners:
-                try:
-                    self.listeners.remove(q)
-                except ValueError:
-                    pass
+            for item in list(self.listeners):
+                if item[0] == q:
+                    found_token = item[1] or token
+                    try:
+                        self.listeners.remove(item)
+                    except ValueError:
+                        pass
+                    break
+            count = sum(1 for _, t in self.listeners if t == found_token) if found_token else len(self.listeners)
+
+        if found_token:
+            import json
+            self.announce(f"data: {json.dumps({'type': 'device_count', 'session_token': found_token, 'count': count})}\n\n")
 
     def announce(self, msg):
         """
@@ -55,7 +69,7 @@ class MessageAnnouncer:
         """
         to_remove = []
         with self.lock:
-            for i, q in enumerate(self.listeners):
+            for i, (q, _) in enumerate(self.listeners):
                 try:
                     q.put_nowait(msg)
                 except Exception:
@@ -67,8 +81,10 @@ class MessageAnnouncer:
                 except IndexError:
                     pass
 
-    def get_listener_count(self):
+    def get_listener_count(self, token=None):
         with self.lock:
+            if token:
+                return sum(1 for _, t in self.listeners if t == token)
             return len(self.listeners)
 
 announcer = MessageAnnouncer()

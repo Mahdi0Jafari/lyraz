@@ -58,8 +58,8 @@ def create_app():
             return Response("Unauthorized Hub Token", status=403)
 
         def stream():
-            # ایجاد صف اختصاصی برای این کلاینت
-            messages = announcer.listen()
+            # ایجاد صف اختصاصی برای این کلاینت با ثبت توکن هاب
+            messages = announcer.listen(token)
             try:
                 # ارسال سیگنال اولیه به محض برقراری اتصال برای فلاش شدن بافر کلادفلر
                 yield ": connected\n\n"
@@ -73,7 +73,7 @@ def create_app():
                         yield ": ping\n\n"
             except GeneratorExit:
                 # مدیریت خروج کلاینت و آزاد کردن صف در حافظه
-                announcer.unlisten(messages)
+                announcer.unlisten(messages, token)
 
         # تنظیم هدرهای استاندارد برای استریم زنده و جلوگیری از بافرینگ توسط Nginx/Cloudflare
         return Response(stream(), mimetype='text/event-stream', headers={
