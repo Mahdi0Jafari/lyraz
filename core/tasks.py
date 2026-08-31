@@ -445,9 +445,9 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     'sync_timestamp': time.time() 
                 })
         
-        # ۶. ارسال فایل صوتی به چت درخواست‌کننده با قابلیت خودترمیمی
+        # ۶. ارسال فایل صوتی به چت درخواست‌کننده با قابلیت خودترمیمی (در صورت وجود کاربر)
         user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
-        if not is_batch:
+        if not is_batch and chat_id:
             try:
                 await deliver_audio_safe(
                     local_bot=local_bot, chat_id=chat_id, track_row=track_meta,
