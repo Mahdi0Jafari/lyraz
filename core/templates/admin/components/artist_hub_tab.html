@@ -597,9 +597,23 @@
                                         <span class="text-[11px] text-gray-400 font-mono truncate block max-w-[160px] mt-0.5">${channelText}</span>
                                     </div>
                                 </div>
-                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${isDone ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse'}">
-                                    ${isDone ? 'COMPLETED' : 'SYNCING'}
-                                </span>
+                                ${(() => {
+                                    let badgeClass = 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse';
+                                    let badgeLabel = 'SYNCING';
+                                    if (isDone && (c.live_failed || 0) === 0) {
+                                        badgeClass = 'bg-primary/20 text-primary border border-primary/30';
+                                        badgeLabel = 'COMPLETED';
+                                    } else if ((c.live_queued || 0) === 0 && (c.live_downloading || 0) === 0 && (c.live_failed || 0) > 0) {
+                                        badgeClass = 'bg-orange-500/20 text-orange-400 border border-orange-500/30';
+                                        badgeLabel = 'NEEDS RETRY';
+                                    }
+
+                                    return `
+                                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${badgeClass}">
+                                            ${badgeLabel}
+                                        </span>
+                                    `;
+                                })()}
                             </div>
 
                             <!-- Progress Bar -->
