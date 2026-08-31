@@ -41,95 +41,123 @@
     </script>
 
     <style>
-        body { background-color: #050505; color: #ffffff; -webkit-tap-highlight-color: transparent; }
+        body { background-color: #060709; color: #ffffff; -webkit-tap-highlight-color: transparent; font-family: 'Space Grotesk', sans-serif; }
         
-        .glass-panel {
-            background: rgba(20, 20, 20, 0.6);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+        .glass-card {
+            background: rgba(22, 24, 29, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:active {
+            transform: scale(0.98);
         }
 
-        .btn-primary {
-            background: #0df233;
-            color: #000;
-            box-shadow: 0 0 20px rgba(13, 242, 51, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        .btn-tg {
+            background: linear-gradient(135deg, #2AABEE 0%, #229ED9 100%);
+            box-shadow: 0 0 25px rgba(42, 171, 238, 0.25);
         }
-        .btn-primary:active {
-            transform: scale(0.96);
-            box-shadow: 0 0 10px rgba(13, 242, 51, 0.1);
-        }
-
-        /* Step Connector Line */
-        .step-line {
-            position: absolute;
-            left: 20px;
-            top: 40px;
-            bottom: -20px;
-            width: 2px;
-            background: linear-gradient(to bottom, #0df233 0%, rgba(255,255,255,0.1) 100%);
-            z-index: 0;
+        .btn-web {
+            background: linear-gradient(135deg, #0df233 0%, #00b324 100%);
+            box-shadow: 0 0 25px rgba(13, 242, 51, 0.25);
         }
     </style>
 </head>
-<body class="h-[100dvh] flex flex-col items-center justify-center bg-neon-glow bg-no-repeat bg-top overflow-hidden relative p-6">
+<body class="min-h-[100dvh] flex flex-col items-center justify-between bg-[#060709] overflow-x-hidden relative p-5 sm:p-8">
 
-    <div class="fixed inset-0 pointer-events-none">
-        <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/10 blur-[100px] rounded-full animate-pulse-slow"></div>
-        <div class="absolute bottom-1/4 right-1/4 w-40 h-40 bg-blue-500/10 blur-[80px] rounded-full animate-pulse-slow" style="animation-delay: 1.5s;"></div>
+    <!-- Ambient Glows -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden">
+        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary/10 blur-[120px] rounded-full animate-pulse-slow"></div>
+        <div class="absolute bottom-0 right-0 w-80 h-80 bg-blue-500/10 blur-[100px] rounded-full animate-pulse-slow" style="animation-delay: 1.5s;"></div>
     </div>
 
-    <div class="glass-panel w-full max-w-md rounded-3xl p-8 relative z-10 animate-float flex flex-col items-center">
+    <!-- Top Branding -->
+    <header class="relative z-10 flex flex-col items-center text-center mt-2 sm:mt-4">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md mb-3">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+            </span>
+            <span class="text-[11px] font-mono tracking-wider uppercase text-gray-300">
+                Connected to: <strong class="text-white">{{ session.device_name if session and session.device_name else 'Lyraz Hub' }}</strong>
+            </span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Join the Session</h1>
+        <p class="text-xs sm:text-sm text-gray-400 mt-1 max-w-xs">Choose how you would like to connect to this live music hub</p>
+    </header>
+
+    <!-- Main Dual Options Container -->
+    <main class="w-full max-w-md my-auto relative z-10 flex flex-col gap-4 py-4">
         
-        <div class="size-20 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(13,242,51,0.15)] relative">
-            <span class="material-symbols-outlined text-[40px] text-primary">queue_music</span>
-            <div class="absolute inset-0 rounded-full border border-primary/50 animate-ping opacity-20"></div>
-        </div>
-
-        <h1 class="text-3xl font-bold text-center mb-2 tracking-tight">Connect & Play</h1>
-        <p class="text-gray-400 text-center text-sm mb-10 leading-relaxed px-2">
-            Link your Telegram to control playback and <br> <span class="text-white font-bold">send music files</span> directly to the player.
-        </p>
-
-        <div class="w-full space-y-6 relative mb-10 pl-2">
-            
-            <div class="relative z-10 flex gap-5 group">
-                <div class="step-line"></div>
-                <div class="size-10 rounded-full bg-surface border border-primary/50 text-primary flex items-center justify-center text-sm font-bold shadow-[0_0_15px_rgba(13,242,51,0.2)] shrink-0">1</div>
-                <div class="pt-2">
-                    <h3 class="text-white font-bold text-sm mb-1">Launch Bot</h3>
-                    <p class="text-xs text-gray-500">Tap the button below and press <strong>Start</strong>.</p>
+        <!-- OPTION 1: TELEGRAM BOT (Send Tracks to Queue) -->
+        <a href="{{ telegram_link }}" class="glass-card rounded-3xl p-5 sm:p-6 flex flex-col justify-between border border-white/10 hover:border-[#2AABEE]/40 group relative overflow-hidden">
+            <div class="flex items-start justify-between mb-4">
+                <div class="size-12 rounded-2xl bg-[#2AABEE]/15 border border-[#2AABEE]/30 flex items-center justify-center text-[#2AABEE] shadow-[0_0_20px_rgba(42,171,238,0.2)]">
+                    <span class="material-symbols-outlined text-[28px]">send</span>
                 </div>
+                <span class="text-[10px] font-bold font-mono tracking-wider px-2.5 py-1 rounded-full bg-[#2AABEE]/20 text-[#68c8ff] border border-[#2AABEE]/30 uppercase">
+                    Queue Music
+                </span>
             </div>
 
-            <div class="relative z-10 flex gap-5 group">
-                <div class="size-10 rounded-full bg-surface border border-white/10 text-gray-400 group-hover:border-white/30 group-hover:text-white transition-colors flex items-center justify-center shrink-0">
-                    <span class="material-symbols-outlined text-[20px]">audio_file</span> 
-                </div>
-                <div class="pt-2">
-                    <h3 class="text-white font-bold text-sm mb-1">Send Music</h3>
-                    <p class="text-xs text-gray-500">Upload or forward <strong>Audio Files</strong> to the bot to play them here.</p>
-                </div>
+            <div>
+                <h2 class="text-lg sm:text-xl font-bold text-white mb-1 flex items-center gap-1.5">
+                    Telegram Bot
+                    <span class="material-symbols-outlined text-sm text-gray-400 group-hover:text-[#2AABEE] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                </h2>
+                <p class="text-xs text-gray-400 leading-relaxed mb-5">
+                    Send audio files, voice notes, or Spotify links directly to the party queue.
+                </p>
             </div>
-        </div>
 
-        <a href="{{ telegram_link }}" class="btn-primary w-full py-4 rounded-xl flex items-center justify-center gap-3 font-bold text-base group relative overflow-hidden">
-            <span class="material-symbols-outlined text-[24px] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform">rocket_launch</span>
-            Open Telegram Bot
-            
-            <div class="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent z-10"></div>
+            <div class="btn-tg text-black font-bold py-3.5 px-5 rounded-2xl flex items-center justify-center gap-2 text-sm">
+                <svg class="size-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+                </svg>
+                <span>Add Songs via Telegram</span>
+            </div>
         </a>
 
-        <p class="mt-6 text-[10px] text-gray-600 font-mono text-center">
-            Session ID: <span class="text-gray-500">{{ telegram_link.split('=')[-1][:8] }}...</span>
-        </p>
-    </div>
+        <!-- OPTION 2: WEB LIVE PLAYER (Listen on Device) -->
+        <a href="{{ web_live_link }}" class="glass-card rounded-3xl p-5 sm:p-6 flex flex-col justify-between border border-white/10 hover:border-primary/40 group relative overflow-hidden">
+            <div class="flex items-start justify-between mb-4">
+                <div class="size-12 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_20px_rgba(13,242,51,0.2)]">
+                    <span class="material-symbols-outlined text-[28px]">headphones</span>
+                </div>
+                <span class="text-[10px] font-bold font-mono tracking-wider px-2.5 py-1 rounded-full bg-primary/20 text-primary border border-primary/30 uppercase">
+                    Live Stream
+                </span>
+            </div>
 
-    <div class="absolute bottom-6 text-[10px] text-gray-600 font-mono tracking-widest uppercase">
-        Lyraz Ecosystem v2.0
-    </div>
+            <div>
+                <h2 class="text-lg sm:text-xl font-bold text-white mb-1 flex items-center gap-1.5">
+                    Lyraz Web Player
+                    <span class="material-symbols-outlined text-sm text-gray-400 group-hover:text-primary group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                </h2>
+                <p class="text-xs text-gray-400 leading-relaxed mb-5">
+                    Open the synchronized player in your browser to listen and read real-time lyrics on this screen.
+                </p>
+            </div>
+
+            <div class="btn-web text-black font-bold py-3.5 px-5 rounded-2xl flex items-center justify-center gap-2 text-sm">
+                <span class="material-symbols-outlined text-xl">play_circle</span>
+                <span>Open Live Player</span>
+            </div>
+        </a>
+
+    </main>
+
+    <!-- Footer Meta -->
+    <footer class="relative z-10 flex flex-col items-center gap-1.5 text-center mt-2 mb-2">
+        <div class="text-[11px] font-mono text-gray-500">
+            Hub Token: <span class="text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">{{ token }}</span>
+        </div>
+        <p class="text-[10px] text-gray-600 font-mono uppercase tracking-wider">
+            Lyraz Audio Ecosystem
+        </p>
+    </footer>
 
 </body>
 </html>

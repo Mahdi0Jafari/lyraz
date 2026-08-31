@@ -224,20 +224,20 @@
                  overflow-hidden transition-all duration-700 lg:shadow-2xl lg:border lg:border-white/10
                  {% if session and session.status == 'active' %}opacity-100 scale-100{% else %}opacity-0 scale-95{% endif %}">
         <section class="w-full flex-1 lg:flex-none lg:w-[360px] xl:w-[420px] 
-                        p-8 lg:p-10
+                        p-5 sm:p-8 lg:p-10
                         flex flex-col justify-center items-center relative z-30
                         border-b border-transparent lg:border-r lg:border-white/5 bg-transparent lg:bg-black/20 pt-safe">
             
             <div class="relative 
-                        w-[80vw] max-w-[340px] lg:w-full lg:max-w-[360px] aspect-square 
-                        rounded-[2rem] lg:rounded-[2.5rem] 
+                        w-[65vw] max-w-[280px] sm:w-[75vw] sm:max-w-[320px] lg:w-full lg:max-w-[360px] aspect-square 
+                        rounded-[1.8rem] sm:rounded-[2rem] lg:rounded-[2.5rem] 
                         overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] 
-                        mb-8 border border-white/10 group">
+                        mb-4 sm:mb-6 lg:mb-8 border border-white/10 group">
                 
                 <img id="cover-art" class="w-full h-full object-cover transition-transform duration-[3s] ease-in-out group-hover:scale-105" 
                      src="/cover/default" alt="Album Art">
                 
-                     <div id="admin-badge" class="absolute top-4 left-4 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full text-xs font-bold border border-white/10 hidden shadow-xl flex items-center gap-2 z-20 transition-opacity duration-500">
+                     <div id="admin-badge" class="absolute top-3 left-3 sm:top-4 sm:left-4 bg-black/60 backdrop-blur-xl px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-bold border border-white/10 hidden shadow-xl flex items-center gap-2 z-20 transition-opacity duration-500">
                         <span class="text-primary animate-pulse shadow-[0_0_10px_#0df233] rounded-full">●</span> 
                         <span id="admin-name" class="truncate max-w-[120px] font-mono tracking-wide text-gray-200 uppercase">
                             HUB
@@ -245,17 +245,17 @@
                     </div>
             </div>
 
-            <div class="w-full text-center space-y-2 px-2">
-                <h2 id="track-title" class="text-3xl lg:text-4xl font-display font-bold truncate leading-tight tracking-tight drop-shadow-lg">Ready to Play</h2>
-                <p id="track-artist" class="text-lg lg:text-xl text-gray-400 truncate font-medium">Waiting for tracks...</p>
-                <p id="track-adder" class="text-xs font-mono text-gray-500 mt-3 hidden items-center justify-center gap-1.5 bg-white/5 inline-flex px-3 py-1.5 rounded-lg">
+            <div class="w-full text-center space-y-1 sm:space-y-2 px-2">
+                <h2 id="track-title" class="text-2xl sm:text-3xl lg:text-4xl font-display font-bold truncate leading-tight tracking-tight drop-shadow-lg">Ready to Play</h2>
+                <p id="track-artist" class="text-base sm:text-lg lg:text-xl text-gray-400 truncate font-medium">Waiting for tracks...</p>
+                <p id="track-adder" class="text-[11px] sm:text-xs font-mono text-gray-500 mt-2 sm:mt-3 hidden items-center justify-center gap-1.5 bg-white/5 inline-flex px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg">
                     <i class="ri-user-smile-line text-primary"></i> Added by <span id="added-by-name" class="text-gray-300 font-bold"></span>
                 </p>
             </div>
         </section>
 
         <section class="w-full lg:flex-1 shrink-0 flex flex-col 
-                        px-6 lg:px-12 
+                        px-5 sm:px-8 lg:px-12 
                         pb-safe lg:py-10 
                         z-30 relative min-w-0">
             
