@@ -43,6 +43,8 @@ jobs:
               echo "AUDIO_QUALITY=320" >> .env
               echo "ADMIN_TELEGRAM_ID=${{ secrets.ADMIN_TELEGRAM_ID }}" >> .env
               echo "MANDATORY_CHANNELS=${{ secrets.MANDATORY_CHANNELS }}" >> .env
+              echo "SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}" >> .env
+              echo "SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}" >> .env
               
               # 5. Inject YouTube Cookies from GitHub Secrets safely
               echo "${{ secrets.YT_COOKIES }}" > instance/cookies.txt

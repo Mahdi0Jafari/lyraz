@@ -1,0 +1,335 @@
+<!-- core/templates/admin/components/artist_hub_tab.html -->
+<div id="tab-artist_hub" class="hidden space-y-6 animate-in fade-in duration-300">
+    
+    <!-- ========================================== -->
+    <!-- 🎛 SECTION 1: SEARCH & SPOTIFY INPUT       -->
+    <!-- ========================================== -->
+    <div class="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+        <div class="absolute -right-10 -top-10 size-40 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="size-2 rounded-full bg-primary animate-pulse"></span>
+                    <span class="text-[11px] font-bold tracking-widest text-primary uppercase">Multi-Artist Discography Engine</span>
+                </div>
+                <h3 class="text-xl font-bold text-white tracking-tight">Artist Hub & Channel Vault</h3>
+                <p class="text-xs text-gray-400 mt-1">Extract full official artist discographies from Spotify and auto-deliver to dedicated Telegram channels.</p>
+            </div>
+            
+            <!-- Preset Quick Picks -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] text-gray-400 font-medium">Quick Pick:</span>
+                <button type="button" onclick="setArtistHubPreset('https://open.spotify.com/artist/5WCHc16VvzVCmBKH70CYfw')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-medium border border-white/10 transition">معین (Moein)</button>
+                <button type="button" onclick="setArtistHubPreset('https://open.spotify.com/artist/5b1CDxqOGnXr5M1DUn2XQh')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-medium border border-white/10 transition">هایده (Hayedeh)</button>
+                <button type="button" onclick="setArtistHubPreset('https://open.spotify.com/artist/4V2q5hF8eU2H9u1FqLpBqA')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-medium border border-white/10 transition">شادمهر (Shadmehr)</button>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <div class="flex flex-col sm:flex-row items-center gap-3">
+                <div class="relative flex-1 w-full">
+                    <span class="material-symbols-outlined absolute left-3.5 top-3.5 text-gray-400 text-[20px]">graphic_eq</span>
+                    <input type="text" id="artist-hub-url" placeholder="Paste Spotify Artist or Playlist URL (e.g. https://open.spotify.com/artist/...)" class="glass-input w-full h-12 pl-11 pr-4 rounded-xl text-sm font-mono text-white">
+                </div>
+                <button type="button" onclick="fetchArtistPreview(this)" id="btn-fetch-artist" class="w-full sm:w-auto px-7 h-12 bg-primary hover:bg-[#0be02f] text-black font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(13,242,51,0.25)] whitespace-nowrap">
+                    <span class="material-symbols-outlined text-[18px]">bolt</span> Extract Discography
+                </button>
+            </div>
+
+            <!-- Options Bar -->
+            <div class="flex flex-wrap items-center justify-between gap-4 pt-2 text-xs text-gray-400">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="artist-hub-dedup" checked class="rounded border-white/10 text-primary focus:ring-0 bg-black/40 size-4">
+                    <span>Deduplicate identical titles (Keep best versions)</span>
+                </label>
+                <span class="text-[11px] text-gray-500 font-mono">Powered by Official Spotify Web API Client Credentials</span>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 🌟 SECTION 2: PREVIEW & DISPATCHER CARD    -->
+    <!-- ========================================== -->
+    <div id="artist-hub-preview-card" class="hidden space-y-6 animate-in fade-in zoom-in-95 duration-300">
+        
+        <!-- Artist Profile Summary Header -->
+        <div class="glass-panel p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-gradient-to-r from-primary/5 via-transparent to-white/5">
+            <div class="flex items-center gap-5">
+                <img id="hub-artist-avatar" src="" alt="Artist" class="size-20 rounded-full object-cover border-2 border-primary/50 shadow-2xl bg-black/40">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <h2 id="hub-artist-name" class="text-2xl font-black text-white tracking-tight">-</h2>
+                        <span class="material-symbols-outlined text-primary text-[20px]" title="Verified Spotify Artist">verified</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                        <span id="hub-artist-followers" class="font-medium text-gray-300">0 Followers</span>
+                        <span>•</span>
+                        <span id="hub-artist-albums" class="font-medium text-gray-300">0 Albums & Singles</span>
+                        <span>•</span>
+                        <span id="hub-artist-total-tracks" class="font-bold text-primary">0 Unique Tracks</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ingestion Dispatch Controls -->
+            <div class="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <!-- Channel Selector -->
+                <div class="flex flex-col gap-1">
+                    <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Target Channel (Optional)</label>
+                    <select id="hub-target-channel" class="glass-input h-11 px-3 rounded-xl text-xs text-white appearance-none cursor-pointer border border-white/10">
+                        <option value="">Vault Only (Cloud Storage)</option>
+                        {% for ch in channels %}
+                            <option value="{{ ch.chat_id }}">{{ ch.title }} ({{ ch.chat_id }})</option>
+                        {% endfor %}
+                        <option value="custom">➕ Custom Channel ID...</option>
+                    </select>
+                </div>
+
+                <!-- Custom Channel Input (hidden by default) -->
+                <div id="hub-custom-channel-wrap" class="hidden flex-col gap-1">
+                    <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Custom Chat ID</label>
+                    <input type="text" id="hub-custom-channel-id" placeholder="-100..." class="glass-input h-11 px-3 rounded-xl text-xs text-white w-32 font-mono">
+                </div>
+
+                <!-- Limit Selector -->
+                <div class="flex flex-col gap-1">
+                    <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Import Limit</label>
+                    <select id="hub-import-limit" class="glass-input h-11 px-3 rounded-xl text-xs text-white appearance-none cursor-pointer border border-white/10">
+                        <option value="0" selected>All Tracks (Full)</option>
+                        <option value="20">Top 20 Tracks</option>
+                        <option value="50">Top 50 Tracks</option>
+                        <option value="100">Top 100 Tracks</option>
+                        <option value="200">Top 200 Tracks</option>
+                    </select>
+                </div>
+
+                <!-- Submit Button -->
+                <button type="button" onclick="startBatchIngestion(this)" id="btn-start-ingest" class="mt-auto h-11 px-6 bg-primary hover:bg-[#0be02f] text-black font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(13,242,51,0.2)]">
+                    <span class="material-symbols-outlined text-[18px]">cloud_sync</span> Queue & Dispatch
+                </button>
+            </div>
+        </div>
+
+
+        <!-- ========================================== -->
+        <!-- 📑 SECTION 3: EXTRACTED TRACKS TABLE       -->
+        <!-- ========================================== -->
+        <div class="glass-panel rounded-2xl overflow-hidden border border-white/5">
+            <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px] text-primary">queue_music</span>
+                    <h3 class="text-sm font-bold text-white">Extracted Tracklist</h3>
+                    <span class="text-[11px] text-gray-500 font-mono" id="hub-table-count">0 items</span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="copyExtractedJson()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[14px]">content_copy</span> Copy JSON
+                    </button>
+                </div>
+            </div>
+
+            <div class="max-h-[500px] overflow-y-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-white/5 text-gray-400 text-[11px] uppercase font-semibold sticky top-0 backdrop-blur-md z-10">
+                        <tr>
+                            <th class="py-3 px-4 w-12 text-center">#</th>
+                            <th class="py-3 px-4">Track & Performer</th>
+                            <th class="py-3 px-4">Album & Release</th>
+                            <th class="py-3 px-4 text-center">Duration</th>
+                            <th class="py-3 px-4 text-right">Spotify Link</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hub-tracks-tbody" class="divide-y divide-white/5 text-xs text-gray-300 font-sans">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- ========================================== -->
+<!-- 💡 ARTIST HUB JAVASCRIPT LOGIC             -->
+<!-- ========================================== -->
+<script>
+    let currentExtractedData = null;
+
+    document.getElementById('hub-target-channel')?.addEventListener('change', function() {
+        const customWrap = document.getElementById('hub-custom-channel-wrap');
+        if (this.value === 'custom') {
+            customWrap.classList.remove('hidden');
+            customWrap.classList.add('flex');
+        } else {
+            customWrap.classList.add('hidden');
+            customWrap.classList.remove('flex');
+        }
+    });
+
+    function setArtistHubPreset(url) {
+        const input = document.getElementById('artist-hub-url');
+        if (input) {
+            input.value = url;
+            fetchArtistPreview(document.getElementById('btn-fetch-artist'));
+        }
+    }
+
+    async function fetchArtistPreview(btn = null) {
+        const url = document.getElementById('artist-hub-url').value.trim();
+        const dedup = document.getElementById('artist-hub-dedup').checked;
+
+        if (!url) {
+            if (typeof showToast === 'function') showToast('Please enter a Spotify Artist or Playlist URL.');
+            return;
+        }
+
+        let originalContent = '';
+        if (btn) {
+            btn.disabled = true;
+            originalContent = btn.innerHTML;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Extracting...`;
+        }
+
+        if (typeof showToast === 'function') showToast('Extracting official discography from Spotify...');
+
+        try {
+            const res = await fetch('/api/admin/artist_hub/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, deduplicate: dedup })
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                currentExtractedData = data.data;
+                renderArtistPreview(data.data);
+                if (typeof showToast === 'function') showToast(`✅ Found ${data.data.total_tracks} tracks for ${data.data.artist_name || data.data.title}!`);
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Extraction failed'}`);
+            }
+        } catch (e) {
+            if (typeof showToast === 'function') showToast('❌ Network error extracting from Spotify');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        }
+    }
+
+    function renderArtistPreview(data) {
+        const previewCard = document.getElementById('artist-hub-preview-card');
+        previewCard.classList.remove('hidden');
+
+        document.getElementById('hub-artist-name').innerText = data.artist_name || data.title || 'Unknown';
+        document.getElementById('hub-artist-avatar').src = data.artist_image || data.image || 'https://via.placeholder.com/80';
+        document.getElementById('hub-artist-followers').innerText = `${(data.followers || 0).toLocaleString()} Followers`;
+        document.getElementById('hub-artist-albums').innerText = `${data.total_albums || 0} Albums & Singles`;
+        document.getElementById('hub-artist-total-tracks').innerText = `${data.total_tracks || data.tracks.length} Tracks`;
+        document.getElementById('hub-table-count').innerText = `${data.tracks.length} tracks loaded`;
+
+        const tbody = document.getElementById('hub-tracks-tbody');
+        tbody.innerHTML = '';
+
+        data.tracks.forEach((t, idx) => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-white/5 transition';
+            const cover = (t.album && t.album.cover_url) ? t.album.cover_url : '';
+
+            tr.innerHTML = `
+                <td class="py-3 px-4 text-center font-mono text-gray-500">${idx + 1}</td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-3">
+                        ${cover ? `<img src="${cover}" class="size-9 rounded-lg object-cover border border-white/10" alt="cover">` : ''}
+                        <div>
+                            <div class="font-bold text-white text-sm">${t.title}</div>
+                            <div class="text-[11px] text-gray-400">${t.artist_string || t.artists.join(', ')}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="py-3 px-4">
+                    <div class="text-white text-xs">${t.album ? t.album.name : '-'}</div>
+                    <div class="text-[10px] text-gray-500 font-mono">${t.album ? t.album.release_date : ''}</div>
+                </td>
+                <td class="py-3 px-4 text-center font-mono text-xs text-gray-400">${t.duration_formatted}</td>
+                <td class="py-3 px-4 text-right">
+                    <a href="${t.spotify_url}" target="_blank" class="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                        <span>Spotify</span>
+                        <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+                    </a>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        previewCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function startBatchIngestion(btn = null) {
+        if (!currentExtractedData || !currentExtractedData.tracks || currentExtractedData.tracks.length === 0) {
+            if (typeof showToast === 'function') showToast('No tracks available to ingest.');
+            return;
+        }
+
+        const channelSelect = document.getElementById('hub-target-channel');
+        let targetChannel = channelSelect.value;
+        if (targetChannel === 'custom') {
+            targetChannel = document.getElementById('hub-custom-channel-id').value.trim();
+        }
+
+        const limit = parseInt(document.getElementById('hub-import-limit').value) || 0;
+
+        let originalContent = '';
+        if (btn) {
+            btn.disabled = true;
+            originalContent = btn.innerHTML;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Queuing...`;
+        }
+
+        if (typeof showToast === 'function') showToast('Queuing tracks into background worker...');
+
+        try {
+            const res = await fetch('/api/admin/artist_hub/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tracks: currentExtractedData.tracks,
+                    artist_name: currentExtractedData.artist_name || 'Various Artists',
+                    target_channel_id: targetChannel || null,
+                    limit: limit
+                })
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') {
+                    showToast(`✅ Queued ${data.result.queued} tracks (${data.result.skipped} already in vault)!`);
+                }
+                // Switch to crawler queue monitor after 1.5 seconds
+                setTimeout(() => {
+                    if (typeof switchTab === 'function') switchTab('crawler');
+                }, 1500);
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Queuing failed'}`);
+            }
+        } catch (e) {
+            if (typeof showToast === 'function') showToast('❌ Network error starting batch ingestion');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            }
+        }
+    }
+
+    function copyExtractedJson() {
+        if (!currentExtractedData) return;
+        navigator.clipboard.writeText(JSON.stringify(currentExtractedData, null, 2)).then(() => {
+            if (typeof showToast === 'function') showToast('📋 Full JSON copied to clipboard!');
+        });
+    }
+</script>
