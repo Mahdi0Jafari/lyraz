@@ -476,6 +476,13 @@
                 document.getElementById('duration-label').innerText = formatTime(track.duration);
             }
 
+            // اگر آهنگ عوض شده، زمان جاری و اسلایدر بلافاصله ریست شوند
+            if (changed) {
+                document.getElementById('seek-slider').value = 0;
+                document.getElementById('seek-fill').style.width = '0%';
+                document.getElementById('current-time-label').innerText = "0:00";
+            }
+
             // فقط اگر ترک عوض شده بود ظاهر آیتم‌های لیست تغییر کند نه اینکه کل لیست بازسازی شود
             if (changed && reRenderList) {
                 renderList(tracksData);
@@ -496,6 +503,9 @@
         function goNextTrack() {
             triggerHaptic('medium');
             userActionLock = Date.now();
+            seekActionLock = Date.now(); // قفل ۲ ثانیه‌ای برای نادیده گرفتن پکت‌های آهنگ قبلی
+            lastReportedSec = 0;
+            lastReportLocalTime = Date.now();
             
             if (tracksData && tracksData.length > 0) {
                 const currentIdx = tracksData.findIndex(t => t.file_unique_id === currentTrackId);
@@ -518,6 +528,9 @@
         function goPrevTrack() {
             triggerHaptic('medium');
             userActionLock = Date.now();
+            seekActionLock = Date.now(); // قفل ۲ ثانیه‌ای برای نادیده گرفتن پکت‌های آهنگ قبلی
+            lastReportedSec = 0;
+            lastReportLocalTime = Date.now();
             
             if (tracksData && tracksData.length > 0) {
                 const currentIdx = tracksData.findIndex(t => t.file_unique_id === currentTrackId);
@@ -625,9 +638,11 @@
                             else loadQueue(); 
                         }
 
-                        // جبران تاخیر پینگ و ساعت جهانی در نمایش اسلایدر (فقط در صورتی که کاربر به تازگی Seek نکرده باشد)
+                        // اسلایدر فقط و فقط در صورتی آپدیت شود که پکت مربوط به همین ترک فعال باشد
+                        const isSameTrack = status.file_unique_id === currentTrackId;
                         const isSeekLocked = (Date.now() - seekActionLock) < 2000;
-                        if (!isDraggingSlider && !isSeekLocked && status.duration > 0) {
+
+                        if (isSameTrack && !isDraggingSlider && !isSeekLocked && status.duration > 0) {
                             let liveCurrentTime = status.current_time;
                             if (status.is_playing && data.server_now) {
                                 const localNow = (Date.now() / 1000) + serverTimeOffset;
