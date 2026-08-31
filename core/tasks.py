@@ -460,21 +460,50 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             # ۷. 🔥 اجرای موتور Automation Rules 🔥
             await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
 
-            # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
-            if target_channel_id:
-                try:
-                    await deliver_audio_safe(
-                        local_bot=local_bot,
-                        chat_id=target_channel_id,
-                        track_row=track_meta,
-                        title=final_title,
-                        artist=final_artist,
-                        user_caption=f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @lyraz_ir"
-                    )
-                    logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
-                except Exception as ch_err:
-                    logger.error(f"Failed to deliver track to target channel {target_channel_id}: {ch_err}")
+        # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
+        if target_channel_id:
+            try:
+                await deliver_audio_safe(
+                    local_bot=local_bot,
+                    chat_id=target_channel_id,
+                    track_row=track_meta,
+                    title=final_title,
+                    artist=final_artist,
+                    user_caption=f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @lyraz_ir"
+                )
+                logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
+            except Exception as ch_err:
+                logger.error(f"Failed to deliver track to target channel {target_channel_id}: {ch_err}")
 
+        # ۹. به‌روزرسانی وضعیت کمپین آرتیست در دیتابیس (در صورت وجود)
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("""
+                    UPDATE campaign_tracks 
+                    SET status = 'completed', delivered_at = CURRENT_TIMESTAMP 
+                    WHERE youtube_id = ?
+                """, (video_id,))
+                
+                # دریافت campaign_id
+                c_row = conn.execute("SELECT campaign_id FROM campaign_tracks WHERE youtube_id = ?", (video_id,)).fetchone()
+                if c_row:
+                    cid = c_row[0]
+                    conn.execute("""
+                        UPDATE artist_campaigns 
+                        SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed'),
+                            status = CASE 
+                                WHEN (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed') >= total_tracks 
+                                THEN 'completed' 
+                                ELSE 'processing' 
+                            END,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (cid, cid, cid))
+                conn.commit()
+        except Exception as camp_err:
+            logger.warning(f"Campaign status update error: {camp_err}")
+
+        if not is_batch:
             return track_meta
         else:
             return (track_meta, final_title, final_artist, user_caption, reply_markup)

@@ -1,6 +1,6 @@
 <!-- core/templates/admin/components/artist_hub_tab.html -->
-<div class="space-y-6 pb-16">
-    
+<div class="space-y-8 pb-20">
+
     <!-- ========================================== -->
     <!-- 🎛 SECTION 1: SEARCH & SPOTIFY INPUT       -->
     <!-- ========================================== -->
@@ -14,10 +14,10 @@
                     <span class="text-[11px] font-bold tracking-widest text-primary uppercase">Multi-Artist Discography Engine</span>
                 </div>
                 <h3 class="text-xl font-bold text-white tracking-tight">Artist Hub & Channel Vault</h3>
-                <p class="text-xs text-gray-400 mt-1">Extract full official artist discographies from Spotify and auto-deliver to dedicated Telegram channels.</p>
+                <p class="text-xs text-gray-400 mt-1">Deploy full discographies to dedicated Telegram channels. Supports multiple artists per channel.</p>
             </div>
             
-            <!-- Preset Quick Picks -->
+            <!-- Quick Picks -->
             <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-[11px] text-gray-400 font-medium">Quick Pick:</span>
                 <button type="button" onclick="setArtistHubPreset('https://open.spotify.com/artist/5WCHc16VvzVCmBKH70CYfw')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-medium border border-white/10 transition">معین (Moein)</button>
@@ -30,7 +30,7 @@
             <div class="flex flex-col sm:flex-row items-center gap-3">
                 <div class="relative flex-1 w-full">
                     <span class="material-symbols-outlined absolute left-3.5 top-3.5 text-gray-400 text-[20px]">graphic_eq</span>
-                    <input type="text" id="artist-hub-url" placeholder="Paste Spotify Artist or Playlist URL (e.g. https://open.spotify.com/artist/...)" class="glass-input w-full h-12 pl-11 pr-4 rounded-xl text-sm font-mono text-white">
+                    <input type="text" id="artist-hub-url" placeholder="Paste Spotify Artist URL (e.g. https://open.spotify.com/artist/...)" class="glass-input w-full h-12 pl-11 pr-4 rounded-xl text-sm font-mono text-white">
                 </div>
                 <button type="button" onclick="fetchArtistPreview(this)" id="btn-fetch-artist" class="w-full sm:w-auto px-7 h-12 bg-primary hover:bg-[#0be02f] text-black font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(13,242,51,0.25)] whitespace-nowrap">
                     <span class="material-symbols-outlined text-[18px]">bolt</span> Extract Discography
@@ -41,7 +41,7 @@
             <div class="flex flex-wrap items-center justify-between gap-4 pt-2 text-xs text-gray-400">
                 <label class="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" id="artist-hub-dedup" checked class="rounded border-white/10 text-primary focus:ring-0 bg-black/40 size-4">
-                    <span>Deduplicate identical titles (Keep best versions)</span>
+                    <span>Deduplicate identical titles (Filters out duplicate tracks across albums)</span>
                 </label>
                 <span class="text-[11px] text-gray-500 font-mono">Powered by Official Spotify Web API Client Credentials</span>
             </div>
@@ -50,12 +50,12 @@
 
 
     <!-- ========================================== -->
-    <!-- 🌟 SECTION 2: PREVIEW & DISPATCHER CARD    -->
+    <!-- 🌟 SECTION 2: LIVE EXTRACT PREVIEW CARD    -->
     <!-- ========================================== -->
     <div id="artist-hub-preview-card" class="hidden space-y-6 animate-in fade-in zoom-in-95 duration-300">
         
         <!-- Artist Profile Summary Header -->
-        <div class="glass-panel p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-gradient-to-r from-primary/5 via-transparent to-white/5">
+        <div class="glass-panel p-6 rounded-2xl border border-primary/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-gradient-to-r from-primary/10 via-transparent to-white/5 shadow-[0_0_30px_rgba(13,242,51,0.05)]">
             <div class="flex items-center gap-5">
                 <img id="hub-artist-avatar" src="" alt="Artist" class="size-20 rounded-full object-cover border-2 border-primary/50 shadow-2xl bg-black/40">
                 <div>
@@ -77,8 +77,11 @@
             <div class="w-full md:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <!-- Channel Selector -->
                 <div class="flex flex-col gap-1">
-                    <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Target Channel (Optional)</label>
-                    <select id="hub-target-channel" class="glass-input h-11 px-3 rounded-xl text-xs text-white appearance-none cursor-pointer border border-white/10">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Target Channel (Optional)</label>
+                        <span id="hub-channel-status" class="text-[10px] font-mono hidden"></span>
+                    </div>
+                    <select id="hub-target-channel" onchange="onChannelSelectionChange(this)" class="glass-input h-11 px-3 rounded-xl text-xs text-white appearance-none cursor-pointer border border-white/10">
                         <option value="">Vault Only (Cloud Storage)</option>
                         {% for ch in channels %}
                             <option value="{{ ch.chat_id }}">{{ ch.title }} ({{ ch.chat_id }})</option>
@@ -90,7 +93,12 @@
                 <!-- Custom Channel Input (hidden by default) -->
                 <div id="hub-custom-channel-wrap" class="hidden flex-col gap-1">
                     <label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Custom Chat ID</label>
-                    <input type="text" id="hub-custom-channel-id" placeholder="-100..." class="glass-input h-11 px-3 rounded-xl text-xs text-white w-32 font-mono">
+                    <div class="flex items-center gap-1.5">
+                        <input type="text" id="hub-custom-channel-id" placeholder="-100..." class="glass-input h-11 px-3 rounded-xl text-xs text-white w-32 font-mono">
+                        <button type="button" onclick="verifyCustomChannel()" class="h-11 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold border border-white/10 transition flex items-center justify-center">
+                            Check
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Limit Selector -->
@@ -107,39 +115,33 @@
 
                 <!-- Submit Button -->
                 <button type="button" onclick="startBatchIngestion(this)" id="btn-start-ingest" class="mt-auto h-11 px-6 bg-primary hover:bg-[#0be02f] text-black font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(13,242,51,0.2)]">
-                    <span class="material-symbols-outlined text-[18px]">cloud_sync</span> Queue & Dispatch
+                    <span class="material-symbols-outlined text-[18px]">rocket_launch</span> Launch Campaign
                 </button>
             </div>
         </div>
 
-
-        <!-- ========================================== -->
-        <!-- 📑 SECTION 3: EXTRACTED TRACKS TABLE       -->
-        <!-- ========================================== -->
+        <!-- Collapsible Preview Table -->
         <div class="glass-panel rounded-2xl overflow-hidden border border-white/5">
             <div class="p-4 border-b border-white/5 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-primary">queue_music</span>
-                    <h3 class="text-sm font-bold text-white">Extracted Tracklist</h3>
+                    <h3 class="text-sm font-bold text-white">Extracted Tracklist Preview</h3>
                     <span class="text-[11px] text-gray-500 font-mono" id="hub-table-count">0 items</span>
                 </div>
-
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="copyExtractedJson()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition flex items-center gap-1">
-                        <span class="material-symbols-outlined text-[14px]">content_copy</span> Copy JSON
-                    </button>
-                </div>
+                <button type="button" onclick="copyExtractedJson()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[14px]">content_copy</span> Copy JSON
+                </button>
             </div>
 
-            <div class="max-h-[500px] overflow-y-auto">
+            <div class="max-h-[360px] overflow-y-auto">
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-white/5 text-gray-400 text-[11px] uppercase font-semibold sticky top-0 backdrop-blur-md z-10">
                         <tr>
-                            <th class="py-3 px-4 w-12 text-center">#</th>
-                            <th class="py-3 px-4">Track & Performer</th>
-                            <th class="py-3 px-4">Album & Release</th>
-                            <th class="py-3 px-4 text-center">Duration</th>
-                            <th class="py-3 px-4 text-right">Spotify Link</th>
+                            <th class="py-2.5 px-4 w-12 text-center">#</th>
+                            <th class="py-2.5 px-4">Track</th>
+                            <th class="py-2.5 px-4">Album & Release</th>
+                            <th class="py-2.5 px-4 text-center">Duration</th>
+                            <th class="py-2.5 px-4 text-right">Spotify Link</th>
                         </tr>
                     </thead>
                     <tbody id="hub-tracks-tbody" class="divide-y divide-white/5 text-xs text-gray-300 font-sans">
@@ -148,27 +150,191 @@
                 </table>
             </div>
         </div>
+    </div>
 
+
+    <!-- ========================================== -->
+    <!-- 🗂 SECTION 3: ACTIVE ARTIST CAMPAIGNS GRID  -->
+    <!-- ========================================== -->
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <span class="material-symbols-outlined text-primary text-[22px]">auto_stories</span>
+                <h3 class="text-base font-bold text-white tracking-tight">Active Artist Campaigns & Channel Vaults</h3>
+                <span id="campaigns-count-badge" class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-mono">0</span>
+            </div>
+            <button type="button" onclick="loadArtistCampaigns()" class="text-xs text-gray-400 hover:text-primary transition flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">refresh</span> Refresh Status
+            </button>
+        </div>
+
+        <!-- Campaigns Card Grid -->
+        <div id="campaigns-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <!-- Populated dynamically via loadArtistCampaigns() -->
+        </div>
+
+        <!-- Empty state placeholder -->
+        <div id="campaigns-empty" class="hidden glass-panel p-12 rounded-2xl border border-white/5 text-center flex flex-col items-center justify-center">
+            <div class="size-16 rounded-full bg-white/5 flex items-center justify-center text-gray-500 mb-3">
+                <span class="material-symbols-outlined text-[32px]">album</span>
+            </div>
+            <h4 class="text-sm font-bold text-white mb-1">No Artist Campaigns Yet</h4>
+            <p class="text-xs text-gray-400 max-w-sm">Extract any Spotify artist above to create an automated channel discography campaign.</p>
+        </div>
     </div>
 
 </div>
 
+
 <!-- ========================================== -->
-<!-- 💡 ARTIST HUB JAVASCRIPT LOGIC             -->
+<!-- 🔍 SECTION 4: INSPECT DETAILS MODAL        -->
+<!-- ========================================== -->
+<div id="inspect-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-3xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+        
+        <!-- Modal Header -->
+        <div class="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+            <div class="flex items-center gap-4">
+                <img id="modal-artist-avatar" src="" class="size-12 rounded-full object-cover border border-primary/40 bg-black/40">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 id="modal-artist-name" class="text-lg font-bold text-white">-</h3>
+                        <span id="modal-status-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">Processing</span>
+                    </div>
+                    <p id="modal-channel-label" class="text-xs text-gray-400 mt-0.5 font-mono">Target Channel: -</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeInspectModal()" class="size-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition">
+                <span class="material-symbols-outlined text-[18px]">close</span>
+            </button>
+        </div>
+
+        <!-- Progress Overview Bar in Modal -->
+        <div class="px-6 py-4 bg-black/30 border-b border-white/5 flex items-center justify-between gap-4">
+            <div class="flex-1">
+                <div class="flex justify-between text-xs mb-1.5">
+                    <span class="text-gray-400">Vault & Channel Delivery Progress</span>
+                    <span id="modal-progress-text" class="font-bold text-primary font-mono">0% (0 / 0)</span>
+                </div>
+                <div class="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div id="modal-progress-bar" class="h-full bg-gradient-to-r from-primary to-[#0be02f] transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tracks List Search & Table -->
+        <div class="p-4 border-b border-white/5 flex items-center justify-between gap-3">
+            <div class="relative flex-1">
+                <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
+                <input type="text" id="modal-search-input" onkeyup="filterModalTracks()" placeholder="Search in campaign tracks..." class="glass-input w-full h-9 pl-9 pr-3 rounded-lg text-xs text-white">
+            </div>
+            <span id="modal-tracks-count" class="text-xs text-gray-400 font-mono">0 tracks</span>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead class="text-[10px] uppercase font-semibold text-gray-500 border-b border-white/5">
+                    <tr>
+                        <th class="pb-2 w-8 text-center">#</th>
+                        <th class="pb-2">Track Title</th>
+                        <th class="pb-2">Album</th>
+                        <th class="pb-2 text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="modal-tracks-tbody" class="divide-y divide-white/5 text-gray-300">
+                    <!-- Populated via openInspectModal -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-4 border-t border-white/10 bg-white/[0.01] flex items-center justify-between">
+            <button type="button" id="btn-delete-campaign" class="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">delete</span> Delete Campaign
+            </button>
+            <button type="button" onclick="closeInspectModal()" class="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 💡 ARTIST HUB & CAMPAIGNS JAVASCRIPT LOGIC -->
 <!-- ========================================== -->
 <script>
     let currentExtractedData = null;
+    let campaignsPollInterval = null;
+    let modalTracksData = [];
+    let currentModalCampaignId = null;
 
-    document.getElementById('hub-target-channel')?.addEventListener('change', function() {
+    // Initialize campaigns polling when tab is active
+    document.addEventListener('DOMContentLoaded', () => {
+        loadArtistCampaigns();
+    });
+
+    // Channel Verification & Selection
+    async function onChannelSelectionChange(selectEl) {
         const customWrap = document.getElementById('hub-custom-channel-wrap');
-        if (this.value === 'custom') {
+        const statusBadge = document.getElementById('hub-channel-status');
+        const val = selectEl.value;
+
+        if (val === 'custom') {
             customWrap.classList.remove('hidden');
             customWrap.classList.add('flex');
+            statusBadge.classList.add('hidden');
         } else {
             customWrap.classList.add('hidden');
             customWrap.classList.remove('flex');
+            if (val) {
+                await verifyChannelAccess(val);
+            } else {
+                statusBadge.classList.add('hidden');
+            }
         }
-    });
+    }
+
+    async function verifyCustomChannel() {
+        const customId = document.getElementById('hub-custom-channel-id').value.trim();
+        if (!customId) {
+            if (typeof showToast === 'function') showToast('Please enter a channel Chat ID (e.g. -100...)');
+            return;
+        }
+        await verifyChannelAccess(customId);
+    }
+
+    async function verifyChannelAccess(chatId) {
+        const statusBadge = document.getElementById('hub-channel-status');
+        statusBadge.classList.remove('hidden');
+        statusBadge.className = 'text-[10px] font-mono text-yellow-400 animate-pulse';
+        statusBadge.innerText = 'Checking bot rights...';
+
+        try {
+            const res = await fetch('/api/admin/artist_hub/verify_channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_id: chatId })
+            });
+            const data = await res.json();
+
+            if (data.status === 'success' && data.verified) {
+                statusBadge.className = 'text-[10px] font-mono text-green-400 font-bold';
+                statusBadge.innerText = `✅ Bot Verified (${data.info.title || 'OK'})`;
+                if (typeof showToast === 'function') showToast(`✅ Bot is Admin in '${data.info.title || chatId}'! Ready to dispatch.`);
+                return true;
+            } else {
+                statusBadge.className = 'text-[10px] font-mono text-red-400 font-bold';
+                statusBadge.innerText = `❌ Bot is NOT Admin!`;
+                if (typeof showToast === 'function') showToast(`❌ Error: ${data.message || 'Bot is not admin in this channel'}`);
+                return false;
+            }
+        } catch (e) {
+            statusBadge.className = 'text-[10px] font-mono text-red-400';
+            statusBadge.innerText = `❌ Network Error`;
+            return false;
+        }
+    }
 
     function setArtistHubPreset(url) {
         const input = document.getElementById('artist-hub-url');
@@ -183,7 +349,7 @@
         const dedup = document.getElementById('artist-hub-dedup').checked;
 
         if (!url) {
-            if (typeof showToast === 'function') showToast('Please enter a Spotify Artist or Playlist URL.');
+            if (typeof showToast === 'function') showToast('Please enter a Spotify Artist URL.');
             return;
         }
 
@@ -241,22 +407,22 @@
             const cover = (t.album && t.album.cover_url) ? t.album.cover_url : '';
 
             tr.innerHTML = `
-                <td class="py-3 px-4 text-center font-mono text-gray-500">${idx + 1}</td>
-                <td class="py-3 px-4">
+                <td class="py-2.5 px-4 text-center font-mono text-gray-500">${idx + 1}</td>
+                <td class="py-2.5 px-4">
                     <div class="flex items-center gap-3">
-                        ${cover ? `<img src="${cover}" class="size-9 rounded-lg object-cover border border-white/10" alt="cover">` : ''}
+                        ${cover ? `<img src="${cover}" class="size-8 rounded-lg object-cover border border-white/10" alt="cover">` : ''}
                         <div>
-                            <div class="font-bold text-white text-sm">${t.title}</div>
-                            <div class="text-[11px] text-gray-400">${t.artist_string || t.artists.join(', ')}</div>
+                            <div class="font-bold text-white text-xs">${t.title}</div>
+                            <div class="text-[10px] text-gray-400">${t.artist_string || t.artists.join(', ')}</div>
                         </div>
                     </div>
                 </td>
-                <td class="py-3 px-4">
+                <td class="py-2.5 px-4">
                     <div class="text-white text-xs">${t.album ? t.album.name : '-'}</div>
                     <div class="text-[10px] text-gray-500 font-mono">${t.album ? t.album.release_date : ''}</div>
                 </td>
-                <td class="py-3 px-4 text-center font-mono text-xs text-gray-400">${t.duration_formatted}</td>
-                <td class="py-3 px-4 text-right">
+                <td class="py-2.5 px-4 text-center font-mono text-xs text-gray-400">${t.duration_formatted}</td>
+                <td class="py-2.5 px-4 text-right">
                     <a href="${t.spotify_url}" target="_blank" class="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
                         <span>Spotify</span>
                         <span class="material-symbols-outlined text-[13px]">open_in_new</span>
@@ -279,6 +445,19 @@
         let targetChannel = channelSelect.value;
         if (targetChannel === 'custom') {
             targetChannel = document.getElementById('hub-custom-channel-id').value.trim();
+            if (!targetChannel) {
+                if (typeof showToast === 'function') showToast('Please provide a valid custom Channel ID or select Vault Only.');
+                return;
+            }
+        }
+
+        // اگر کانال تلگرام تعیین شده بود، قبل از لانچ حتما دسترسی بات را چک کن
+        if (targetChannel) {
+            const isVerified = await verifyChannelAccess(targetChannel);
+            if (!isVerified) {
+                if (typeof showToast === 'function') showToast('⛔️ Cannot launch: Bot does not have Admin posting rights in this channel!');
+                return;
+            }
         }
 
         const limit = parseInt(document.getElementById('hub-import-limit').value) || 0;
@@ -287,10 +466,10 @@
         if (btn) {
             btn.disabled = true;
             originalContent = btn.innerHTML;
-            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Queuing...`;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Creating Campaign...`;
         }
 
-        if (typeof showToast === 'function') showToast('Queuing tracks into background worker...');
+        if (typeof showToast === 'function') showToast('🚀 Creating Campaign & dispatching tracks to worker queue...');
 
         try {
             const res = await fetch('/api/admin/artist_hub/ingest', {
@@ -299,6 +478,9 @@
                 body: JSON.stringify({
                     tracks: currentExtractedData.tracks,
                     artist_name: currentExtractedData.artist_name || 'Various Artists',
+                    spotify_id: currentExtractedData.artist_id || '',
+                    spotify_url: currentExtractedData.artist_url || '',
+                    avatar_url: currentExtractedData.artist_image || '',
                     target_channel_id: targetChannel || null,
                     limit: limit
                 })
@@ -307,12 +489,11 @@
 
             if (data.status === 'success') {
                 if (typeof showToast === 'function') {
-                    showToast(`✅ Queued ${data.result.queued} tracks (${data.result.skipped} already in vault)!`);
+                    showToast(`✅ Created Campaign! ${data.result.queued} tracks queued into background worker.`);
                 }
-                // Switch to crawler queue monitor after 1.5 seconds
-                setTimeout(() => {
-                    if (typeof switchTab === 'function') switchTab('crawler');
-                }, 1500);
+                // Hide preview card and refresh campaigns list
+                document.getElementById('artist-hub-preview-card').classList.add('hidden');
+                loadArtistCampaigns();
             } else {
                 if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Queuing failed'}`);
             }
@@ -323,6 +504,202 @@
                 btn.disabled = false;
                 btn.innerHTML = originalContent;
             }
+        }
+    }
+
+    // ==========================================
+    // 📊 CAMPAIGNS CARDS LOADER & REAL-TIME SYNC
+    // ==========================================
+    async function loadArtistCampaigns() {
+        try {
+            const res = await fetch('/api/admin/artist_hub/campaigns');
+            const data = await res.json();
+            if (data.status !== 'success') return;
+
+            const campaigns = data.campaigns || [];
+            const grid = document.getElementById('campaigns-grid');
+            const empty = document.getElementById('campaigns-empty');
+            const countBadge = document.getElementById('campaigns-count-badge');
+
+            countBadge.innerText = campaigns.length;
+
+            if (campaigns.length === 0) {
+                grid.innerHTML = '';
+                empty.classList.remove('hidden');
+                return;
+            }
+
+            empty.classList.add('hidden');
+            grid.innerHTML = campaigns.map(c => {
+                const percent = c.progress_percent || 0;
+                const isDone = c.status === 'completed' || percent >= 100;
+                const channelText = c.target_channel_id ? `📻 Channel: ${c.target_channel_id}` : `☁️ Vault Only (Cloud Storage)`;
+
+                return `
+                    <div class="glass-panel rounded-2xl p-5 border ${isDone ? 'border-primary/40' : 'border-white/5'} hover:border-primary/50 transition-all flex flex-col justify-between group shadow-lg">
+                        <div>
+                            <!-- Header -->
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <img src="${c.avatar_url || 'https://via.placeholder.com/60'}" class="size-12 rounded-full object-cover border border-white/10 bg-black/40">
+                                    <div>
+                                        <h4 class="text-sm font-bold text-white truncate max-w-[150px]" title="${c.artist_name}">${c.artist_name}</h4>
+                                        <span class="text-[10px] text-gray-400 font-mono truncate block max-w-[160px]">${channelText}</span>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isDone ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse'}">
+                                    ${isDone ? 'COMPLETED' : 'SYNCING'}
+                                </span>
+                            </div>
+
+                            <!-- Progress Bar -->
+                            <div class="space-y-1.5 my-3">
+                                <div class="flex justify-between text-xs font-mono">
+                                    <span class="text-gray-400">${c.live_completed} of ${c.total_tracks} tracks</span>
+                                    <span class="${isDone ? 'text-primary font-bold' : 'text-gray-300'}">${percent}%</span>
+                                </div>
+                                <div class="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-primary to-[#0be02f] transition-all duration-700" style="width: ${percent}%"></div>
+                                </div>
+                            </div>
+
+                            <!-- Badges -->
+                            <div class="flex items-center gap-2 text-[10px] font-mono text-gray-400 my-2">
+                                <span class="px-2 py-0.5 rounded bg-white/5">⏳ Queued: ${c.live_queued}</span>
+                                <span class="px-2 py-0.5 rounded bg-white/5">⚡️ Downloading: ${c.live_downloading}</span>
+                            </div>
+                        </div>
+
+                        <!-- Card Actions -->
+                        <div class="pt-4 border-t border-white/5 flex items-center justify-between mt-2">
+                            <span class="text-[10px] text-gray-500 font-mono">${c.created_at ? c.created_at.substring(0, 10) : ''}</span>
+                            <button type="button" onclick="openInspectModal(${c.id})" class="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-primary hover:text-black font-bold text-xs text-white transition flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[15px]">visibility</span> Inspect Tracks
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (e) {
+            console.error('Failed to load campaigns:', e);
+        }
+    }
+
+    // Auto-refresh campaigns every 5 seconds when tab is active
+    if (!campaignsPollInterval) {
+        campaignsPollInterval = setInterval(() => {
+            const tab = document.getElementById('tab-artist_hub');
+            if (tab && !tab.classList.contains('hidden')) {
+                loadArtistCampaigns();
+            }
+        }, 5000);
+    }
+
+    // ==========================================
+    // 🔍 INSPECT MODAL DETAILS & SEARCH
+    // ==========================================
+    async function openInspectModal(campaignId) {
+        currentModalCampaignId = campaignId;
+        const modal = document.getElementById('inspect-modal');
+        modal.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/admin/artist_hub/campaign/${campaignId}/tracks`);
+            const data = await res.json();
+            if (data.status !== 'success') return;
+
+            const c = data.campaign;
+            modalTracksData = data.tracks || [];
+
+            document.getElementById('modal-artist-name').innerText = c.artist_name;
+            document.getElementById('modal-artist-avatar').src = c.avatar_url || 'https://via.placeholder.com/50';
+            document.getElementById('modal-channel-label').innerText = c.target_channel_id ? `Target Channel: ${c.target_channel_id}` : `Target: Cloud Vault Only`;
+
+            const completed = modalTracksData.filter(t => t.status === 'completed').length;
+            const total = modalTracksData.length;
+            const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            document.getElementById('modal-progress-text').innerText = `${pct}% (${completed} / ${total} delivered)`;
+            document.getElementById('modal-progress-bar').style.width = `${pct}%`;
+            document.getElementById('modal-tracks-count').innerText = `${total} tracks`;
+
+            const badge = document.getElementById('modal-status-badge');
+            if (pct >= 100) {
+                badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/20 text-primary border border-primary/30';
+                badge.innerText = 'Completed';
+            } else {
+                badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse';
+                badge.innerText = 'In Progress';
+            }
+
+            // Setup delete button handler
+            document.getElementById('btn-delete-campaign').onclick = () => deleteCampaign(campaignId);
+
+            renderModalTracks(modalTracksData);
+        } catch (e) {
+            console.error('Error opening inspect modal:', e);
+        }
+    }
+
+    function renderModalTracks(tracks) {
+        const tbody = document.getElementById('modal-tracks-tbody');
+        tbody.innerHTML = tracks.map((t, idx) => {
+            let statusBadge = '';
+            if (t.status === 'completed') {
+                statusBadge = `<span class="px-2 py-0.5 rounded-md bg-green-500/20 text-green-400 font-bold font-mono text-[10px] flex items-center gap-1"><span class="size-1.5 rounded-full bg-green-400"></span> Delivered</span>`;
+            } else if (t.status === 'downloading') {
+                statusBadge = `<span class="px-2 py-0.5 rounded-md bg-yellow-500/20 text-yellow-300 font-bold font-mono text-[10px] flex items-center gap-1 animate-pulse"><span class="size-1.5 rounded-full bg-yellow-400"></span> Downloading</span>`;
+            } else {
+                statusBadge = `<span class="px-2 py-0.5 rounded-md bg-white/5 text-gray-400 font-mono text-[10px]">In Line</span>`;
+            }
+
+            return `
+                <tr class="hover:bg-white/5 transition">
+                    <td class="py-2.5 text-center font-mono text-gray-500 text-[11px]">${idx + 1}</td>
+                    <td class="py-2.5">
+                        <div class="font-bold text-white text-xs">${t.title}</div>
+                        <div class="text-[10px] text-gray-400">${t.artist}</div>
+                    </td>
+                    <td class="py-2.5">
+                        <div class="text-white text-xs">${t.album_name || '-'}</div>
+                        <div class="text-[10px] text-gray-500 font-mono">${t.release_date || ''}</div>
+                    </td>
+                    <td class="py-2.5 text-center">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function filterModalTracks() {
+        const query = document.getElementById('modal-search-input').value.toLowerCase().trim();
+        if (!query) {
+            renderModalTracks(modalTracksData);
+            return;
+        }
+        const filtered = modalTracksData.filter(t => 
+            (t.title && t.title.toLowerCase().includes(query)) ||
+            (t.album_name && t.album_name.toLowerCase().includes(query))
+        );
+        renderModalTracks(filtered);
+    }
+
+    function closeInspectModal() {
+        document.getElementById('inspect-modal').classList.add('hidden');
+    }
+
+    async function deleteCampaign(campaignId) {
+        if (!confirm('Are you sure you want to remove this campaign card?')) return;
+        try {
+            const res = await fetch(`/api/admin/artist_hub/campaign/${campaignId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                closeInspectModal();
+                loadArtistCampaigns();
+                if (typeof showToast === 'function') showToast('Campaign deleted successfully.');
+            }
+        } catch (e) {
+            console.error('Delete error:', e);
         }
     }
 
