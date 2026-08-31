@@ -45,6 +45,20 @@ def connect_landing(token):
     resp.headers['Expires'] = '0'
     return resp
 
+# --- ۱.۱. صفحه معرفی رسمی پلتفرم (Product Landing Page) ---
+@auth_bp.route('/landing')
+def product_landing():
+    """
+    صفحه معرفی رسمی و پرزنت لایراز (Showcase Landing Page).
+    معرفی اکوسیستم، بات @LyrazBot، کانال @LyrazMusic و وب‌پلیر lyraz.ir.
+    """
+    return render_template(
+        'landing.html',
+        bot_username='LyrazBot',
+        channel_username='LyrazMusic',
+        base_domain='lyraz.ir'
+    )
+
 # --- ۲. API شروع هاب (توسط تلویزیون/کلاینت صدا زده می‌شود) ---
 @auth_bp.route('/api/auth/init', methods=['POST'])
 def init_session():
