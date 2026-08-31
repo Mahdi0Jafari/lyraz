@@ -744,7 +744,8 @@ def retry_campaign_failed_api(campaign_id):
             cover_url=trk['cover_url'],
             duration=trk['duration_seconds'],
             log_id=log_id,
-            target_channel_id=target_channel
+            target_channel_id=target_channel,
+            priority=15
         )
 
     db.commit()

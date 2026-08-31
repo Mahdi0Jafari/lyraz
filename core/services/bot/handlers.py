@@ -312,6 +312,9 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         duration = sp_data.get('duration')
 
         await status_msg.edit_text(f"🔎 Matching *{title}* on global database...", parse_mode=ParseMode.MARKDOWN)
+        from telegram.constants import ChatAction
+        try: await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception: pass
         results = await asyncio.to_thread(yt_service.search, sp_data['search_query'])
         if not results:
             await status_msg.edit_text("❌ Could not find a match for this specific track.")
@@ -337,7 +340,9 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             return get_user_current_session(update.effective_user.id), get_user_role(update.effective_user.id)
             
         current_token, role = await asyncio.to_thread(fetch_meta_sync)
-        target_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
+        from core.services.bot.database import get_user_referral_stats
+        ref_count, _, _ = await asyncio.to_thread(get_user_referral_stats, update.effective_user.id)
+        playlist_prio = 90 if (role == 'admin' or ref_count >= 3) else 45
         
         download_playlist_batch(
             tracks=tracks,
@@ -348,7 +353,8 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             session_token=current_token,
             chat_id=update.effective_chat.id,
             message_id=status_msg.message_id,
-            quality=target_quality
+            quality=Config.AUDIO_QUALITY,
+            priority=playlist_prio
         )
 
 
@@ -371,18 +377,31 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         await ensure_track_and_process(update, context, video_id=vid, title=title, artist=artist)
         return
 
-    # 2. RBAC Quality Check
-    download_quality = '320' if role in ['admin', 'pro'] else Config.AUDIO_QUALITY
+    # 2. Dynamic Smart Priority System & Unified Quality
+    # محاسبه اولویت صف بر اساس وفاداری، دعوت‌ها و نقش کاربر
+    from core.services.bot.database import get_user_referral_stats
+    ref_count, _, _ = await asyncio.to_thread(get_user_referral_stats, user.id)
 
-    await status_msg.edit_text(f"⏳ *{title}* added to the queue...", parse_mode=ParseMode.MARKDOWN)
+    if role == 'admin':
+        user_prio = 100
+        prio_label = "👑 VIP Admin"
+    elif role == 'pro' or ref_count >= 3:
+        user_prio = 80
+        prio_label = "⚡️ Fast-Track VIP"
+    else:
+        user_prio = 40
+        prio_label = "Standard Queue"
+
+    await status_msg.edit_text(f"⏳ *{title}* added to queue ({prio_label})...", parse_mode=ParseMode.MARKDOWN)
     
     download_and_process_track(
         video_id=vid, title=title, artist=artist, 
         user_id=user.id, user_first_name=user.first_name, 
         session_token=current_token, chat_id=update.effective_chat.id, message_id=status_msg.message_id,
-        quality=download_quality,
+        quality=Config.AUDIO_QUALITY,
         cover_url=cover_url,
-        duration=duration
+        duration=duration,
+        priority=user_prio
     )
 
 async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):

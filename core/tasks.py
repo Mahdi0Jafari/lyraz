@@ -349,7 +349,7 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
             log_id = cur.lastrowid
             conn.commit()
 
-        # ۴. ارسال ترک به صف اصلی دانلود و تحویل
+        # ۴. ارسال ترک به صف پس‌زمینه با اولویت پایه (تا جلوی کاربران زنده را نگیرد)
         download_and_process_track(
             video_id=vid,
             title=title,
@@ -363,7 +363,8 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
             cover_url=cover_url,
             duration=duration_sec,
             log_id=log_id,
-            target_channel_id=target_channel_id
+            target_channel_id=target_channel_id,
+            priority=10
         )
 
 # ==========================================
@@ -436,8 +437,18 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta = cached_track
             path = None
         else:
+            # محاسبه هوشمند بیت‌ریت برای فایل‌های طولانی (بیش از ۳۰ دقیقه) تا حجم فایل زیر ۴۸ مگابایت تلگرام بماند
+            effective_quality = quality
+            file_duration = duration or rich_metadata.get('duration')
+            if file_duration and file_duration > 1800:
+                # فرمول: (45MB * 8192kb) / مدت_ثانیه -> بیت‌ریت بهینه
+                calc_bitrate = int((45 * 8192) / file_duration)
+                safe_bitrate = max(64, min(128, calc_bitrate))
+                effective_quality = str(safe_bitrate)
+                logger.info(f"🎧 Long audio detected ({file_duration}s). Auto-adjusting quality to {effective_quality}kbps for Telegram 50MB limit.")
+
             # ۳. دانلود از یوتیوب یا ساندکلاد و تزریق متادیتا با Mutagen
-            path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
+            path = await yt_service.download(video_id, quality=effective_quality, metadata=rich_metadata)
             
             if not path:
                 if log_id:
@@ -575,6 +586,13 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
         if not is_batch and chat_id:
             try:
+                # نمایش وضعیت زنده تلگرام برای کاربر (Uploading Audio Status)
+                from telegram.constants import ChatAction
+                try:
+                    await local_bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                except Exception:
+                    pass
+
                 await deliver_audio_safe(
                     local_bot=local_bot, chat_id=chat_id, track_row=track_meta,
                     title=final_title, artist=final_artist, user_caption=user_caption,
@@ -840,6 +858,12 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 return False
 
     try:
+        # پین کردن پیام پیشرفت (بدون صدا) تا هنگام دریافت آهنگ‌ها در بالای صفحه چت بماند
+        try:
+            await local_bot.pin_chat_message(chat_id=chat_id, message_id=message_id, disable_notification=True)
+        except Exception as pin_err:
+            logger.debug(f"Could not pin progress message: {pin_err}")
+
         if cover_url:
             try:
                 await local_bot.send_photo(
@@ -858,6 +882,12 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
         all_workers_finished = True
         delivery_signal.set()
         await consumer_task
+
+        # پایان دانلود: آنپین کردن پیام پیشرفت از بالای صفحه چت
+        try:
+            await local_bot.unpin_chat_message(chat_id=chat_id, message_id=message_id)
+        except Exception:
+            pass
 
         try:
             await local_bot.edit_message_text(
