@@ -100,21 +100,15 @@
                     <!-- Populated via searchArtistsLive() -->
                 </div>
 
-                <!-- Selected Artist Chip (Active) -->
-                <div id="selected-artist-card" class="hidden p-3 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <img id="selected-artist-img" src="" class="size-10 rounded-full object-cover border border-primary/50 bg-black/40">
-                        <div>
-                            <div class="flex items-center gap-1.5">
-                                <h4 id="selected-artist-name" class="text-xs font-bold text-white">-</h4>
-                                <span class="material-symbols-outlined text-primary text-[15px]">verified</span>
-                            </div>
-                            <span id="selected-artist-sub" class="text-[10px] text-gray-400 font-mono">-</span>
-                        </div>
+                <!-- Multi-Artist Selection Bucket (Tags List) -->
+                <div id="selected-artists-container" class="hidden space-y-1.5 pt-1">
+                    <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-gray-400 font-bold">Selected Artists:</span>
+                        <span id="selected-artists-count" class="text-primary font-mono font-bold">0 artists</span>
                     </div>
-                    <button type="button" onclick="clearSelectedArtist()" class="size-6 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 flex items-center justify-center transition">
-                        <span class="material-symbols-outlined text-[14px]">close</span>
-                    </button>
+                    <div id="selected-artists-list" class="flex flex-wrap gap-2 p-2.5 rounded-xl bg-black/40 border border-primary/30 max-h-36 overflow-y-auto">
+                        <!-- Populated via renderSelectedArtistChips() -->
+                    </div>
                 </div>
             </div>
 
@@ -246,7 +240,7 @@
 <!-- 💡 JAVASCRIPT LOGIC                        -->
 <!-- ========================================== -->
 <script>
-    let selectedArtistData = null;
+    let selectedArtists = []; // Array of selected artist objects
     let campaignsPollInterval = null;
     let modalTracksData = [];
     let currentModalCampaignId = null;
@@ -265,7 +259,8 @@
 
     function closeNewArtistModal() {
         document.getElementById('new-artist-modal').classList.add('hidden');
-        clearSelectedArtist();
+        selectedArtists = [];
+        renderSelectedArtistChips();
     }
 
     function handleArtistSearchKey(e) {
@@ -286,7 +281,7 @@
 
         // If user pasted a full Spotify URL directly
         if (query.includes('spotify.com')) {
-            selectArtistByUrl(query);
+            addArtistByUrl(query);
             return;
         }
 
@@ -304,7 +299,7 @@
             if (data.status === 'success' && data.artists && data.artists.length > 0) {
                 resultsBox.classList.remove('hidden');
                 resultsBox.innerHTML = data.artists.map(a => `
-                    <div onclick="selectFoundArtist(${JSON.stringify(a).replace(/"/g, '&quot;')})" class="p-2 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition">
+                    <div onclick="addFoundArtist(${JSON.stringify(a).replace(/"/g, '&quot;')})" class="p-2 rounded-lg hover:bg-white/10 cursor-pointer flex items-center justify-between transition">
                         <div class="flex items-center gap-2.5">
                             <img src="${a.image || 'https://via.placeholder.com/40'}" class="size-8 rounded-full object-cover bg-black/40">
                             <div>
@@ -312,7 +307,7 @@
                                 <div class="text-[10px] text-gray-400 font-mono">${(a.followers || 0).toLocaleString()} Followers</div>
                             </div>
                         </div>
-                        <span class="text-[10px] font-bold text-primary px-2 py-1 rounded bg-primary/10">Select</span>
+                        <span class="text-[10px] font-bold text-primary px-2 py-1 rounded bg-primary/10 hover:bg-primary hover:text-black transition">➕ Add</span>
                     </div>
                 `).join('');
             } else {
@@ -327,25 +322,38 @@
         }
     }
 
-    function selectFoundArtist(artist) {
-        selectedArtistData = {
-            url: artist.spotify_url || `https://open.spotify.com/artist/${artist.id}`,
+    function addFoundArtist(artist) {
+        const url = artist.spotify_url || `https://open.spotify.com/artist/${artist.id}`;
+        // Check if already in array
+        if (selectedArtists.some(a => a.id === artist.id || a.url === url)) {
+            if (typeof showToast === 'function') showToast(`'${artist.name}' is already selected.`);
+            return;
+        }
+
+        selectedArtists.push({
+            id: artist.id,
             name: artist.name,
             image: artist.image,
-            id: artist.id,
+            url: url,
             followers: artist.followers
-        };
-        showSelectedArtistChip();
+        });
+
+        renderSelectedArtistChips();
+        document.getElementById('modal-artist-query').value = '';
+        document.getElementById('artist-search-results').classList.add('hidden');
     }
 
     function selectQuickArtist(name, url) {
-        selectedArtistData = { url: url, name: name, image: '', id: '', followers: 0 };
-        document.getElementById('modal-artist-query').value = name;
-        selectArtistByUrl(url);
+        addArtistByUrl(url, name);
     }
 
-    async function selectArtistByUrl(url) {
-        if (typeof showToast === 'function') showToast('Fetching artist metadata...');
+    async function addArtistByUrl(url, fallbackName = null) {
+        if (selectedArtists.some(a => a.url === url)) {
+            if (typeof showToast === 'function') showToast(`This artist is already selected.`);
+            return;
+        }
+
+        if (typeof showToast === 'function') showToast('Adding artist...');
         try {
             const res = await fetch('/api/admin/artist_hub/preview', {
                 method: 'POST',
@@ -354,35 +362,54 @@
             });
             const data = await res.json();
             if (data.status === 'success') {
-                selectedArtistData = {
+                selectedArtists.push({
                     url: url,
-                    name: data.data.artist_name,
+                    name: data.data.artist_name || fallbackName || 'Artist',
                     image: data.data.artist_image,
                     id: data.data.artist_id,
                     followers: data.data.followers,
                     preloadedTracks: data.data.tracks
-                };
-                showSelectedArtistChip();
+                });
+                renderSelectedArtistChips();
+                document.getElementById('modal-artist-query').value = '';
+                document.getElementById('artist-search-results').classList.add('hidden');
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Could not add artist'}`);
             }
         } catch (e) {
             console.error('URL parse error:', e);
         }
     }
 
-    function showSelectedArtistChip() {
-        document.getElementById('artist-search-results').classList.add('hidden');
-        const chip = document.getElementById('selected-artist-card');
-        chip.classList.remove('hidden');
-        document.getElementById('selected-artist-name').innerText = selectedArtistData.name;
-        document.getElementById('selected-artist-img').src = selectedArtistData.image || 'https://via.placeholder.com/40';
-        document.getElementById('selected-artist-sub').innerText = selectedArtistData.followers ? `${selectedArtistData.followers.toLocaleString()} Followers` : 'Spotify Artist';
+    function renderSelectedArtistChips() {
+        const container = document.getElementById('selected-artists-container');
+        const list = document.getElementById('selected-artists-list');
+        const count = document.getElementById('selected-artists-count');
+
+        if (selectedArtists.length === 0) {
+            container.classList.add('hidden');
+            list.innerHTML = '';
+            count.innerText = '0 artists';
+            return;
+        }
+
+        container.classList.remove('hidden');
+        count.innerText = `${selectedArtists.length} artist${selectedArtists.length > 1 ? 's' : ''}`;
+
+        list.innerHTML = selectedArtists.map((a, idx) => `
+            <div class="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs animate-in zoom-in-90 duration-150">
+                <img src="${a.image || 'https://via.placeholder.com/30'}" class="size-5 rounded-full object-cover bg-black/40">
+                <span class="font-bold text-white text-[11px] truncate max-w-[110px]">${a.name}</span>
+                <button type="button" onclick="removeSelectedArtist(${idx})" class="size-4 rounded-full bg-white/10 hover:bg-red-500/50 hover:text-white text-gray-400 flex items-center justify-center transition">
+                    <span class="material-symbols-outlined text-[12px]">close</span>
+                </button>
+            </div>
+        `).join('');
     }
 
-    function clearSelectedArtist() {
-        selectedArtistData = null;
-        document.getElementById('selected-artist-card').classList.add('hidden');
-        document.getElementById('artist-search-results').classList.add('hidden');
-        document.getElementById('modal-artist-query').value = '';
+    function removeSelectedArtist(index) {
+        selectedArtists.splice(index, 1);
+        renderSelectedArtistChips();
     }
 
     // ------------------------------------------
@@ -441,11 +468,11 @@
     }
 
     // ------------------------------------------
-    // 4. SUBMIT NEW CAMPAIGN
+    // 4. SUBMIT BATCH CAMPAIGNS FOR ALL ARTISTS
     // ------------------------------------------
     async function submitNewCampaign(btn) {
-        if (!selectedArtistData) {
-            if (typeof showToast === 'function') showToast('Please search and select an artist first.');
+        if (selectedArtists.length === 0) {
+            if (typeof showToast === 'function') showToast('Please select at least one artist.');
             return;
         }
 
@@ -470,55 +497,61 @@
         const limit = parseInt(document.getElementById('new-import-limit').value) || 0;
 
         btn.disabled = true;
-        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Launching...`;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Launching (${selectedArtists.length})...`;
 
-        try {
-            // If tracks were not preloaded, fetch preview first
-            let tracks = selectedArtistData.preloadedTracks;
-            if (!tracks || tracks.length === 0) {
-                if (typeof showToast === 'function') showToast('Fetching artist discography...');
-                const prevRes = await fetch('/api/admin/artist_hub/preview', {
+        let successCount = 0;
+
+        for (const artist of selectedArtists) {
+            try {
+                if (typeof showToast === 'function') showToast(`Extracting discography for ${artist.name}...`);
+                let tracks = artist.preloadedTracks;
+                if (!tracks || tracks.length === 0) {
+                    const prevRes = await fetch('/api/admin/artist_hub/preview', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: artist.url, deduplicate: true })
+                    });
+                    const prevData = await prevRes.json();
+                    if (prevData.status !== 'success') {
+                        throw new Error(prevData.message || 'Failed to extract');
+                    }
+                    tracks = prevData.data.tracks;
+                    artist.image = prevData.data.artist_image || artist.image;
+                    artist.id = prevData.data.artist_id || artist.id;
+                }
+
+                // Ingest Campaign
+                const res = await fetch('/api/admin/artist_hub/ingest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: selectedArtistData.url, deduplicate: true })
+                    body: JSON.stringify({
+                        tracks: tracks,
+                        artist_name: artist.name,
+                        spotify_id: artist.id,
+                        spotify_url: artist.url,
+                        avatar_url: artist.image,
+                        target_channel_id: targetChannel || null,
+                        limit: limit
+                    })
                 });
-                const prevData = await prevRes.json();
-                if (prevData.status !== 'success') {
-                    throw new Error(prevData.message || 'Failed to extract tracks');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    successCount++;
                 }
-                tracks = prevData.data.tracks;
-                selectedArtistData.image = prevData.data.artist_image || selectedArtistData.image;
-                selectedArtistData.id = prevData.data.artist_id || selectedArtistData.id;
+            } catch (err) {
+                console.error(`Error launching for ${artist.name}:`, err);
             }
+        }
 
-            // Ingest Campaign
-            const res = await fetch('/api/admin/artist_hub/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tracks: tracks,
-                    artist_name: selectedArtistData.name,
-                    spotify_id: selectedArtistData.id,
-                    spotify_url: selectedArtistData.url,
-                    avatar_url: selectedArtistData.image,
-                    target_channel_id: targetChannel || null,
-                    limit: limit
-                })
-            });
-            const data = await res.json();
+        btn.disabled = false;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">bolt</span> Launch Campaign`;
 
-            if (data.status === 'success') {
-                if (typeof showToast === 'function') showToast(`✅ Created campaign for ${selectedArtistData.name}!`);
-                closeNewArtistModal();
-                loadArtistCampaigns();
-            } else {
-                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Failed to create campaign'}`);
-            }
-        } catch (e) {
-            if (typeof showToast === 'function') showToast(`❌ Error: ${e.message}`);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">bolt</span> Launch Campaign`;
+        if (successCount > 0) {
+            if (typeof showToast === 'function') showToast(`✅ Successfully launched ${successCount} artist campaign(s)!`);
+            closeNewArtistModal();
+            loadArtistCampaigns();
+        } else {
+            if (typeof showToast === 'function') showToast('❌ Failed to launch campaigns. Check network and console.');
         }
     }
 
