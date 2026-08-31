@@ -106,6 +106,45 @@ class AdminAnalyticsService:
             )''')
             db.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_status ON ingestion_logs(status);')
             db.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_created ON ingestion_logs(created_at);')
+
+            # ==========================================
+            # 🌟 ARTIST VAULT CAMPAIGNS & TRACKS SCHEMA
+            # ==========================================
+            db.execute('''CREATE TABLE IF NOT EXISTS artist_campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artist_name TEXT NOT NULL,
+                spotify_id TEXT,
+                spotify_url TEXT,
+                avatar_url TEXT,
+                target_channel_id TEXT,
+                total_tracks INTEGER DEFAULT 0,
+                completed_tracks INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'processing',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_status ON artist_campaigns(status);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_channel ON artist_campaigns(target_channel_id);')
+
+            db.execute('''CREATE TABLE IF NOT EXISTS campaign_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                album_name TEXT,
+                release_date TEXT,
+                cover_url TEXT,
+                duration_seconds INTEGER DEFAULT 0,
+                spotify_url TEXT,
+                youtube_id TEXT,
+                status TEXT DEFAULT 'queued',
+                error_msg TEXT,
+                delivered_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES artist_campaigns(id) ON DELETE CASCADE
+            )''')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_campaign_tracks_cid ON campaign_tracks(campaign_id);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_campaign_tracks_status ON campaign_tracks(status);')
         except Exception as e:
             logger.error(f"Error ensuring ingestion schema: {e}")
 

@@ -546,11 +546,30 @@ def artist_hub_ingest_api():
     skipped_count = 0
 
     db = get_db()
+
+    # ۱. ایجاد رکورد کمپین در جدول artist_campaigns (با کلید اصلی id)
+    cur_camp = db.execute("""
+        INSERT INTO artist_campaigns (artist_name, spotify_id, spotify_url, avatar_url, target_channel_id, total_tracks, completed_tracks, status)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 'processing')
+    """, (
+        artist_name,
+        data.get('spotify_id', ''),
+        data.get('spotify_url', ''),
+        data.get('avatar_url', ''),
+        target_channel_id,
+        len(tracks)
+    ))
+    campaign_id = cur_camp.lastrowid
+    db.commit()
+
     for trk in tracks:
         title = trk.get('title')
         artist = trk.get('artist_string') or (', '.join(trk.get('artists', [])) if trk.get('artists') else artist_name)
         cover_url = (trk.get('album') or {}).get('cover_url') or trk.get('cover_url')
         duration_sec = trk.get('duration_seconds') or (trk.get('duration_ms', 0) // 1000)
+        album_name = (trk.get('album') or {}).get('name') or trk.get('album_name') or ''
+        release_date = (trk.get('album') or {}).get('release_date') or trk.get('release_date') or ''
+        spotify_url = trk.get('spotify_url') or ''
 
         # ۱. سرچ هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID
         query = f"{artist} {title}"
@@ -562,9 +581,34 @@ def artist_hub_ingest_api():
         if not vid:
             continue
 
-        # ۲. بررسی تکراری نبودن در جدول tracks
-        existing = db.execute("SELECT id FROM tracks WHERE youtube_id = ?", (vid,)).fetchone()
+        # ۲. ثبت در جدول campaign_tracks (با کلید خارجی campaign_id)
+        cur_trk = db.execute("""
+            INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, youtube_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+        """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
+        campaign_track_id = cur_trk.lastrowid
+
+        # ۳. بررسی تکراری نبودن در جدول tracks (اگر از قبل در مخزن موجود باشد)
+        existing = db.execute("SELECT * FROM tracks WHERE youtube_id = ?", (vid,)).fetchone()
         if existing:
+            # اگر در مخزن هست اما کانال مقصد تعیین شده، فوراً به کانال بفرست بدون دانلود مجدد!
+            if target_channel_id:
+                try:
+                    from core.tasks import deliver_audio_safe, get_bot_instance
+                    import asyncio
+                    local_bot = get_bot_instance()
+                    asyncio.run(deliver_audio_safe(
+                        local_bot=local_bot,
+                        chat_id=target_channel_id,
+                        track_row=dict(existing),
+                        title=existing['title'],
+                        artist=existing['performer'],
+                        user_caption=f"🎵 *{existing['title']}*\n👤 {existing['performer']}\n\n📻 @lyraz_ir"
+                    ))
+                except Exception as deliv_err:
+                    logger.error(f"Failed to deliver existing track to target channel: {deliv_err}")
+
+            db.execute("UPDATE campaign_tracks SET status = 'completed', delivered_at = CURRENT_TIMESTAMP WHERE id = ?", (campaign_track_id,))
             db.execute("""
                 INSERT INTO ingestion_logs (title, performer, youtube_id, source, status, error_msg, completed_at)
                 VALUES (?, ?, ?, ?, 'skipped', 'Already exists in vault', CURRENT_TIMESTAMP)
@@ -572,7 +616,7 @@ def artist_hub_ingest_api():
             skipped_count += 1
             continue
 
-        # ۳. ثبت در جدول صف ingestion_logs
+        # ۴. ثبت در جدول صف ingestion_logs
         cur = db.execute("""
             INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
             VALUES (?, ?, ?, ?, 'queued')
@@ -580,7 +624,7 @@ def artist_hub_ingest_api():
         log_id = cur.lastrowid
         db.commit()
 
-        # ۴. ارسال به Huey Queue با کانال هدف اختصاصی
+        # ۵. ارسال به Huey Queue با کانال هدف اختصاصی
         download_and_process_track(
             video_id=vid,
             title=title,
@@ -598,12 +642,134 @@ def artist_hub_ingest_api():
         )
         queued_count += 1
 
+    # به‌روزرسانی اولیه آمار تکمیل شده‌ها (تکراری‌ها بلافاصله تکمیل محسوب می‌شوند)
+    db.execute("""
+        UPDATE artist_campaigns 
+        SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed'),
+            status = CASE 
+                WHEN (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed') >= total_tracks 
+                THEN 'completed' 
+                ELSE 'processing' 
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (campaign_id, campaign_id, campaign_id))
+    db.commit()
+
     return jsonify({
         'status': 'success',
         'result': {
+            'campaign_id': campaign_id,
             'queued': queued_count,
             'skipped': skipped_count,
             'total': len(tracks),
             'target_channel': target_channel_id
         }
     })
+
+@admin_bp.route('/api/admin/artist_hub/campaigns', methods=['GET'])
+def get_artist_campaigns_api():
+    """واکشی لیست تمام کارت‌های کمپین آرتیست با آمار زنده و درصد پیشرفت"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    rows = db.execute("""
+        SELECT c.*, 
+               (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = c.id AND status = 'completed') as live_completed,
+               (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = c.id AND status = 'queued') as live_queued,
+               (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = c.id AND status = 'downloading') as live_downloading,
+               (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = c.id AND status = 'failed') as live_failed
+        FROM artist_campaigns c
+        ORDER BY c.created_at DESC
+    """).fetchall()
+    
+    campaigns = []
+    for r in rows:
+        d = dict(r)
+        total = d.get('total_tracks') or 0
+        comp = d.get('live_completed') or 0
+        d['progress_percent'] = round((comp / total) * 100) if total > 0 else 0
+        campaigns.append(d)
+
+    return jsonify({'status': 'success', 'campaigns': campaigns})
+
+@admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/tracks', methods=['GET'])
+def get_campaign_tracks_api(campaign_id):
+    """واکشی ریز وضعیت تک‌تک آهنگ‌های یک کمپین آرتیست برای مودال جزییات"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    if not c_row:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    tracks = db.execute("""
+        SELECT * FROM campaign_tracks 
+        WHERE campaign_id = ? 
+        ORDER BY id ASC
+    """, (campaign_id,)).fetchall()
+
+    return jsonify({
+        'status': 'success',
+        'campaign': dict(c_row),
+        'tracks': [dict(t) for t in tracks]
+    })
+
+@admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>', methods=['DELETE'])
+def delete_artist_campaign_api(campaign_id):
+    """حذف کارت یک کمپین (همراه با cascade روی آهنگ‌های کمپین)"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    db.execute("DELETE FROM campaign_tracks WHERE campaign_id = ?", (campaign_id,))
+    db.execute("DELETE FROM artist_campaigns WHERE id = ?", (campaign_id,))
+    db.commit()
+    return jsonify({'status': 'success'})
+
+@admin_bp.route('/api/admin/artist_hub/verify_channel', methods=['POST'])
+def verify_channel_api():
+    """بررسی دسترسی و ادمین بودن بات در کانال مورد نظر قبل از شروع کمپین"""
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    data = request.json or {}
+    chat_id = str(data.get('channel_id', '')).strip()
+
+    if not chat_id:
+        return jsonify({'status': 'error', 'message': 'Channel ID is required'}), 400
+
+    from core.tasks import get_bot_instance
+    import asyncio
+
+    async def _check_access():
+        bot = get_bot_instance()
+        async with bot:
+            me = await bot.get_me()
+            try:
+                chat = await bot.get_chat(chat_id=chat_id)
+            except Exception as e:
+                return False, f"Channel not found or bot has not been added: {e}", None
+
+            try:
+                member = await bot.get_chat_member(chat_id=chat_id, user_id=me.id)
+                # بررسی وضعیت ادمین یا سازنده
+                status = getattr(member, 'status', None)
+                can_post = getattr(member, 'can_post_messages', True) # در سوپرگروه‌ها معمولاً True یا ادمین
+                is_admin_member = status in ('administrator', 'creator')
+                if not is_admin_member:
+                    return False, f"Bot is present but NOT an Administrator in '{chat.title}'!", chat.title
+
+                return True, "Verified", {
+                    'title': chat.title,
+                    'username': chat.username,
+                    'chat_id': chat_id,
+                    'is_admin': True,
+                    'can_post': can_post
+                }
+            except Exception as e:
+                return False, f"Could not check bot permissions: {e}", getattr(chat, 'title', chat_id)
+
+    try:
+        ok, msg, info = asyncio.run(_check_access())
+        if ok:
+            return jsonify({'status': 'success', 'verified': True, 'info': info})
+        else:
+            return jsonify({'status': 'error', 'verified': False, 'message': msg, 'channel_title': info}), 400
+    except Exception as exc:
+        logger.error(f"Channel verification error: {exc}")
+        return jsonify({'status': 'error', 'verified': False, 'message': str(exc)}), 500
