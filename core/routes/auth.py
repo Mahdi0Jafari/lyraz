@@ -24,13 +24,26 @@ def generate_hub_token(length=7):
 def connect_landing(token):
     """
     وقتی کاربر QR Code روی تلویزیون را اسکن می‌کند، به این صفحه می‌آید.
-    هدایت کاربر به ربات تلگرام به همراه توکن هاب.
+    امکان انتخاب بین بات تلگرام (ارسال موزیک) یا باز کردن نسخه وب لایراز.
     """
-    # ساخت لینک عمیق (Deep Link) برای شروع ربات با توکن هاب
-    # مثال: https://t.me/LyrazMusicBot?start=session_a7k9p2x
-    telegram_link = f"https://t.me/{Config.BOT_USERNAME}?start=session_{token}"
+    db = get_db()
+    session = db.execute("SELECT * FROM sessions WHERE token = ?", (token,)).fetchone()
     
-    return render_template('connect.html', telegram_link=telegram_link)
+    telegram_link = f"https://t.me/{Config.BOT_USERNAME}?start=session_{token}"
+    web_live_link = f"/live/{token}"
+    
+    from flask import make_response
+    resp = make_response(render_template(
+        'connect.html', 
+        token=token, 
+        session=session, 
+        telegram_link=telegram_link,
+        web_live_link=web_live_link
+    ))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 # --- ۲. API شروع هاب (توسط تلویزیون/کلاینت صدا زده می‌شود) ---
 @auth_bp.route('/api/auth/init', methods=['POST'])
