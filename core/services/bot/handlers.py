@@ -4,7 +4,7 @@ import asyncio
 import uuid
 import re
 import logging
-from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
 
@@ -68,8 +68,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         live_url = f"{base_url}/live/{token}"
         remote_url = f"{base_url}/remote/{token}"
 
+        remote_btn = InlineKeyboardButton("🎛 Remote Control", web_app=WebAppInfo(url=remote_url)) if remote_url.startswith('https') else InlineKeyboardButton("🎛 Remote Control", url=remote_url)
         buttons = [
-            [InlineKeyboardButton("▶️ Open Web Player", url=live_url), InlineKeyboardButton("🎛 Remote Control", url=remote_url)],
+            [InlineKeyboardButton("▶️ Open Web Player", url=live_url), remote_btn],
             [InlineKeyboardButton("✏️ Rename Hub", callback_data=f"rename_{token}")],
             [InlineKeyboardButton("🔍 Search & Play Music", switch_inline_query_current_chat="")]
         ]
@@ -487,11 +488,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
         remote_url = f"{base_url}/remote/{token}"
+        remote_btn = InlineKeyboardButton("📱 Open Remote Control", web_app=WebAppInfo(url=remote_url)) if remote_url.startswith('https') else InlineKeyboardButton("📱 Open Remote Control", url=remote_url)
         await update.message.reply_text(
             "🎛 *Hub Mobile Remote Control*\n\n"
             "Tap below to manage playback, volume, and the playlist queue from your phone:",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📱 Open Remote Control", url=remote_url)]])
+            reply_markup=InlineKeyboardMarkup([[remote_btn]])
         )
         return
 
