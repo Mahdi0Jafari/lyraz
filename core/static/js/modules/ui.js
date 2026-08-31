@@ -96,6 +96,11 @@ export function updatePlayerInfo(track) {
     elements.cover.crossOrigin = "Anonymous"; 
     
     setTimeout(() => {
+        elements.cover.onerror = () => {
+            elements.cover.onerror = null;
+            elements.cover.src = '/cover/default';
+            elements.cover.style.opacity = 1;
+        };
         elements.cover.src = `/cover/${track.file_unique_id}`;
         elements.cover.onload = () => { 
             elements.cover.style.opacity = 1; 
@@ -137,7 +142,11 @@ export function renderPlaylist(tracks, loadTrackCallback) {
 
         div.innerHTML = `
             <div class="relative w-12 h-12 flex-shrink-0">
-                <img src="/cover/${track.file_unique_id}" class="w-full h-full rounded-lg object-cover bg-gray-800" loading="lazy" crossOrigin="Anonymous">
+                <img src="/cover/${track.file_unique_id}" 
+                     class="w-full h-full rounded-lg object-cover bg-gray-800" 
+                     loading="lazy" 
+                     crossOrigin="Anonymous"
+                     onerror="this.onerror=null; this.src='/cover/default';">
                 <div class="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><i class="ri-play-fill text-white"></i></div>
             </div>
             <div class="flex-1 min-w-0">
