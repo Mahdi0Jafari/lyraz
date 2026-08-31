@@ -86,14 +86,25 @@ def generate_progress_bar(current, total, length=12):
     return f"`[{bar}]` {int(percent * 100)}%"
 
 async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_caption, reply_markup=None):
-    """ارسال فایل صوتی با قابلیت خودترمیمی در صورت تغییر توکن ربات"""
+    """ارسال فایل صوتی با قابلیت خودترمیمی در صورت تغییر توکن ربات و فال‌بک امن کپشن"""
     file_id = track_row['file_id']
     try:
-        return await local_bot.send_audio(
-            chat_id=chat_id, audio=file_id, caption=user_caption,
-            title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
+        try:
+            return await local_bot.send_audio(
+                chat_id=chat_id, audio=file_id, caption=user_caption,
+                title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        except Exception as md_err:
+            if "can't find end of the entity" in str(md_err).lower() or "can't parse entities" in str(md_err).lower():
+                # حذف فرمت مارک‌داون در صورت وجود کاراکترهای خاص در نام آهنگ
+                clean_caption = user_caption.replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
+                return await local_bot.send_audio(
+                    chat_id=chat_id, audio=file_id, caption=clean_caption,
+                    title=title, performer=artist, parse_mode=None,
+                    reply_markup=reply_markup
+                )
+            raise md_err
     except Exception as send_err:
         storage_msg_id = track_row['storage_message_id'] if ('storage_message_id' in track_row.keys() and track_row['storage_message_id']) else None
         if storage_msg_id and Config.STORAGE_CHANNEL_ID:
@@ -324,66 +335,96 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         rich_metadata['title'] = final_title
         rich_metadata['artist'] = final_artist
 
-        # ۳. دانلود از یوتیوب یا ساندکلاد و تزریق متادیتا با Mutagen
-        path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
-        
-        if not path:
-            if log_id:
+        # ۲.۵. ⚡️ بررسی وجود ترک در مخزن (Cache Vault)
+        cached_track = None
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.row_factory = sqlite3.Row
+                c_row = conn.execute("SELECT * FROM tracks WHERE youtube_id = ?", (video_id,)).fetchone()
+                if c_row:
+                    cached_track = dict(c_row)
+        except Exception as c_err:
+            logger.warning(f"Cache check error: {c_err}")
+
+        if cached_track:
+            logger.info(f"⚡️ Vault Hit for '{final_title}' ({video_id})! Skipping YouTube download.")
+            track_meta = cached_track
+            path = None
+        else:
+            # ۳. دانلود از یوتیوب یا ساندکلاد و تزریق متادیتا با Mutagen
+            path = await yt_service.download(video_id, quality=quality, metadata=rich_metadata)
+            
+            if not path:
+                if log_id:
+                    try:
+                        with sqlite3.connect(Config.DATABASE_URI) as conn:
+                            conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Download failed' WHERE id = ?", (log_id,))
+                            conn.commit()
+                    except Exception: pass
+                
                 try:
                     with sqlite3.connect(Config.DATABASE_URI) as conn:
-                        conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Download failed' WHERE id = ?", (log_id,))
+                        conn.execute("UPDATE campaign_tracks SET status = 'failed', error_msg = 'Download failed' WHERE youtube_id = ?", (video_id,))
                         conn.commit()
                 except Exception: pass
-            if message_id and not is_batch:
-                await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
-            return False
 
-        # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
-        tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
-        if not tg_audio:
-            if log_id:
+                if message_id and not is_batch:
+                    await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
+                return False
+
+            # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
+            tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
+            if not tg_audio:
+                if log_id:
+                    try:
+                        with sqlite3.connect(Config.DATABASE_URI) as conn:
+                            conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Telegram storage archive failed' WHERE id = ?", (log_id,))
+                            conn.commit()
+                    except Exception: pass
+                
                 try:
                     with sqlite3.connect(Config.DATABASE_URI) as conn:
-                        conn.execute("UPDATE ingestion_logs SET status = 'failed', error_msg = 'Telegram storage archive failed' WHERE id = ?", (log_id,))
+                        conn.execute("UPDATE campaign_tracks SET status = 'failed', error_msg = 'Telegram archive failed' WHERE youtube_id = ?", (video_id,))
                         conn.commit()
                 except Exception: pass
-            if message_id and not is_batch:
-                await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
-            return False
 
-        actual_bitrate = int(quality) if quality else int(Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else 192)
+                if message_id and not is_batch:
+                    await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to archive track.")
+                return False
 
-        # ۴. ذخیره در دیتابیس
-        track_meta = {
-            'file_unique_id': tg_audio.file_unique_id,
-            'file_id': tg_audio.file_id,
-            'title': final_title, 'performer': final_artist,
-            'duration': tg_audio.duration, 'file_size': tg_audio.file_size,
-            'thumb_id': tg_audio.thumbnail.file_id if tg_audio.thumbnail else None,
-            'youtube_id': video_id, 'bitrate': actual_bitrate,
-            'storage_message_id': storage_msg_id
-        }
+            actual_bitrate = int(quality) if quality else int(Config.AUDIO_QUALITY if hasattr(Config, 'AUDIO_QUALITY') else 192)
 
-        sql = """
-            INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(youtube_id) DO UPDATE SET 
-                file_unique_id=excluded.file_unique_id,
-                file_id=excluded.file_id,
-                title=excluded.title,
-                performer=excluded.performer,
-                duration=excluded.duration,
-                file_size=excluded.file_size,
-                thumb_id=excluded.thumb_id,
-                bitrate=excluded.bitrate,
-                storage_message_id=excluded.storage_message_id
-        """
-        bot_db_exec(sql, (
-            track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
-            track_meta['performer'], track_meta['duration'], track_meta['file_size'], 
-            track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate'],
-            storage_msg_id
-        ))
+            # ۴. ذخیره در دیتابیس
+            track_meta = {
+                'file_unique_id': tg_audio.file_unique_id,
+                'file_id': tg_audio.file_id,
+                'title': final_title, 'performer': final_artist,
+                'duration': tg_audio.duration, 'file_size': tg_audio.file_size,
+                'thumb_id': tg_audio.thumbnail.file_id if tg_audio.thumbnail else None,
+                'youtube_id': video_id, 'bitrate': actual_bitrate,
+                'storage_message_id': storage_msg_id
+            }
+
+            sql = """
+                INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(youtube_id) DO UPDATE SET 
+                    file_unique_id=excluded.file_unique_id,
+                    file_id=excluded.file_id,
+                    title=excluded.title,
+                    performer=excluded.performer,
+                    duration=excluded.duration,
+                    file_size=excluded.file_size,
+                    thumb_id=excluded.thumb_id,
+                    bitrate=excluded.bitrate,
+                    storage_message_id=excluded.storage_message_id
+            """
+            bot_db_exec(sql, (
+                track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
+                track_meta['performer'], track_meta['duration'], track_meta['file_size'], 
+                track_meta['thumb_id'], track_meta['youtube_id'], track_meta['bitrate'],
+                storage_msg_id
+            ))
         
         if log_id:
             try:
