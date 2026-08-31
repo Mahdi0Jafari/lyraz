@@ -492,9 +492,22 @@ def clear_crawler_logs_api():
     db.commit()
     return jsonify({'status': 'success'})
 
-# ==========================================
-# 🌟 ARTIST DISCOGRAPHY & CHANNEL VAULT API
-# ==========================================
+@admin_bp.route('/api/admin/artist_hub/search', methods=['POST'])
+def artist_hub_search_api():
+    """جستجوی زنده خواننده در اسپاتیفای بر اساس نام"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    q = (data.get('q') or '').strip()
+    if not q:
+        return jsonify({'status': 'success', 'artists': []})
+
+    from core.services.spotify_extractor import spotify_extractor
+    try:
+        results = spotify_extractor.search_artist(q)
+        return jsonify({'status': 'success', 'artists': results})
+    except Exception as e:
+        logger.error(f"Artist search error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @admin_bp.route('/api/admin/artist_hub/preview', methods=['POST'])
 def artist_hub_preview_api():

@@ -90,6 +90,29 @@ class SpotifyExtractorService:
 
         raise RuntimeError(f"Failed to fetch {url} after 5 retries")
 
+    def search_artist(self, query, limit=6):
+        """جستجوی سریع خواننده بر اساس نام فارسی یا انگلیسی در اسپاتیفای"""
+        query = (query or "").strip()
+        if not query:
+            return []
+        data = self.api_get(f"{API_BASE}/search", params={
+            "q": query,
+            "type": "artist",
+            "limit": limit
+        })
+        artists = []
+        for a in data.get("artists", {}).get("items", []):
+            images = a.get("images", [])
+            artists.append({
+                "id": a.get("id"),
+                "name": a.get("name"),
+                "image": images[0]["url"] if images else None,
+                "followers": (a.get("followers") or {}).get("total", 0),
+                "genres": a.get("genres", []),
+                "spotify_url": (a.get("external_urls") or {}).get("spotify")
+            })
+        return artists
+
     def parse_spotify_link(self, link):
         """تشخیص نوع لینک (آرتیست، پلی‌لیست، آلبوم، ترک) و استخراج شناسه ID"""
         link = (link or "").strip()
