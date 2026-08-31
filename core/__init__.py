@@ -93,9 +93,10 @@ def create_app():
 
     @app.route('/robots.txt')
     def robots_txt():
-        content = """# Lyraz Robots.txt - 2026 Standards
+        content = """# Lyraz Robots.txt - 2026 SEO & GEO Master Standards
 User-agent: *
 Allow: /
+Allow: /landing
 Allow: /static/
 Allow: /llms.txt
 Allow: /llms-full.txt
@@ -103,9 +104,10 @@ Disallow: /admin
 Disallow: /api/
 Disallow: /remote/
 
-# AI Crawlers Policy (Search & Knowledge Ingestion)
+# AI Search & Large Language Model Crawlers (Explicit 2026 Policy)
 User-agent: GPTBot
 Allow: /
+Allow: /landing
 Allow: /llms.txt
 Allow: /llms-full.txt
 Disallow: /admin
@@ -113,6 +115,7 @@ Disallow: /api/
 
 User-agent: ClaudeBot
 Allow: /
+Allow: /landing
 Allow: /llms.txt
 Allow: /llms-full.txt
 Disallow: /admin
@@ -120,6 +123,7 @@ Disallow: /api/
 
 User-agent: PerplexityBot
 Allow: /
+Allow: /landing
 Allow: /llms.txt
 Allow: /llms-full.txt
 Disallow: /admin
@@ -127,6 +131,7 @@ Disallow: /api/
 
 User-agent: Google-Extended
 Allow: /
+Allow: /landing
 Allow: /llms.txt
 Allow: /llms-full.txt
 Disallow: /admin
@@ -134,8 +139,17 @@ Disallow: /api/
 
 User-agent: Applebot
 Allow: /
+Allow: /landing
 Disallow: /admin
 Disallow: /api/
+
+User-agent: Amazonbot
+Allow: /
+Allow: /landing
+
+User-agent: Bytespider
+Allow: /
+Allow: /landing
 
 Sitemap: https://lyraz.ir/sitemap.xml
 """
@@ -145,15 +159,29 @@ Sitemap: https://lyraz.ir/sitemap.xml
     def sitemap_xml():
         content = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://lyraz.ir/</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://lyraz.ir/"/>
     <xhtml:link rel="alternate" hreflang="fa" href="https://lyraz.ir/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://lyraz.ir/"/>
-    <lastmod>2026-08-29</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://lyraz.ir/landing</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lyraz.ir/landing"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lyraz.ir/landing"/>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lyraz.ir/static/images/brand/lyraz_sound_orb.webp</image:loc>
+      <image:title>Lyraz 3D Iridescent Sound Sphere</image:title>
+      <image:caption>Collaborative Audio Streaming Grid and Jukebox Hub</image:caption>
+    </image:image>
   </url>
 </urlset>
 """
@@ -162,20 +190,23 @@ Sitemap: https://lyraz.ir/sitemap.xml
     @app.route('/llms.txt')
     def llms_txt():
         content = """# Lyraz
-> High-Resolution Synchronized Audio Streaming & Collaborative Music Hub
+> High-Resolution Synchronized Audio Streaming & Collaborative Sound Grid
 
-Lyraz (https://lyraz.ir) is a decentralized web audio player and live collaborative music hub. It enables zero-latency synchronized audio playback across desktop, mobile, and Smart TV screens, integrated with a high-performance Telegram audio vault.
+Lyraz (https://lyraz.ir) is a decentralized web audio player and live collaborative music hub. It enables zero-latency synchronized audio playback across desktop, mobile, and Smart TV screens, integrated with a high-performance Telegram audio vault and Spotify lossless streaming.
 
 ## Core Capabilities
 - **Synchronized Live Hubs:** Stream audio synchronously across multiple screens using QR-based session pairing.
-- **Telegram Bot Audio Vault (@LyrazBot):** Instant downloads and queue dispatching for Spotify playlists and YouTube tracks at up to 320kbps.
+- **Telegram Bot Audio Vault (@LyrazBot):** Instant downloads and queue dispatching for Spotify playlists and YouTube tracks at up to 320kbps lossless.
 - **Synchronized Real-Time Lyrics:** Millisecond-accurate synchronized lyrics rendering with dynamic background ambient glow.
 - **Curated Music Magazine (@LyrazMusic):** Editorial music curation, timeless sounds, hidden gems, and storytelling.
+- **Showcase & Manifesto:** https://lyraz.ir/landing
 
 ## Entities & Links
 - Website: https://lyraz.ir
+- Showcase Landing: https://lyraz.ir/landing
 - Telegram Bot: https://t.me/LyrazBot
 - Telegram Channel: https://t.me/LyrazMusic
+- GitHub Repository: https://github.com/Mahdi0Jafari/lyraz
 - Full Documentation: https://lyraz.ir/llms-full.txt
 """
         return Response(content, mimetype='text/plain; charset=utf-8')
@@ -185,18 +216,21 @@ Lyraz (https://lyraz.ir) is a decentralized web audio player and live collaborat
         content = """# Lyraz - Comprehensive Platform & Technical Specification
 
 ## Overview
-Lyraz is a next-generation distributed audio streaming system and collaborative live player developed for cross-screen entertainment, parties, and personal high-fidelity music playback.
+Lyraz is a next-generation distributed audio streaming system and collaborative live player developed for cross-screen entertainment, venues, creative hubs, and personal high-fidelity music playback.
 
-## Architecture
+## Architecture & Technology Stack
 - **Web Player (https://lyraz.ir):** Dark OLED interface built with Vanilla CSS, Server-Sent Events (SSE) for zero-latency device synchronization, and hardware-accelerated dynamic blur shaders.
+- **Showcase Portal (https://lyraz.ir/landing):** High-end studio light aesthetic inspired by Teenage Engineering and Braun design, featuring interactive 3D sound sphere models and scroll-triggered animations.
 - **Bot Engine (@LyrazBot):** Python-based asynchronous worker engine interfacing with Telegram Bot API, yt-dlp, and Spotify metadata APIs.
-- **Audio Quality:** Native support for 128kbps, 192kbps, and lossless 320kbps audio bitrate tiers.
+- **Audio Quality:** Native support for 128kbps, 192kbps, and lossless 320kbps audio bitrate tiers with automated 1:1 square cover art processing.
 - **Device Pairing:** QR-code based instant pairing without traditional username/password barriers.
 
 ## Official Channels & Community
 - **Website:** https://lyraz.ir
+- **Showcase:** https://lyraz.ir/landing
 - **Music Channel:** https://t.me/LyrazMusic ("Lyraz | Music & Stories")
 - **Bot Interface:** https://t.me/LyrazBot ("@LyrazBot")
+- **Open Source:** https://github.com/Mahdi0Jafari/lyraz
 """
         return Response(content, mimetype='text/plain; charset=utf-8')
 
