@@ -164,7 +164,10 @@
         <!-- Center Stage: The Floating Iridescent Pearl Sphere with Orbital Ring -->
         <div class="relative w-full flex flex-col items-center justify-center min-h-[440px] sm:min-h-[560px] lg:min-h-[700px]">
             
-            <!-- GIGANTIC NEON-LIME HEADLINE (RESPONSIVE TYPOGRAPHY) -->
+            <!-- Ambient Stage Glow Behind Everything (z-0) -->
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-[340px] sm:size-[480px] lg:size-[620px] bg-limeAccent/15 rounded-full blur-[100px] pointer-events-none z-0"></div>
+
+            <!-- GIGANTIC NEON-LIME HEADLINE (CRISP FOREGROUND LAYER z-10) -->
             <div class="relative z-10 select-none pointer-events-none w-full px-2">
                 <h1 class="gen-hero-title text-[13.5vw] sm:text-[13vw] lg:text-[12vw] tracking-tight leading-[0.88] block break-words sm:whitespace-nowrap">
                     TURN YOUR WORDS TO
@@ -174,18 +177,14 @@
                 </h1>
             </div>
 
-            <!-- THE 3D IRIDESCENT SOUND SPHERE (CENTER INTERACTION) -->
+            <!-- THE 3D IRIDESCENT SOUND SPHERE (PRISTINE FOREGROUND INTERACTION z-20) -->
             <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-auto orb-levitate cursor-pointer group">
-                
-                <!-- Gentle Radial Glow Behind Orb -->
-                <div class="absolute inset-0 bg-limeAccent/20 rounded-full blur-3xl glow-pulse -z-10"></div>
-                
                 <!-- The 3D Pearl Sphere Asset -->
                 <a href="https://lyraz.ir" class="relative size-60 sm:size-80 md:size-96 lg:size-[480px] flex items-center justify-center cursor-pointer block" title="Launch Lyraz Web Player">
                     <img 
                         src="/static/images/brand/lyraz_sound_orb.webp" 
                         alt="Lyraz Iridescent Sound Orb" 
-                        class="size-full object-contain drop-shadow-[0_25px_60px_rgba(0,0,0,0.12)] group-hover:scale-105 transition-transform duration-700"
+                        class="size-full object-contain drop-shadow-[0_20px_45px_rgba(0,0,0,0.14)] group-hover:scale-105 transition-transform duration-700"
                     >
                 </a>
             </div>
