@@ -106,9 +106,22 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
                 )
             raise md_err
     except Exception as send_err:
-        storage_msg_id = track_row['storage_message_id'] if ('storage_message_id' in track_row.keys() and track_row['storage_message_id']) else None
-        if storage_msg_id and Config.STORAGE_CHANNEL_ID:
-            logger.warning(f"File ID delivery failed. Attempting self-healing via storage msg {storage_msg_id}...")
+        err_msg = str(send_err).lower()
+        # در صورت خطای محدودیت سرعت تلگرام (FloodWait)، بخواب و دوباره بفرست
+        if "flood control" in err_msg or "retry in" in err_msg:
+            wait_seconds = 25
+            m = re.search(r'retry in (\d+)', err_msg)
+            if m:
+                wait_seconds = int(m.group(1)) + 2
+            logger.warning(f"⏳ Flood Control triggered. Sleeping {wait_seconds}s before retrying...")
+            await asyncio.sleep(wait_seconds)
+            return await deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_caption, reply_markup)
+
+        # فقط و فقط اگر خود شناسه فایل (file_id) نامعتبر بود خودترمیمی انجام شود
+        is_invalid_file = any(err in err_msg for err in ["file_id_invalid", "wrong file identifier", "file is too big", "can't use file", "file identifier"])
+        storage_msg_id = track_row.get('storage_message_id') if isinstance(track_row, dict) else (track_row['storage_message_id'] if 'storage_message_id' in track_row.keys() else None)
+        if is_invalid_file and storage_msg_id and Config.STORAGE_CHANNEL_ID:
+            logger.warning(f"File ID invalid. Attempting safe self-healing via storage msg {storage_msg_id}...")
             try:
                 fwd = await local_bot.forward_message(
                     chat_id=Config.STORAGE_CHANNEL_ID,
@@ -117,7 +130,9 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
                 )
                 if fwd and fwd.audio:
                     new_file_id = fwd.audio.file_id
-                    bot_db_exec("UPDATE tracks SET file_id=? WHERE id=?", (new_file_id, track_row['id']))
+                    t_id = track_row.get('id') if isinstance(track_row, dict) else (track_row['id'] if 'id' in track_row.keys() else None)
+                    if t_id:
+                        bot_db_exec("UPDATE tracks SET file_id=? WHERE id=?", (new_file_id, t_id))
                     try:
                         await local_bot.delete_message(chat_id=Config.STORAGE_CHANNEL_ID, message_id=fwd.message_id)
                     except Exception:
@@ -572,6 +587,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
 
         # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
+        channel_delivery_ok = True
+        channel_delivery_err = None
         if target_channel_id:
             try:
                 channel_caption = f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @LyrazMusic\n🤖 @LyrazBot"
@@ -584,17 +601,28 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     user_caption=channel_caption
                 )
                 logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
+                # ایجاد وقفه امن ۱.۵ ثانیه‌ای برای جلوگیری کامل از FloodWait تلگرام
+                await asyncio.sleep(1.5)
             except Exception as ch_err:
+                channel_delivery_ok = False
+                channel_delivery_err = str(ch_err)
                 logger.error(f"Failed to deliver track to target channel {target_channel_id}: {ch_err}")
 
-        # ۹. به‌روزرسانی وضعیت کمپین آرتیست در دیتابیس (در صورت وجود)
+        # ۹. به‌روزرسانی وضعیت کمپین آرتیست در دیتابیس (بر اساس نتیجه واقعی ارسال به کانال)
         try:
             with sqlite3.connect(Config.DATABASE_URI) as conn:
-                conn.execute("""
-                    UPDATE campaign_tracks 
-                    SET status = 'completed', delivered_at = CURRENT_TIMESTAMP 
-                    WHERE youtube_id = ?
-                """, (video_id,))
+                if channel_delivery_ok:
+                    conn.execute("""
+                        UPDATE campaign_tracks 
+                        SET status = 'completed', error_msg = NULL, delivered_at = CURRENT_TIMESTAMP 
+                        WHERE youtube_id = ?
+                    """, (video_id,))
+                else:
+                    conn.execute("""
+                        UPDATE campaign_tracks 
+                        SET status = 'failed', error_msg = ? 
+                        WHERE youtube_id = ?
+                    """, (channel_delivery_err, video_id))
                 
                 # دریافت campaign_id
                 c_row = conn.execute("SELECT campaign_id FROM campaign_tracks WHERE youtube_id = ?", (video_id,)).fetchone()
