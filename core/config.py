@@ -29,6 +29,10 @@ class Config:
     _raw_channels = os.getenv('MANDATORY_CHANNELS', '')
     MANDATORY_CHANNELS = [c.strip() for c in _raw_channels.split(',') if c.strip()]
 
+    # --- تنظیمات اکسترکتور اسپاتیفای (Spotify Official API) ---
+    SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID', '')
+    SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET', '')
+
     # --- 3. لایه پخش و استریم (Media Engines) ---
     # تنظیم کیفیت پیش‌فرض صدا (رشته‌ای: '128', '192', '320')
     AUDIO_QUALITY = os.getenv('AUDIO_QUALITY', '192')

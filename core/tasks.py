@@ -275,19 +275,19 @@ async def process_auto_broadcast(local_bot, file_id, title, artist, user_first_n
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None):
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None, target_channel_id=None):
     """ورکر تسک برای دانلود و پردازش یک آهنگ (Non-blocking)"""
     logger.info(f"🚀 Task Started: {title} ({video_id})")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration, log_id=log_id)
+            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration, log_id=log_id, target_channel_id=target_channel_id)
         )
     finally:
         loop.close()
 
-async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None, log_id=None):
+async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None, log_id=None, target_channel_id=None):
     """
     is_batch: اگر True باشد، پیام وضعیتی که در هندلر ساخته شده (message_id) پاک نمی‌شود، 
     چون آن پیام قرار است به عنوان نوار پیشرفت کل پلی‌لیست عمل کند. اما فایل صوتی حتماً ارسال می‌شود.
@@ -459,6 +459,22 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
             # ۷. 🔥 اجرای موتور Automation Rules 🔥
             await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
+
+            # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
+            if target_channel_id:
+                try:
+                    await deliver_audio_safe(
+                        local_bot=local_bot,
+                        chat_id=target_channel_id,
+                        track_row=track_meta,
+                        title=final_title,
+                        artist=final_artist,
+                        user_caption=f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @lyraz_ir"
+                    )
+                    logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
+                except Exception as ch_err:
+                    logger.error(f"Failed to deliver track to target channel {target_channel_id}: {ch_err}")
+
             return track_meta
         else:
             return (track_meta, final_title, final_artist, user_caption, reply_markup)

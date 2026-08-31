@@ -3,7 +3,7 @@ let isBulkMode = false;
 
 // --- 1. TABS SYSTEM ---
 function switchTab(tabName) {
-    const tabs = ['library', 'crawler', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
+    const tabs = ['library', 'crawler', 'artist_hub', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
     
     // Hide all tabs
     tabs.forEach(t => {
@@ -24,6 +24,7 @@ function switchTab(tabName) {
     const titles = {
         'library': 'Music Library', 
         'crawler': 'Catalog Pre-Warmer & Queue',
+        'artist_hub': 'Artist Hub & Channel Vault',
         'automation': 'Automation Rules', 
         'channels': 'Channel Manager',
         'devices': 'Device Manager',

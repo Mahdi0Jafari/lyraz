@@ -491,3 +491,119 @@ def clear_crawler_logs_api():
     db.execute("DELETE FROM ingestion_logs WHERE status IN ('completed', 'skipped')")
     db.commit()
     return jsonify({'status': 'success'})
+
+# ==========================================
+# 🌟 ARTIST DISCOGRAPHY & CHANNEL VAULT API
+# ==========================================
+
+@admin_bp.route('/api/admin/artist_hub/preview', methods=['POST'])
+def artist_hub_preview_api():
+    """استخراج پیش‌نمایش آرتیست یا پلی‌لیست اسپاتیفای"""
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    data = request.json or {}
+    url = (data.get('url') or '').strip()
+    dedup = data.get('deduplicate', True)
+    
+    if not url:
+        return jsonify({'status': 'error', 'message': 'Spotify URL or ID is required'}), 400
+
+    from core.services.spotify_extractor import spotify_extractor
+    try:
+        item_type, item_id = spotify_extractor.parse_spotify_link(url)
+        if item_type == 'artist':
+            res = spotify_extractor.fetch_artist_discography(item_id, deduplicate_by_name=dedup)
+            return jsonify({'status': 'success', 'type': 'artist', 'data': res})
+        elif item_type == 'playlist':
+            res = spotify_extractor.fetch_playlist_tracks(item_id)
+            return jsonify({'status': 'success', 'type': 'playlist', 'data': res})
+        else:
+            return jsonify({'status': 'error', 'message': f"Extraction not supported for link type '{item_type}'. Please provide an Artist or Playlist URL."}), 400
+    except Exception as e:
+        logger.error(f"Artist Hub preview error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@admin_bp.route('/api/admin/artist_hub/ingest', methods=['POST'])
+def artist_hub_ingest_api():
+    """تزریق دسته‌ای آهنگ‌های آرتیست به صف ورکر با مقصد کانال اختصاصی"""
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    data = request.json or {}
+    tracks = data.get('tracks', [])
+    artist_name = data.get('artist_name', 'Various Artists')
+    target_channel_id = data.get('target_channel_id') or None
+    limit = int(data.get('limit', 0))
+
+    if not tracks:
+        return jsonify({'status': 'error', 'message': 'No tracks provided for ingestion'}), 400
+
+    if limit > 0:
+        tracks = tracks[:limit]
+
+    from core.services.crawler import crawler_service
+    from core.tasks import download_and_process_track
+    import time
+    
+    queued_count = 0
+    skipped_count = 0
+
+    db = get_db()
+    for trk in tracks:
+        title = trk.get('title')
+        artist = trk.get('artist_string') or (', '.join(trk.get('artists', [])) if trk.get('artists') else artist_name)
+        cover_url = (trk.get('album') or {}).get('cover_url') or trk.get('cover_url')
+        duration_sec = trk.get('duration_seconds') or (trk.get('duration_ms', 0) // 1000)
+
+        # ۱. سرچ هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID
+        query = f"{artist} {title}"
+        yt_res = crawler_service.yt.search(query)
+        if not yt_res:
+            continue
+            
+        vid = yt_res[0].get('videoId')
+        if not vid:
+            continue
+
+        # ۲. بررسی تکراری نبودن در جدول tracks
+        existing = db.execute("SELECT id FROM tracks WHERE youtube_id = ?", (vid,)).fetchone()
+        if existing:
+            db.execute("""
+                INSERT INTO ingestion_logs (title, performer, youtube_id, source, status, error_msg, completed_at)
+                VALUES (?, ?, ?, ?, 'skipped', 'Already exists in vault', CURRENT_TIMESTAMP)
+            """, (title, artist, vid, f"artist_hub:{artist_name[:20]}"))
+            skipped_count += 1
+            continue
+
+        # ۳. ثبت در جدول صف ingestion_logs
+        cur = db.execute("""
+            INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+            VALUES (?, ?, ?, ?, 'queued')
+        """, (title, artist, vid, f"artist_hub:{artist_name[:20]}"))
+        log_id = cur.lastrowid
+        db.commit()
+
+        # ۴. ارسال به Huey Queue با کانال هدف اختصاصی
+        download_and_process_track(
+            video_id=vid,
+            title=title,
+            artist=artist,
+            user_id=0,
+            user_first_name="ArtistHub",
+            session_token=None,
+            chat_id=None,
+            message_id=None,
+            quality=None,
+            cover_url=cover_url,
+            duration=duration_sec,
+            log_id=log_id,
+            target_channel_id=target_channel_id
+        )
+        queued_count += 1
+
+    return jsonify({
+        'status': 'success',
+        'result': {
+            'queued': queued_count,
+            'skipped': skipped_count,
+            'total': len(tracks),
+            'target_channel': target_channel_id
+        }
+    })
