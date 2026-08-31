@@ -223,20 +223,48 @@ DEFAULT_COVER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="600" heigh
   <path d="M260 210v180c0 16.5-13.5 30-30 30s-30-13.5-30-30 13.5-30 30-30c5.3 0 10.3 1.4 14.6 3.8V250l110-25v145c0 16.5-13.5 30-30 30s-30-13.5-30-30 13.5-30 30-30c5.3 0 10.3 1.4 14.6 3.8V195L260 210z" fill="#0df233"/>
 </svg>"""
 
-COVER_CACHE = {}
+COVER_BYTES_CACHE = {}
+
+def process_cover_image(img_bytes):
+    """تبدیل هر عکس به کاور مربعی استاندارد 500x500 بدون کادرهای عریض و با فرمت بهینه JPEG"""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        w, h = img.size
+        min_dim = min(w, h)
+        left = (w - min_dim) // 2
+        top = (h - min_dim) // 2
+        img_cropped = img.crop((left, top, left + min_dim, top + min_dim))
+        img_resized = img_cropped.resize((500, 500), Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        img_resized.save(out, format='JPEG', quality=88, optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(f"Cover Processing Error: {e}")
+        return img_bytes
 
 @stream_bp.route('/cover/<unique_id>')
 def get_cover(unique_id):
     """
-    سرویس هوشمند ارائه کاور مجهز به کش حافظه، هدرهای CORS و فال‌بک لوکال SVG
+    سرویس مرکزی و پرسرعت ارائه کاور با کش مستقیم، تبدیل به ابعاد مربع ۱:۱ و هدر کامل CORS.
+    جلوگیری از خطای مسدود شدن CORS و کاورهای خراب یا غیرمربع.
     """
-    if unique_id in COVER_CACHE:
-        cached_url = COVER_CACHE[unique_id]
-        if cached_url:
-            resp = redirect(cached_url)
-            resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Cache-Control'] = 'public, max-age=86400'
-            return resp
+    if unique_id == 'default':
+        return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=604800'
+        })
+
+    # 1. بازیابی از کش مستقیم بایت‌ها در حافظه
+    if unique_id in COVER_BYTES_CACHE:
+        cached_data, mime = COVER_BYTES_CACHE[unique_id]
+        return Response(cached_data, mimetype=mime, headers={
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=604800, immutable'
+        })
 
     db = get_db()
     track = db.execute("SELECT thumb_id, title, performer, youtube_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
@@ -247,40 +275,45 @@ def get_cover(unique_id):
             'Cache-Control': 'public, max-age=86400'
         })
 
-    # 1. کاور رسمی باکیفیت از iTunes
+    # لیست منابع احتمالی برای یافتن کاور
+    candidate_urls = []
+
+    # الف) جستجوی کاور رسمی و مربعی از iTunes
     try:
         itunes_data = metadata_service.fetch_itunes_data(track['performer'], track['title'])
         if itunes_data and itunes_data.get('cover_url'):
-            COVER_CACHE[unique_id] = itunes_data['cover_url']
-            resp = redirect(itunes_data['cover_url'])
-            resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Cache-Control'] = 'public, max-age=86400'
-            return resp
+            candidate_urls.append(itunes_data['cover_url'])
     except Exception as e:
         logger.warning(f"iTunes fetch cover error: {e}")
 
-    # 2. Fallback به تامنیل تلگرام
+    # ب) تصویر تامنیل تلگرام
     if track['thumb_id']:
         try:
-            link = get_tg_link(track['thumb_id'])
-            if link:
-                COVER_CACHE[unique_id] = link
-                resp = redirect(link)
-                resp.headers['Access-Control-Allow-Origin'] = '*'
-                resp.headers['Cache-Control'] = 'public, max-age=86400'
-                return resp
+            tg_link = get_tg_link(track['thumb_id'])
+            if tg_link:
+                candidate_urls.append(tg_link)
         except Exception:
             pass
 
-    # 3. Fallback به تصویر مستقیم و باکیفیت ویدیوی یوتیوب
+    # ج) تصویر ویدیوی یوتیوب
     if track['youtube_id']:
-        yt_cover = f"https://i.ytimg.com/vi/{track['youtube_id']}/hqdefault.jpg"
-        COVER_CACHE[unique_id] = yt_cover
-        resp = redirect(yt_cover)
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Cache-Control'] = 'public, max-age=86400'
-        return resp
+        candidate_urls.append(f"https://i.ytimg.com/vi/{track['youtube_id']}/hqdefault.jpg")
 
+    # تلاش برای دانلود مستقیم و تبدیل به تصویر مربعی استاندارد
+    for url in candidate_urls:
+        try:
+            r = http_session.get(url, timeout=4)
+            if r.status_code == 200 and len(r.content) > 500:
+                processed_bytes = process_cover_image(r.content)
+                COVER_BYTES_CACHE[unique_id] = (processed_bytes, 'image/jpeg')
+                return Response(processed_bytes, mimetype='image/jpeg', headers={
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=604800, immutable'
+                })
+        except Exception as err:
+            logger.warning(f"Failed to proxy cover from {url}: {err}")
+
+    # در صورت عدم وجود هرگونه عکس، بازگرداندن کاور پیش‌فرض SVG
     return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=86400'
