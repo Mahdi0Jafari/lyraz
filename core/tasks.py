@@ -437,10 +437,10 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             track_meta = cached_track
             path = None
         else:
-            # محاسبه هوشمند بیت‌ریت برای فایل‌های طولانی (بیش از ۳۰ دقیقه) تا حجم فایل زیر ۴۸ مگابایت تلگرام بماند
+            # محاسبه هوشمند بیت‌ریت برای فایل‌های طولانی (بیش از ۲۰ دقیقه) تا حجم فایل زیر ۴۸ مگابایت تلگرام بماند
             effective_quality = quality
             file_duration = duration or rich_metadata.get('duration')
-            if file_duration and file_duration > 1800:
+            if file_duration and file_duration > 1200:
                 # فرمول: (45MB * 8192kb) / مدت_ثانیه -> بیت‌ریت بهینه
                 calc_bitrate = int((45 * 8192) / file_duration)
                 safe_bitrate = max(64, min(128, calc_bitrate))
@@ -464,9 +464,22 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                         conn.commit()
                 except Exception: pass
 
-                if message_id and not is_batch:
-                    await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Download Failed.")
-                return False
+            # ۳.۵. 🛡 بازرسی نهایی حجم فایل برحسب سایز واقعی دیسک (Strict Size Guard)
+            # اگر حجم فایل خروجی تحت هر شرایطی بالای ۴۸ مگابایت بود، با ffmpeg فشرده‌سازی سریع انجام بده
+            try:
+                actual_size_bytes = os.path.getsize(path)
+                if actual_size_bytes > 48 * 1024 * 1024:
+                    logger.warning(f"⚠️ File size ({actual_size_bytes / (1024*1024):.1f}MB) exceeds 48MB! Compressing via FFmpeg...")
+                    compressed_path = os.path.join(yt_service.download_dir, f"cmp_{video_id}.mp3")
+                    # فشرده‌سازی سریع به ۹۶kbps
+                    cmd = f'ffmpeg -y -i "{path}" -b:a 96k -map a "{compressed_path}"'
+                    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    await proc.communicate()
+                    if os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
+                        os.replace(compressed_path, path)
+                        logger.info(f"✅ Successfully compressed {video_id}.mp3 down to {os.path.getsize(path) / (1024*1024):.1f}MB!")
+            except Exception as sz_err:
+                logger.error(f"Size guard compression error: {sz_err}")
 
             # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
             tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
