@@ -159,8 +159,6 @@ class CatalogAutopilotService:
 
     def launch_artist_campaign(self, spotify_id, target_channel_id=None):
         """راه‌اندازی فوری کمپین استخراج و دانلود دیسکوگرافی یک خواننده از اسپاتیفای"""
-        from core.services.admin_service import admin_service
-        
         # ۱. واکشی دیسکوگرافی از اسپاتیفای
         disco = spotify_extractor.fetch_artist_discography(spotify_id)
         if not disco or not disco.get("tracks"):
@@ -171,15 +169,30 @@ class CatalogAutopilotService:
         spotify_url = disco.get("artist_url")
         tracks = disco["tracks"]
 
-        # ۲. استفاده از سرویس مدیریت کمپین
         target_ch = target_channel_id or Config.STORAGE_CHANNEL_ID
-        campaign_id = admin_service.create_artist_campaign(
+        
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            cur = conn.execute("""
+                INSERT INTO artist_campaigns (artist_name, spotify_id, spotify_url, avatar_url, target_channel_id, total_tracks, completed_tracks, status)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 'processing')
+            """, (
+                artist_name,
+                spotify_id,
+                spotify_url,
+                avatar_url,
+                str(target_ch),
+                len(tracks)
+            ))
+            campaign_id = cur.lastrowid
+            conn.commit()
+
+        # ۲. ارسال تسک به ورکر پس‌زمینه Huey
+        from core.tasks import ingest_artist_campaign_task
+        ingest_artist_campaign_task(
+            campaign_id=campaign_id,
+            tracks=tracks,
             artist_name=artist_name,
-            spotify_id=spotify_id,
-            spotify_url=spotify_url,
-            avatar_url=avatar_url,
-            target_channel_id=str(target_ch),
-            tracks_data=tracks
+            target_channel_id=str(target_ch)
         )
 
         return {
