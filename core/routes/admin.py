@@ -78,10 +78,26 @@ def dashboard():
     offset = (page - 1) * per_page
     
     if search_query:
-        search_term = f"%{search_query}%"
-        tracks = db.execute("SELECT * FROM tracks WHERE title LIKE ? OR performer LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?", 
-                            (search_term, search_term, per_page, offset)).fetchall()
-        count_res = db.execute("SELECT COUNT(*) FROM tracks WHERE title LIKE ? OR performer LIKE ?", (search_term, search_term)).fetchone()[0]
+        clean_q = search_query.strip().replace('"', '""')
+        try:
+            fts_query = f'"{clean_q}"*'
+            tracks = db.execute("""
+                SELECT t.* FROM tracks_fts fts
+                JOIN tracks t ON fts.rowid = t.id
+                WHERE tracks_fts MATCH ?
+                ORDER BY rank
+                LIMIT ? OFFSET ?
+            """, (fts_query, per_page, offset)).fetchall()
+            
+            count_res = db.execute("""
+                SELECT COUNT(*) FROM tracks_fts
+                WHERE tracks_fts MATCH ?
+            """, (fts_query,)).fetchone()[0]
+        except Exception:
+            search_term = f"%{search_query}%"
+            tracks = db.execute("SELECT * FROM tracks WHERE title LIKE ? OR performer LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?", 
+                                (search_term, search_term, per_page, offset)).fetchall()
+            count_res = db.execute("SELECT COUNT(*) FROM tracks WHERE title LIKE ? OR performer LIKE ?", (search_term, search_term)).fetchone()[0]
     else:
         tracks = db.execute("SELECT * FROM tracks ORDER BY id DESC LIMIT ? OFFSET ?", (per_page, offset)).fetchall()
         count_res = total_tracks
