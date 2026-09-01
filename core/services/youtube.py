@@ -238,7 +238,8 @@ class YouTubeService:
                     {'key': 'FFmpegMetadata', 'add_metadata': True},
                 ],
                 'postprocessor_args': {
-                    'FFmpegExtractAudio': ['-threads', '1', '-vn']
+                    'ffmpeg': ['-threads', '1', '-vn'],
+                    'ExtractAudio': ['-threads', '1', '-vn']
                 }
             }
 
