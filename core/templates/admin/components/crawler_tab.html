@@ -559,9 +559,10 @@
         }
     }
 
-    // Toggle label dynamically on click
+    // Toggle and auto-save dynamically on click
     document.getElementById('sched-enabled')?.addEventListener('change', function() {
         document.getElementById('sched-status-label').innerText = this.checked ? 'Active' : 'Inactive';
         document.getElementById('sched-status-label').className = this.checked ? 'ml-3 text-xs font-bold text-primary' : 'ml-3 text-xs font-bold text-gray-400';
+        saveSchedulerSettings();
     });
 </script>

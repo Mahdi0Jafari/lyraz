@@ -3,7 +3,7 @@ let isBulkMode = false;
 
 // --- 1. TABS SYSTEM ---
 function switchTab(tabName) {
-    const tabs = ['library', 'crawler', 'artist_hub', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
+    const tabs = ['library', 'spotify_radar', 'crawler', 'artist_hub', 'automation', 'channels', 'devices', 'users', 'health', 'logs'];
     
     // Hide all tabs
     tabs.forEach(t => {
@@ -23,6 +23,7 @@ function switchTab(tabName) {
     // Update Header Title
     const titles = {
         'library': 'Music Library', 
+        'spotify_radar': 'Spotify Discovery Radar & Vault Autopilot',
         'crawler': 'Catalog Pre-Warmer & Queue',
         'artist_hub': 'Artist Hub & Channel Vault',
         'automation': 'Automation Rules', 
@@ -37,6 +38,9 @@ function switchTab(tabName) {
         pageTitle.firstChild.nodeValue = titles[tabName] + " ";
     }
 
+    if(tabName === 'spotify_radar' && typeof loadRadarData === 'function') {
+        loadRadarData();
+    }
     if(tabName === 'crawler' && typeof initCrawlerTab === 'function') {
         initCrawlerTab();
     }

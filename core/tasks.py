@@ -974,10 +974,11 @@ async def _async_bulk_broadcast(target_telegram_ids, message_text):
 # ⏰ AUTONOMOUS CATALOG PRE-WARMER SCHEDULER
 # ==========================================
 
-@huey.periodic_task(crontab(minute='0'))
+@huey.periodic_task(crontab(minute='*/10'))
 def check_crawler_schedule():
     """
-    تسک زمان‌بندی‌شده دوره‌ای: بررسی اجرای کرولر خودکار بر اساس ساعت تنظیم‌شده در پنل ادمین
+    تسک زمان‌بندی‌شده دوره‌ای: بررسی اجرای کرولر خودکار بر اساس ساعت محلی تنظیم‌شده در پنل ادمین
+    با پشتیبانی کامل از منطقه زمانی ایران (Asia/Tehran) و جلوگیری از اجرای تکراری در طول روز.
     """
     try:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
@@ -987,23 +988,70 @@ def check_crawler_schedule():
                 return
 
             import datetime
-            now_str = datetime.datetime.now().strftime("%H:00")
-            sched_str = settings['crawler_schedule_hour'] or '04:00'
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo("Asia/Tehran")
+                now_local = datetime.datetime.now(tz)
+            except Exception:
+                # فال‌بک به زمان ایران (UTC + 3:30)
+                now_local = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=3, minutes=30)
+
+            today_str = now_local.strftime("%Y-%m-%d")
+            sched_hour_str = settings['crawler_schedule_hour'] or '04:00'
+            try:
+                parts = sched_hour_str.split(':')
+                sched_h, sched_m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+            except Exception:
+                sched_h, sched_m = 4, 0
+
+            current_h = now_local.hour
+            current_m = now_local.minute
+
+            # بررسی اینکه آیا به زمان اجرای تنظیم شده در روز جاری رسیده‌ایم یا خیر
+            is_time_to_run = (current_h > sched_h) or (current_h == sched_h and current_m >= sched_m)
+            if not is_time_to_run:
+                return
+
+            # بررسی اینکه آیا امروز تسک خودکار قبلاً اجرا شده است یا خیر
+            already_run = conn.execute("""
+                SELECT id FROM ingestion_logs 
+                WHERE source LIKE 'auto_%' 
+                AND date(created_at, '+3.5 hours') = ?
+                LIMIT 1
+            """, (today_str,)).fetchone()
+
+            if already_run:
+                return
+
+            logger.info(f"🚀 [Auto-Prewarmer] Triggering Scheduled Crawler for {sched_hour_str} (Local Time: {now_local.strftime('%H:%M')})...")
+            from core.services.crawler import crawler_service
+            source = settings['crawler_source'] or 'global_top_50'
+            max_tracks = settings['crawler_max_tracks'] or 15
             
-            # تطابق ساعت اجرای مشخص‌شده
-            if now_str[:2] == sched_str[:2]:
-                logger.info(f"🚀 [Auto-Prewarmer] Triggering Scheduled Crawler for {sched_str}...")
-                from core.services.crawler import crawler_service
-                source = settings['crawler_source'] or 'global_top_50'
-                max_tracks = settings['crawler_max_tracks'] or 15
+            if source == 'persian_trending':
+                tracks = crawler_service.get_persian_trending(limit=max_tracks * 2)
+            else:
+                chart_res = crawler_service.get_spotify_chart(source)
+                tracks = chart_res.get('tracks', [])
                 
-                if source == 'persian_trending':
-                    tracks = crawler_service.get_persian_trending(limit=max_tracks * 2)
-                else:
-                    chart_res = crawler_service.get_spotify_chart(source)
-                    tracks = chart_res.get('tracks', [])
-                    
-                res = crawler_service.ingest_tracks_one_by_one(tracks, source_label=f"auto_{source}", max_limit=max_tracks)
-                logger.info(f"✅ [Auto-Prewarmer] Dispatched: {res['queued']} queued, {res['skipped']} skipped.")
+            res = crawler_service.ingest_tracks_one_by_one(tracks, source_label=f"auto_{source}", max_limit=max_tracks)
+            logger.info(f"✅ [Auto-Prewarmer] Dispatched: {res['queued']} queued, {res['skipped']} skipped.")
     except Exception as e:
-        logger.error(f"Error in check_crawler_schedule: {e}")
+        logger.error(f"Error in check_crawler_schedule: {e}", exc_info=True)
+
+
+# ==========================================
+# ⚡️ SPOTIFY RADAR & VAULT AUTOPILOT
+# ==========================================
+
+@huey.periodic_task(crontab(minute='*/3'))
+def check_autopilot_tick():
+    """
+    تسک زمان‌بندی‌شده دوره‌ای (هر ۳ دقیقه):
+    بررسی و اجرای اتوپایلوت مداوم گنجینه برای تزریق روان و پیوسته دیسکوگرافی خوانندگان و پلی‌لیست‌ها
+    """
+    try:
+        from core.services.catalog_autopilot import catalog_autopilot
+        catalog_autopilot.autopilot_tick()
+    except Exception as e:
+        logger.error(f"Error in check_autopilot_tick: {e}")

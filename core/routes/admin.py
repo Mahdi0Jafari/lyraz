@@ -885,3 +885,150 @@ def sync_artist_hub_api(campaign_id):
         'total_tracks': len(completed_tracks),
         'newly_synced': synced_count
     })
+
+
+# ==========================================
+# 🛰 SPOTIFY RADAR & VAULT AUTOPILOT API
+# ==========================================
+
+@admin_bp.route('/api/admin/spotify_radar/feed', methods=['GET'])
+def get_spotify_radar_feed_api():
+    """دریافت فید زنده رادار کشف اسپاتیفای به همراه وضعیت سینک در دیتابیس"""
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    from core.services.catalog_autopilot import catalog_autopilot
+    
+    force = request.args.get('refresh', '').lower() in ['true', '1']
+    feed = catalog_autopilot.get_radar_feed(force_refresh=force)
+    metrics = catalog_autopilot.get_vault_metrics()
+    
+    return jsonify({
+        'status': 'success',
+        'feed': feed,
+        'metrics': metrics
+    })
+
+@admin_bp.route('/api/admin/spotify_radar/vault_metrics', methods=['GET'])
+def get_spotify_vault_metrics_api():
+    """دریافت آمارهای زنده گنجینه طلایی و اهداف آرشیو"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    from core.services.catalog_autopilot import catalog_autopilot
+    metrics = catalog_autopilot.get_vault_metrics()
+    return jsonify({'status': 'success', 'metrics': metrics})
+
+@admin_bp.route('/api/admin/spotify_radar/toggle_autopilot', methods=['POST'])
+def toggle_autopilot_api():
+    """فعال/غیرفعال کردن اتوپایلوت پس‌زمینه ۲۴ ساعته"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    enabled = 1 if data.get('enabled') else 0
+    
+    db = get_db()
+    db.execute("UPDATE settings SET autopilot_enabled = ? WHERE id = 1", (enabled,))
+    db.commit()
+    
+    return jsonify({'status': 'success', 'enabled': bool(enabled)})
+
+@admin_bp.route('/api/admin/spotify_radar/update_target_goal', methods=['POST'])
+def update_target_goal_api():
+    """تغییر داینامیک تعداد آهنگ‌های هدف گنجینه طلایی توسط ادمین"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    goal = int(data.get('target_goal', 25000))
+    if goal < 100: goal = 100
+    
+    db = get_db()
+    db.execute("UPDATE settings SET autopilot_target_goal = ? WHERE id = 1", (goal,))
+    db.commit()
+    
+    from core.services.catalog_autopilot import catalog_autopilot
+    metrics = catalog_autopilot.get_vault_metrics()
+    return jsonify({'status': 'success', 'metrics': metrics})
+
+@admin_bp.route('/api/admin/spotify_radar/categories', methods=['GET'])
+def get_radar_categories_api():
+    """لیست تمام دسته‌بندی‌های فعال رادار اسپاتیفای"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    cats = db.execute("SELECT * FROM radar_categories ORDER BY is_default DESC, id ASC").fetchall()
+    return jsonify({'status': 'success', 'categories': [dict(c) for c in cats]})
+
+@admin_bp.route('/api/admin/spotify_radar/categories/add', methods=['POST'])
+def add_radar_category_api():
+    """افزودن دسته‌بندی و کلیدواژه‌های سفارشی جدید به رادار"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    subtitle = (data.get('subtitle') or '').strip()
+    queries = (data.get('queries') or '').strip()
+
+    if not title or not queries:
+        return jsonify({'status': 'error', 'message': 'Title and Search Queries are required'}), 400
+
+    import re
+    category_key = re.sub(r'[^a-zA-Z0-9_]', '_', title.lower()).strip('_')
+    if not category_key:
+        import time
+        category_key = f"custom_cat_{int(time.time())}"
+
+    db = get_db()
+    try:
+        db.execute("""
+            INSERT INTO radar_categories (category_key, title, subtitle, search_queries, is_default)
+            VALUES (?, ?, ?, ?, 0)
+        """, (category_key, title, subtitle, queries))
+        db.commit()
+        
+        # پاکسازی کش رادار برای لود فوری دیتای جدید
+        from core.services.catalog_autopilot import _RADAR_CACHE
+        _RADAR_CACHE["data"] = None
+        _RADAR_CACHE["cached_at"] = 0
+
+        return jsonify({'status': 'success', 'message': f'Category "{title}" added to radar!'})
+    except Exception as e:
+        logger.error(f"Error adding radar category: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@admin_bp.route('/api/admin/spotify_radar/categories/delete', methods=['POST'])
+def delete_radar_category_api():
+    """حذف دسته‌بندی سفارشی از رادار"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    category_key = data.get('category_key')
+    if not category_key:
+        return jsonify({'status': 'error', 'message': 'category_key is required'}), 400
+
+    db = get_db()
+    db.execute("DELETE FROM radar_categories WHERE category_key = ? AND is_default = 0", (category_key,))
+    db.commit()
+
+    # پاکسازی کش رادار
+    from core.services.catalog_autopilot import _RADAR_CACHE
+    _RADAR_CACHE["data"] = None
+    _RADAR_CACHE["cached_at"] = 0
+
+    return jsonify({'status': 'success', 'message': 'Category deleted successfully.'})
+
+@admin_bp.route('/api/admin/spotify_radar/launch_item', methods=['POST'])
+def launch_radar_item_api():
+    """راه‌اندازی فوری کمپین برای یک خواننده یا پلی‌لیست کشف‌شده از رادار اسپاتیفای"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    item_type = data.get('type', 'artist') # artist or playlist
+    spotify_id = data.get('spotify_id')
+    
+    if not spotify_id:
+        return jsonify({'status': 'error', 'message': 'Spotify ID is required'}), 400
+
+    from core.services.catalog_autopilot import catalog_autopilot
+    try:
+        if item_type == 'artist':
+            res = catalog_autopilot.launch_artist_campaign(spotify_id)
+            return jsonify({'status': 'success', 'result': res, 'message': f'Campaign launched for {res["artist_name"]} with {res["total_tracks"]} tracks!'})
+        elif item_type == 'playlist':
+            res = catalog_autopilot.launch_playlist_ingestion(spotify_id)
+            return jsonify({'status': 'success', 'result': res, 'message': f'Playlist {res["title"]} queued: {res["queued"]} tracks added ({res["skipped"]} skipped)!'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Invalid item type'}), 400
+    except Exception as e:
+        logger.error(f"Error launching radar item {spotify_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
