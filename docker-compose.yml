@@ -37,10 +37,15 @@ services:
     build: .
     container_name: Lyraz_worker_local
     restart: always
-    command: python worker.py
+    command: nice -n 19 python worker.py
     volumes:
       - .:/app
     env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1500M
     depends_on:
       - web
 
