@@ -617,10 +617,11 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             # ۷. 🔥 اجرای موتور Automation Rules 🔥
             await process_auto_broadcast(local_bot, track_meta['file_id'], final_title, final_artist, user_first_name)
 
-        # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) در صورت تعیین
+        # ۸. 📻 ارسال به کانال اختصاصی آرتیست (Target Channel) فقط در صورت تعیین و متفاوت بودن با کانال ذخیره‌سازی اصلی
         channel_delivery_ok = True
         channel_delivery_err = None
-        if target_channel_id:
+        is_distinct_target_channel = target_channel_id and str(target_channel_id).strip() and str(target_channel_id).strip() != str(Config.STORAGE_CHANNEL_ID).strip()
+        if is_distinct_target_channel:
             try:
                 channel_caption = f"🎵 *{final_title}*\n👤 {final_artist}\n\n📻 @LyrazMusic\n🤖 @LyrazBot"
                 await deliver_audio_safe(
@@ -631,7 +632,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     artist=final_artist,
                     user_caption=channel_caption
                 )
-                logger.info(f"✅ Delivered track {final_title} to target channel {target_channel_id}")
+                logger.info(f"✅ Delivered track {final_title} to distinct target channel {target_channel_id}")
                 # ایجاد وقفه امن ۱.۵ ثانیه‌ای برای جلوگیری کامل از FloodWait تلگرام
                 await asyncio.sleep(1.5)
             except Exception as ch_err:
