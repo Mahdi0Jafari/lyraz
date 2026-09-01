@@ -1,0 +1,151 @@
+{
+  "categories": [
+    {
+      "key": "persian_fusion",
+      "title": "🌿 تلفیقی، آلترناتیو و فیوژن",
+      "subtitle": "برترین گروه‌ها و خوانندگان سبک تلفیقی، ایندی و فیوژن ایرانی",
+      "is_default": true,
+      "queries": [
+        "Chaartaar",
+        "Arman Garshasbi",
+        "Pallett Band",
+        "Dang Show",
+        "Damahi",
+        "Heydoo Hedayati",
+        "Bomrani",
+        "Mohsen Namjoo",
+        "Homayoun Shajarian",
+        "Ali Azimi",
+        "Kiosk",
+        "King Raam",
+        "O-Hum",
+        "Rana Farhan",
+        "Sohrab Pournazeri"
+      ]
+    },
+    {
+      "key": "persian_legends",
+      "title": "👑 اساطیر و بزرگان ماندگار",
+      "subtitle": "دیسکوگرافی چهره‌های ماندگار موسیقی پاپ و اصیل ایران",
+      "is_default": true,
+      "queries": [
+        "Moein",
+        "Hayedeh",
+        "Mahasti",
+        "Ebi",
+        "Dariush",
+        "Shadmehr Aghili",
+        "Siavash Ghomayshi",
+        "Googoosh",
+        "Sattar",
+        "Homeyra",
+        "Habib",
+        "Farhad Mehrad",
+        "Mohammad Reza Shajarian",
+        "Kourosh Yaghmaei",
+        "Fereydoun Foroughi",
+        "Vigen"
+      ]
+    },
+    {
+      "key": "persian_hiphop",
+      "title": "🔥 غول‌های رپ و هیپ‌هاپ",
+      "subtitle": "پیشگامان و پرشنونده‌ترین رپرهای هیپ‌هاپ فارسی",
+      "is_default": true,
+      "queries": [
+        "Yas Persian",
+        "Hichkas",
+        "Zedbazi",
+        "Shayea",
+        "Mehrad Hidden",
+        "Reza Pishro",
+        "Behzad Leito",
+        "Ali Sorena",
+        "Hoossien",
+        "Bahram",
+        "Wantons",
+        "Sepehr Khalse",
+        "Poori",
+        "Catchybeatz",
+        "Chvrsi",
+        "HipHopologist"
+      ]
+    },
+    {
+      "key": "modern_pop",
+      "title": "💎 پاپ شاخص و شنیدنی",
+      "subtitle": "هیت‌ترین و محبوب‌ترین خوانندگان پاپ معاصر",
+      "is_default": true,
+      "queries": [
+        "Sami Beigi",
+        "Mohsen Chavoshi",
+        "Mohsen Yeganeh",
+        "Shervin Hajipour",
+        "Reza Sadeghi",
+        "Sirvan Khosravi",
+        "Xaniar Khosravi",
+        "Ali Yasini",
+        "Mehdi Yarrahi",
+        "Ehsan Khajeh Amiri",
+        "Farzad Farzin",
+        "Majid Razavi",
+        "Behnam Bani",
+        "Babak Jahanbakhsh"
+      ]
+    },
+    {
+      "key": "global_superstars",
+      "title": "🌍 اسطوره‌ها و سوپراستارهای جهان",
+      "subtitle": "پرمخاطب‌ترین چهره‌های تاریخ موسیقی جهان",
+      "is_default": true,
+      "queries": [
+        "Michael Jackson",
+        "Queen",
+        "Pink Floyd",
+        "Eminem",
+        "The Weeknd",
+        "Taylor Swift",
+        "Drake",
+        "Billie Eilish",
+        "Coldplay",
+        "Adele",
+        "Bruno Mars",
+        "Dua Lipa",
+        "Imagine Dragons",
+        "Ed Sheeran",
+        "Arctic Monkeys",
+        "Linkin Park"
+      ]
+    }
+  ],
+  "featured_playlists": [
+    {
+      "query": "Persian Pop Essentials",
+      "category": "Persian Hits"
+    },
+    {
+      "query": "Top 50 Global",
+      "category": "Charts"
+    },
+    {
+      "query": "Today's Top Hits",
+      "category": "Charts"
+    },
+    {
+      "query": "Persian Hip Hop",
+      "category": "Persian Rap"
+    },
+    {
+      "query": "Nostalgia Persian",
+      "category": "Classics"
+    },
+    {
+      "query": "Billboard Hot 100",
+      "category": "Global Hits"
+    },
+    {
+      "query": "Viral 50 Global",
+      "category": "Viral"
+    }
+  ]
+}

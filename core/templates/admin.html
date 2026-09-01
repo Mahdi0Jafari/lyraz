@@ -113,6 +113,11 @@
                 <span class="hidden lg:block text-sm font-medium">Music Library</span>
             </button>
 
+            <button onclick="switchTab('spotify_radar')" id="nav-spotify_radar" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <span class="material-symbols-outlined icon text-[24px] group-hover:text-primary transition-colors">radar</span>
+                <span class="hidden lg:block text-sm font-medium">Spotify Radar</span>
+            </button>
+
             <button onclick="switchTab('crawler')" id="nav-crawler" class="nav-item w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
                 <span class="material-symbols-outlined icon text-[24px] group-hover:text-primary transition-colors">rocket_launch</span>
                 <span class="hidden lg:block text-sm font-medium">Pre-Warmer & Queue</span>
@@ -445,6 +450,10 @@
                     </div>
                     {% endfor %}
                 </div>
+            </div>
+
+            <div id="tab-spotify_radar" class="hidden animate-in fade-in duration-300">
+                {% include 'admin/components/spotify_radar_tab.html' %}
             </div>
 
             <div id="tab-crawler" class="hidden animate-in fade-in duration-300">

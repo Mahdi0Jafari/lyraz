@@ -1,0 +1,595 @@
+<!-- core/templates/admin/components/spotify_radar_tab.html -->
+
+<div class="space-y-8 pb-16">
+
+    <!-- ========================================== -->
+    <!-- 🛰 HERO: GOLDEN VAULT & AUTOPILOT RADAR    -->
+    <!-- ========================================== -->
+    <div class="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 relative overflow-hidden bg-gradient-to-br from-black/60 via-black/40 to-primary/5 shadow-2xl">
+        <!-- Ambient Glow -->
+        <div class="absolute -right-20 -top-20 size-80 rounded-full bg-primary/10 blur-3xl pointer-events-none"></div>
+
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10 border-b border-white/5 pb-6">
+            <div class="space-y-1.5">
+                <div class="flex items-center gap-3">
+                    <div class="size-10 rounded-2xl bg-primary/20 text-primary flex items-center justify-center border border-primary/40 shadow-[0_0_20px_rgba(13,242,51,0.25)]">
+                        <span class="material-symbols-outlined text-[24px]">radar</span>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                            Spotify Discovery Radar
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/20 text-primary border border-primary/30 font-mono">LIVE 2026</span>
+                        </h2>
+                        <p class="text-xs text-gray-400">Autonomous trend ingestion, verified Spotify artist discovery & continuous cloud vault populator.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Autopilot Global Toggle & Controls -->
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="p-2.5 px-4 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-3">
+                    <div class="flex flex-col text-right">
+                        <span class="text-xs font-bold text-white">24/7 Vault Autopilot</span>
+                        <span class="text-[10px] text-gray-400 font-mono" id="autopilot-rate-sub">Smooth 3s Throttle</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="radar-autopilot-toggle" onchange="toggleAutopilotMode(this.checked)" class="sr-only peer">
+                        <div class="w-12 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-inner"></div>
+                    </label>
+                </div>
+
+                <button onclick="loadRadarData(true)" id="btn-refresh-radar" class="px-4 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-xs font-bold text-gray-200 hover:text-white transition flex items-center gap-2 border border-white/10 shadow-sm" title="Fetch fresh recommendations from Spotify API">
+                    <span class="material-symbols-outlined text-[18px]">sync</span> Refresh Radar
+                </button>
+            </div>
+        </div>
+
+        <!-- Golden Vault Progress Bar -->
+        <div class="mt-6 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-400">Golden Vault Progress:</span>
+                    <span class="text-white font-bold text-sm flex items-center gap-1.5">
+                        <span id="vault-tracks-text">0 / 25,000 Tracks</span>
+                        <button type="button" onclick="editTargetGoal()" class="text-gray-400 hover:text-primary transition" title="Change Target Goal Number">
+                            <span class="material-symbols-outlined text-[15px]">edit</span>
+                        </button>
+                    </span>
+                    <span class="text-gray-500">•</span>
+                    <span class="text-primary font-bold" id="vault-percent-text">0.0%</span>
+                </div>
+                <div class="flex items-center gap-4 text-gray-400 text-[11px]">
+                    <span>📦 <strong class="text-white" id="vault-size-text">0 MB</strong> stored in Cloud</span>
+                    <span>⏱ <strong class="text-white" id="vault-hours-text">0 hrs</strong> audio</span>
+                    <span>⚡️ <strong class="text-primary" id="vault-today-text">0</strong> today</span>
+                </div>
+            </div>
+            
+            <div class="w-full h-3.5 rounded-full bg-white/10 overflow-hidden p-0.5 border border-white/5 shadow-inner">
+                <div id="vault-progress-bar" class="h-full rounded-full bg-gradient-to-r from-primary via-[#0be02f] to-[#00f7ff] transition-all duration-1000 shadow-[0_0_15px_rgba(13,242,51,0.5)]" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 🎛 CATEGORY FILTER TABS & SEARCH           -->
+    <!-- ========================================== -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <!-- Filter Tabs -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 custom-scroll flex-1" id="radar-tabs-nav">
+            <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn active px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary text-black shadow-md">
+                All Radar
+            </button>
+            <!-- Dynamic categories rendered by JS -->
+            <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5">
+                🎧 پلی‌لیست‌های رسمی
+            </button>
+            <button onclick="openAddCategoryModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1 shadow-sm">
+                <span class="material-symbols-outlined text-[16px]">add_circle</span> Add Genre
+            </button>
+        </div>
+
+        <!-- Search in Discovered Items -->
+        <div class="relative w-full md:w-72 shrink-0">
+            <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-gray-400 text-[18px]">search</span>
+            <input type="text" id="radar-search-input" onkeyup="filterRadarCards()" placeholder="Search artist, genre, playlist..." class="glass-input w-full h-10 pl-10 pr-4 rounded-xl text-xs text-white">
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- 🎴 DISCOVERED ARTISTS & PLAYLISTS GRID     -->
+    <!-- ========================================== -->
+    <div id="radar-loading" class="py-24 flex flex-col items-center justify-center gap-4 text-center">
+        <div class="size-12 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+        <p class="text-sm font-bold text-white">Querying Spotify Web API Radar...</p>
+        <p class="text-xs text-gray-400 font-mono">Discovering top artists, follower metrics & official editorial playlists</p>
+    </div>
+
+    <!-- Container for dynamic categories and items -->
+    <div id="radar-content" class="space-y-10 hidden">
+        <!-- Rendered dynamically by JavaScript -->
+    </div>
+
+</div>
+
+<!-- ========================================== -->
+<!-- ➕ MODAL: ADD CUSTOM RADAR GENRE / CATEGORY -->
+<!-- ========================================== -->
+<div id="modal-add-radar-cat" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-lg rounded-3xl border border-white/10 p-6 sm:p-8 space-y-6 shadow-2xl bg-gradient-to-b from-gray-900 to-black animate-in fade-in zoom-in duration-200">
+        
+        <div class="flex items-center justify-between border-b border-white/10 pb-4">
+            <div class="flex items-center gap-3">
+                <div class="size-10 rounded-2xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30">
+                    <span class="material-symbols-outlined text-[20px]">queue_music</span>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Add Radar Genre / Category</h3>
+                    <p class="text-xs text-gray-400">Discover artists and discographies for any custom genre</p>
+                </div>
+            </div>
+            <button onclick="closeAddCategoryModal()" class="size-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition">
+                <span class="material-symbols-outlined text-[18px]">close</span>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Category Title (e.g. 🇹🇷 ترکی استانبولی)</label>
+                <input id="new-cat-title" type="text" placeholder="عنوان فارسی یا انگلیسی دسته‌بندی..." class="glass-input w-full px-4 py-3 rounded-xl text-sm">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Subtitle / Description</label>
+                <input id="new-cat-subtitle" type="text" placeholder="توضیح کوتاه درباره این سبک یا گلچین..." class="glass-input w-full px-4 py-3 rounded-xl text-sm">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1">Artists or Search Keywords (Comma-Separated)</label>
+                <p class="text-[11px] text-gray-400 mb-2">نام خواننده‌ها یا کلیدواژه‌های اصلی را با کاما جدا کنید. اسپاتیفای خودکار آن‌ها را پیدا می‌کند.</p>
+                <textarea id="new-cat-queries" rows="4" placeholder="Tarkan, Sezen Aksu, Semicenk, Edis, Simge, Mustafa Ceceli, Hadise, Reynmen" class="glass-input w-full p-4 rounded-xl text-sm font-mono leading-relaxed"></textarea>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-4 border-t border-white/10">
+            <button onclick="closeAddCategoryModal()" class="px-5 py-2.5 rounded-xl border border-white/10 text-xs font-bold text-gray-300 hover:text-white hover:bg-white/5 transition">
+                Cancel
+            </button>
+            <button onclick="submitNewCategory(this)" class="px-6 py-2.5 rounded-xl bg-primary hover:bg-[#0be02f] text-black text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_20px_rgba(13,242,51,0.3)]">
+                <span class="material-symbols-outlined text-[16px]">save</span> Create & Scan Radar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 📜 SPOTIFY RADAR CLIENT-SIDE LOGIC         -->
+    <!-- ========================================== -->
+<script>
+    let radarRawData = null;
+    let currentRadarCategory = 'all';
+
+    document.addEventListener("DOMContentLoaded", () => {
+        // اگر تب رادار باز بود لود شود
+        if (!document.getElementById('tab-spotify_radar')?.classList.contains('hidden')) {
+            loadRadarData();
+        }
+    });
+
+    async function loadRadarData(forceRefresh = false) {
+        const loading = document.getElementById('radar-loading');
+        const content = document.getElementById('radar-content');
+        
+        if (forceRefresh) {
+            const btn = document.getElementById('btn-refresh-radar');
+            if (btn) btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span> Syncing...`;
+        }
+
+        try {
+            const res = await fetch(`/api/admin/spotify_radar/feed${forceRefresh ? '?refresh=true' : ''}`);
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                radarRawData = data;
+                updateVaultMetrics(data.metrics);
+                renderRadarView(data.feed);
+            }
+        } catch (e) {
+            console.error('Failed to load Spotify Radar:', e);
+            if (typeof showToast === 'function') showToast('❌ Error connecting to Spotify Radar API');
+        } finally {
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+            const btn = document.getElementById('btn-refresh-radar');
+            if (btn) btn.innerHTML = `<span class="material-symbols-outlined text-[18px]">sync</span> Refresh Radar`;
+        }
+    }
+
+    function updateVaultMetrics(m) {
+        if (!m) return;
+        document.getElementById('vault-tracks-text').innerText = `${m.total_tracks.toLocaleString()} / ${m.target_goal.toLocaleString()} Tracks`;
+        document.getElementById('vault-percent-text').innerText = `${m.progress_percent}%`;
+        document.getElementById('vault-progress-bar').style.width = `${m.progress_percent}%`;
+        document.getElementById('vault-size-text').innerText = m.total_size_gb > 1 ? `${m.total_size_gb} GB` : `${m.total_size_mb} MB`;
+        document.getElementById('vault-hours-text').innerText = `${m.total_hours} hrs`;
+        document.getElementById('vault-today-text').innerText = `+${m.ingested_today}`;
+
+        const toggle = document.getElementById('radar-autopilot-toggle');
+        if (toggle) toggle.checked = m.autopilot_enabled;
+        const sub = document.getElementById('autopilot-rate-sub');
+        if (sub) {
+            sub.innerText = m.autopilot_enabled ? '🟢 Active (Drip Feed)' : 'Smooth 3s Throttle';
+            sub.className = m.autopilot_enabled ? 'text-[10px] text-primary font-mono font-bold' : 'text-[10px] text-gray-400 font-mono';
+        }
+    }
+
+    function renderRadarTabs(categories) {
+        const nav = document.getElementById('radar-tabs-nav');
+        if (!nav) return;
+
+        let html = `
+            <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn ${currentRadarCategory === 'all' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
+                All Radar
+            </button>
+        `;
+
+        (categories || []).forEach(cat => {
+            const isActive = currentRadarCategory === cat.id;
+            html += `
+                <button onclick="switchRadarCategory('${cat.id}')" data-cat="${cat.id}" class="radar-tab-btn ${isActive ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
+                    ${cat.title}
+                </button>
+            `;
+        });
+
+        html += `
+            <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn ${currentRadarCategory === 'playlists' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
+                🎧 پلی‌لیست‌های رسمی
+            </button>
+            <button onclick="openAddCategoryModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1 shadow-sm">
+                <span class="material-symbols-outlined text-[16px]">add_circle</span> Add Genre
+            </button>
+        `;
+
+        nav.innerHTML = html;
+    }
+
+    function switchRadarCategory(cat) {
+        currentRadarCategory = cat;
+        if (radarRawData && radarRawData.feed) {
+            renderRadarTabs(radarRawData.feed.categories);
+            renderRadarView(radarRawData.feed);
+        }
+    }
+
+    function renderRadarView(feed) {
+        const container = document.getElementById('radar-content');
+        container.innerHTML = '';
+
+        if (!feed) return;
+
+        // رندر تب‌های داینامیک
+        renderRadarTabs(feed.categories);
+
+        // ۱. رندر دسته‌بندی‌های آرتیست‌ها
+        const categories = feed.categories || [];
+        categories.forEach(cat => {
+            if (currentRadarCategory !== 'all' && currentRadarCategory !== cat.id) return;
+
+            const sec = document.createElement('div');
+            sec.className = 'space-y-4';
+            sec.innerHTML = `
+                <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            ${cat.title}
+                            <span class="text-xs bg-white/10 px-2 py-0.5 rounded-md text-gray-300 font-mono font-normal">${cat.total_artists} Artists</span>
+                        </h3>
+                        <p class="text-xs text-gray-400">${cat.subtitle}</p>
+                    </div>
+                    ${!cat.is_default ? `
+                        <button onclick="deleteRadarCategory('${cat.id}', '${cat.title}')" class="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs font-bold transition flex items-center gap-1 border border-red-500/20">
+                            <span class="material-symbols-outlined text-[15px]">delete</span> Delete Genre
+                        </button>
+                    ` : ''}
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    ${(cat.artists || []).map(a => renderArtistRadarCard(a)).join('')}
+                </div>
+            `;
+            container.appendChild(sec);
+        });
+
+        // ۲. رندر پلی‌لیست‌های رسمی اسپاتیفای
+        if (currentRadarCategory === 'all' || currentRadarCategory === 'playlists') {
+            const playlists = feed.playlists || [];
+            if (playlists.length) {
+                const plSec = document.createElement('div');
+                plSec.className = 'space-y-4';
+                plSec.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div>
+                            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                                🎧 مگا پلی‌لیست‌های رسمی اسپاتیفای (Editorial Playlists)
+                                <span class="text-xs bg-white/10 px-2 py-0.5 rounded-md text-gray-300 font-mono font-normal">${playlists.length} Curated</span>
+                            </h3>
+                            <p class="text-xs text-gray-400">برترین و پرشنونده‌ترین پلی‌لیست‌های چارت و گلچین با متادیتای غنی</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        ${playlists.map(p => renderPlaylistRadarCard(p)).join('')}
+                    </div>
+                `;
+                container.appendChild(plSec);
+            }
+        }
+    }
+
+    function renderArtistRadarCard(a) {
+        const followersStr = a.followers ? (a.followers >= 1000000 ? (a.followers / 1000000).toFixed(1) + 'M' : (a.followers / 1000).toFixed(0) + 'K') + ' Followers' : 'Spotify Artist';
+        const genreStr = (a.genres && a.genres.length) ? a.genres.slice(0, 2).join(' • ') : 'Verified Artist';
+
+        let actionHtml = '';
+        if (a.status === 'completed') {
+            actionHtml = `
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <span class="text-[11px] font-bold text-primary flex items-center gap-1 font-mono">
+                        <span class="size-1.5 rounded-full bg-primary animate-pulse"></span> ${a.completed_tracks} in Vault
+                    </span>
+                    ${a.hub_token ? `
+                        <a href="/live/${a.hub_token}" target="_blank" class="px-2.5 py-1 rounded-lg bg-primary/20 hover:bg-primary hover:text-black text-primary text-[10px] font-bold transition flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[13px]">headphones</span> Open Hub
+                        </a>
+                    ` : ''}
+                </div>
+            `;
+        } else if (a.status === 'in_progress') {
+            actionHtml = `
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <span class="text-[11px] font-bold text-yellow-400 flex items-center gap-1 font-mono animate-pulse">
+                        <span class="size-1.5 rounded-full bg-yellow-400"></span> ${a.completed_tracks} / ${a.total_tracks} Syncing
+                    </span>
+                    <button type="button" onclick="switchTab('artist_hub')" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition">
+                        View Hub
+                    </button>
+                </div>
+            `;
+        } else {
+            actionHtml = `
+                <div class="pt-3 border-t border-white/5">
+                    <button type="button" onclick="launchRadarArtist('${a.id}', this)" class="w-full py-2 rounded-xl bg-white/5 hover:bg-primary hover:text-black text-gray-200 hover:text-black text-xs font-bold transition flex items-center justify-center gap-1.5 border border-white/5 shadow-sm">
+                        <span class="material-symbols-outlined text-[16px]">cloud_download</span> Ingest Discography
+                    </button>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="radar-card glass-panel p-4 rounded-2xl border border-white/5 hover:border-white/15 transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300">
+                <div>
+                    <div class="flex items-center gap-3 mb-3">
+                        <img src="${a.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1">
+                                <h4 class="text-sm font-bold text-white truncate" title="${a.name}">${a.name}</h4>
+                                <span class="material-symbols-outlined text-primary text-[14px]" title="Verified Spotify Artist">verified</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 font-mono mt-0.5 truncate">${followersStr}</p>
+                            <p class="text-[10px] text-gray-500 truncate mt-0.5">${genreStr}</p>
+                        </div>
+                    </div>
+                </div>
+                ${actionHtml}
+            </div>
+        `;
+    }
+
+    function renderPlaylistRadarCard(p) {
+        return `
+            <div class="radar-card glass-panel p-4 rounded-2xl border border-white/5 hover:border-white/15 transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300">
+                <div>
+                    <div class="flex items-center gap-3 mb-3">
+                        <img src="${p.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40">
+                        <div class="min-w-0 flex-1">
+                            <h4 class="text-sm font-bold text-white truncate" title="${p.title}">${p.title}</h4>
+                            <p class="text-[11px] text-primary font-mono mt-0.5 truncate">${p.tracks_count} Tracks • ${p.category}</p>
+                            <p class="text-[10px] text-gray-500 truncate mt-0.5">By ${p.owner}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-3 border-t border-white/5">
+                    <button type="button" onclick="launchRadarPlaylist('${p.id}', this)" class="w-full py-2 rounded-xl bg-white/5 hover:bg-primary hover:text-black text-gray-200 hover:text-black text-xs font-bold transition flex items-center justify-center gap-1.5 border border-white/5 shadow-sm">
+                        <span class="material-symbols-outlined text-[16px]">playlist_add_check</span> Ingest Playlist Tracks
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    async function launchRadarArtist(spotifyId, btn) {
+        if (!spotifyId) return;
+        const oldHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Queuing...`;
+        }
+
+        try {
+            const res = await fetch('/api/admin/spotify_radar/launch_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'artist', spotify_id: spotifyId })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🚀 ${data.message}`);
+                loadRadarData();
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Launch error'}`);
+            }
+        } catch (e) {
+            console.error('Launch artist error:', e);
+            if (typeof showToast === 'function') showToast('❌ Server error launching campaign.');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = oldHtml;
+            }
+        }
+    }
+
+    async function launchRadarPlaylist(playlistId, btn) {
+        if (!playlistId) return;
+        const oldHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Queuing...`;
+        }
+
+        try {
+            const res = await fetch('/api/admin/spotify_radar/launch_item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'playlist', spotify_id: playlistId })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🎉 ${data.message}`);
+                loadRadarData();
+            } else {
+                if (typeof showToast === 'function') showToast(`❌ ${data.message || 'Launch error'}`);
+            }
+        } catch (e) {
+            console.error('Launch playlist error:', e);
+            if (typeof showToast === 'function') showToast('❌ Server error queueing playlist.');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = oldHtml;
+            }
+        }
+    }
+
+    async function toggleAutopilotMode(enabled) {
+        try {
+            const res = await fetch('/api/admin/spotify_radar/toggle_autopilot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(enabled ? '⚡️ 24/7 Vault Autopilot Activated!' : '⏸ Vault Autopilot Paused');
+                loadRadarData();
+            }
+        } catch (e) {
+            console.error('Toggle autopilot error:', e);
+        }
+    }
+
+    function openAddCategoryModal() {
+        const modal = document.getElementById('modal-add-radar-cat');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+    }
+
+    function closeAddCategoryModal() {
+        const modal = document.getElementById('modal-add-radar-cat');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    }
+
+    async function submitNewCategory(btn) {
+        const title = document.getElementById('new-cat-title').value.trim();
+        const subtitle = document.getElementById('new-cat-subtitle').value.trim();
+        const queries = document.getElementById('new-cat-queries').value.trim();
+
+        if (!title || !queries) {
+            alert('Please enter both Category Title and at least one Search Query.');
+            return;
+        }
+
+        const oldHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Scanning Spotify...`;
+
+        try {
+            const res = await fetch('/api/admin/spotify_radar/categories/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, subtitle, queries })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🎉 ${data.message}`);
+                closeAddCategoryModal();
+                document.getElementById('new-cat-title').value = '';
+                document.getElementById('new-cat-subtitle').value = '';
+                document.getElementById('new-cat-queries').value = '';
+                loadRadarData(true);
+            } else {
+                alert(data.message || 'Error creating category');
+            }
+        } catch (e) {
+            console.error('Error creating category:', e);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = oldHtml;
+        }
+    }
+
+    async function deleteRadarCategory(catKey, catTitle) {
+        if (!confirm(`Are you sure you want to remove the genre "${catTitle}" from Radar?`)) return;
+
+        try {
+            const res = await fetch('/api/admin/spotify_radar/categories/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category_key: catKey })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🗑 ${data.message}`);
+                currentRadarCategory = 'all';
+                loadRadarData(true);
+            }
+        } catch (e) {
+            console.error('Error deleting category:', e);
+        }
+    }
+
+    async function editTargetGoal() {
+        const currentGoal = radarRawData?.metrics?.target_goal || 25000;
+        const newGoal = prompt("🎯 Enter new Golden Vault Target Goal (e.g. 10000, 25000, 50000):", currentGoal);
+        if (!newGoal || isNaN(newGoal) || parseInt(newGoal) < 100) return;
+
+        try {
+            const res = await fetch('/api/admin/spotify_radar/update_target_goal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_goal: parseInt(newGoal) })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof showToast === 'function') showToast(`🎯 Vault target goal updated to ${parseInt(newGoal).toLocaleString()} tracks!`);
+                updateVaultMetrics(data.metrics);
+            }
+        } catch (e) {
+            console.error('Error updating target goal:', e);
+        }
+    }
+
+    function filterRadarCards() {
+        const q = document.getElementById('radar-search-input').value.toLowerCase().trim();
+        document.querySelectorAll('.radar-card').forEach(card => {
+            const text = card.innerText.toLowerCase();
+            card.style.display = text.includes(q) ? 'flex' : 'none';
+        });
+    }
+</script>

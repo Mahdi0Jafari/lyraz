@@ -154,13 +154,17 @@ def init_db():
                 crawler_enabled BOOLEAN DEFAULT 0,
                 crawler_schedule_hour TEXT DEFAULT '04:00',
                 crawler_max_tracks INTEGER DEFAULT 15,
-                crawler_source TEXT DEFAULT 'global_top_50'
+                crawler_source TEXT DEFAULT 'global_top_50',
+                autopilot_enabled BOOLEAN DEFAULT 0,
+                autopilot_target_goal INTEGER DEFAULT 25000
             )''')
             for col, col_type, default_val in [
                 ('crawler_enabled', 'BOOLEAN', '0'),
                 ('crawler_schedule_hour', 'TEXT', "'04:00'"),
                 ('crawler_max_tracks', 'INTEGER', '15'),
-                ('crawler_source', 'TEXT', "'global_top_50'")
+                ('crawler_source', 'TEXT', "'global_top_50'"),
+                ('autopilot_enabled', 'BOOLEAN', '0'),
+                ('autopilot_target_goal', 'INTEGER', '25000')
             ]:
                 try:
                     c.execute(f"ALTER TABLE settings ADD COLUMN {col} {col_type} DEFAULT {default_val}")
@@ -176,6 +180,34 @@ def init_db():
                 source TEXT,
                 updated_at INTEGER
             )''')
+
+            # 8. Dynamic Spotify Radar Categories Table
+            c.execute('''CREATE TABLE IF NOT EXISTS radar_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_key TEXT UNIQUE,
+                title TEXT NOT NULL,
+                subtitle TEXT,
+                search_queries TEXT NOT NULL,
+                is_default BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+
+            # Seed Default Radar Categories from JSON database
+            try:
+                import json
+                from pathlib import Path
+                json_path = Path(__file__).resolve().parent / "data" / "radar_categories.json"
+                if json_path.exists():
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for cat in data.get("categories", []):
+                        queries_str = ", ".join(cat.get("queries", []))
+                        c.execute("""
+                            INSERT OR REPLACE INTO radar_categories (category_key, title, subtitle, search_queries, is_default)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (cat.get("key"), cat.get("title"), cat.get("subtitle"), queries_str, 1 if cat.get("is_default") else 0))
+            except Exception as e:
+                logger.warning(f"Could not load radar_categories.json: {e}")
 
             # 8. Referrals Table (Viral Growth Engine)
             c.execute('''CREATE TABLE IF NOT EXISTS referrals (

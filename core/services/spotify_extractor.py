@@ -302,4 +302,155 @@ class SpotifyExtractorService:
             "tracks": tracks
         }
 
+    def fetch_related_artists(self, artist_id):
+        """کشف آرتیست‌های هم‌سبک و مرتبط از روی گراف رسمی اسپاتیفای"""
+        try:
+            data = self.api_get(f"{API_BASE}/artists/{artist_id}/related-artists")
+            items = data.get("artists", [])
+            results = []
+            for a in items:
+                imgs = a.get("images", [])
+                results.append({
+                    "id": a.get("id"),
+                    "name": a.get("name"),
+                    "image": imgs[0]["url"] if imgs else None,
+                    "followers": (a.get("followers") or {}).get("total", 0),
+                    "genres": a.get("genres", []),
+                    "spotify_url": (a.get("external_urls") or {}).get("spotify")
+                })
+            return results
+        except Exception as e:
+            logger.warning(f"Error fetching related artists for {artist_id}: {e}")
+            return []
+
+    def fetch_live_curated_radar(self):
+        """
+        رادار زنده کشف و دسته‌بندی هوشمند برترین هنرمندان و پلی‌لیست‌های ترند از اسپاتیفای
+        با قابلیت خواندن دسته‌بندی‌ها و کلیدواژه‌های سفارشی از دیتابیس.
+        """
+        import sqlite3
+        radar_categories = []
+        
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT * FROM radar_categories ORDER BY is_default DESC, id ASC").fetchall()
+                for r in rows:
+                    raw_q = r['search_queries'] or ''
+                    queries = [q.strip() for q in raw_q.split(',') if q.strip()]
+                    if queries:
+                        radar_categories.append({
+                            "id": r['category_key'],
+                            "title": r['title'],
+                            "subtitle": r['subtitle'] or '',
+                            "is_default": bool(r['is_default']),
+                            "queries": queries
+                        })
+        except Exception as e:
+            logger.warning(f"Could not load radar categories from DB, falling back: {e}")
+
+        # در صورت خالی بودن جدول، خواندن مستقیم از فایل جیسون
+        if not radar_categories:
+            try:
+                import json
+                from pathlib import Path
+                json_path = Path(__file__).resolve().parent.parent / "data" / "radar_categories.json"
+                if json_path.exists():
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for cat in data.get("categories", []):
+                        radar_categories.append({
+                            "id": cat.get("key"),
+                            "title": cat.get("title"),
+                            "subtitle": cat.get("subtitle") or '',
+                            "is_default": bool(cat.get("is_default")),
+                            "queries": cat.get("queries", [])
+                        })
+            except Exception as e:
+                logger.warning(f"Fallback to radar_categories.json failed: {e}")
+
+        # واکشی لیست مگا پلی‌لیست‌ها از فایل جیسون
+        featured_playlists_queries = []
+        try:
+            import json
+            from pathlib import Path
+            json_path = Path(__file__).resolve().parent.parent / "data" / "radar_categories.json"
+            if json_path.exists():
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                featured_playlists_queries = data.get("featured_playlists", [])
+        except Exception:
+            pass
+
+        if not featured_playlists_queries:
+            featured_playlists_queries = [
+                {"query": "Persian Pop Essentials", "category": "Persian Hits"},
+                {"query": "Top 50 Global", "category": "Charts"},
+                {"query": "Today's Top Hits", "category": "Charts"},
+                {"query": "Persian Hip Hop", "category": "Persian Rap"},
+                {"query": "Nostalgia Persian", "category": "Classics"},
+                {"query": "Billboard Hot 100", "category": "Global Hits"},
+                {"query": "Viral 50 Global", "category": "Viral"}
+            ]
+
+        output = {
+            "categories": [],
+            "playlists": []
+        }
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        # ۱. واکشی موازی و پرسرعت هنرمندان
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for cat in radar_categories:
+                futures = [executor.submit(self.search_artist, q, 1) for q in cat["queries"]]
+                cat_artists = []
+                for f in futures:
+                    try:
+                        res = f.result(timeout=10)
+                        if res:
+                            cat_artists.append(res[0])
+                    except Exception:
+                        pass
+
+                output["categories"].append({
+                    "id": cat["id"],
+                    "title": cat["title"],
+                    "subtitle": cat["subtitle"],
+                    "total_artists": len(cat_artists),
+                    "artists": cat_artists
+                })
+
+            # ۲. واکشی موازی پلی‌لیست‌ها
+            def _fetch_pl(pl_q):
+                try:
+                    res = self.api_get(f"{API_BASE}/search", params={"q": pl_q["query"], "type": "playlist", "limit": 1})
+                    items = res.get("playlists", {}).get("items", [])
+                    if items and items[0]:
+                        p = items[0]
+                        imgs = p.get("images", [])
+                        return {
+                            "id": p.get("id"),
+                            "title": p.get("name"),
+                            "category": pl_q["category"],
+                            "description": p.get("description", ""),
+                            "image": imgs[0]["url"] if imgs else None,
+                            "owner": (p.get("owner") or {}).get("display_name", "Spotify"),
+                            "tracks_count": (p.get("tracks") or {}).get("total", 50),
+                            "spotify_url": (p.get("external_urls") or {}).get("spotify")
+                        }
+                except Exception as e:
+                    logger.warning(f"Error fetching playlist {pl_q['query']}: {e}")
+                return None
+
+            pl_futures = [executor.submit(_fetch_pl, pl_q) for pl_q in featured_playlists_queries]
+            for pf in pl_futures:
+                try:
+                    r = pf.result(timeout=10)
+                    if r: output["playlists"].append(r)
+                except Exception:
+                    pass
+
+        return output
+
 spotify_extractor = SpotifyExtractorService()
