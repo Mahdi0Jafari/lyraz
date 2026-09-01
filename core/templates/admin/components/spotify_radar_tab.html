@@ -288,11 +288,30 @@
     let quickSearchTimeout = null;
     let expandedShelves = {}; // Track open/closed shelves
 
+    let radarLivePoller = null;
+
     document.addEventListener("DOMContentLoaded", () => {
         if (!document.getElementById('tab-spotify_radar')?.classList.contains('hidden')) {
             loadRadarData();
         }
+        startRadarLivePoller();
     });
+
+    function startRadarLivePoller() {
+        if (radarLivePoller) clearInterval(radarLivePoller);
+        radarLivePoller = setInterval(async () => {
+            const tab = document.getElementById('tab-spotify_radar');
+            if (tab && !tab.classList.contains('hidden')) {
+                try {
+                    const res = await fetch('/api/admin/spotify_radar/vault_metrics');
+                    const data = await res.json();
+                    if (data.status === 'success' && data.metrics) {
+                        updateVaultMetrics(data.metrics);
+                    }
+                } catch (e) {}
+            }
+        }, 5000);
+    }
 
     async function loadRadarData(forceRefresh = false) {
         const loading = document.getElementById('radar-loading');

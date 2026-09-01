@@ -45,17 +45,23 @@ class CatalogAutopilotService:
             settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
             autopilot_enabled = bool(settings['autopilot_enabled']) if settings and 'autopilot_enabled' in settings.keys() else False
 
-            # محاسبه مجموع کل قطعات موجود در رادار (آرتیست‌ها + پلی‌لیست‌ها)
-            radar_artist_count = 0
-            radar_playlist_tracks = 0
-            try:
-                cat_rows = conn.execute("SELECT search_queries FROM radar_categories").fetchall()
-                for cr in cat_rows:
-                    names = [n.strip() for n in cr['search_queries'].split(',') if n.strip()]
-                    radar_artist_count += len(names)
-            except Exception:
-                radar_artist_count = 65
+            # آمار دقیق کمپین‌های رادار
+            camp_row = conn.execute("""
+                SELECT 
+                    COALESCE(SUM(total_tracks), 0) as launched_tracks,
+                    COALESCE(SUM(completed_tracks), 0) as completed_tracks,
+                    COUNT(*) as launched_artists,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_artists
+                FROM artist_campaigns
+            """).fetchone()
 
+            launched_artists = camp_row['launched_artists']
+            completed_artists = camp_row['completed_artists']
+            launched_tracks = camp_row['launched_tracks']
+            completed_tracks = camp_row['completed_tracks']
+
+            # محاسبه تعداد کل آرتیست‌های تعریف‌شده در دسته‌بندی‌های رادار
+            radar_artist_count = 0
             try:
                 import json
                 from pathlib import Path
@@ -63,27 +69,41 @@ class CatalogAutopilotService:
                 if json_path.exists():
                     with open(json_path, "r", encoding="utf-8") as f:
                         j_data = json.load(f)
-                    radar_playlist_tracks = len(j_data.get("featured_playlists", [])) * 50
+                    all_queries = set()
+                    for cat in j_data.get("categories", []):
+                        for q in cat.get("queries", []):
+                            all_queries.add(q.strip().lower())
+                    radar_artist_count = len(all_queries)
             except Exception:
-                radar_playlist_tracks = 350
+                radar_artist_count = 77
 
-            # هر آرتیست به طور میانگین ۶۰ ترک دیسکوگرافی دارد
-            estimated_radar_total = (radar_artist_count * 60) + radar_playlist_tracks
-            target_goal = max(total_tracks, estimated_radar_total)
+            if radar_artist_count == 0:
+                radar_artist_count = 77
 
-            percent = round((total_tracks / max(1, target_goal)) * 100, 1)
+            # تعداد آرتیست‌های باقیمانده در لیست رادار که هنوز لانچ نشده‌اند
+            remaining_artists = max(0, radar_artist_count - launched_artists)
+            
+            # میانگین واقعی ترک به ازای هر آرتیست بر اساس داده‌های استخراج‌شده
+            avg_tracks = round(launched_tracks / max(1, launched_artists)) if launched_artists > 0 else 120
+            
+            # مجموع کل ترک‌های لیست اسپاتیفای رادار (آرتیست‌های لانچ‌شده + باقیمانده‌های لیست)
+            total_radar_goal = launched_tracks + (remaining_artists * avg_tracks)
+            if total_radar_goal < completed_tracks:
+                total_radar_goal = completed_tracks
+
+            percent = round((completed_tracks / max(1, total_radar_goal)) * 100, 1)
             if percent > 100: percent = 100.0
 
             return {
-                "total_tracks": total_tracks,
-                "target_goal": target_goal,
+                "total_tracks": completed_tracks,
+                "target_goal": total_radar_goal,
                 "progress_percent": percent,
                 "total_size_mb": round(total_size_bytes / (1024 * 1024), 1),
                 "total_size_gb": round(total_size_bytes / (1024 * 1024 * 1024), 2),
                 "total_hours": round(total_duration_sec / 3600, 1),
                 "ingested_today": ingested_today,
-                "total_artists": campaign_artists_count,
-                "completed_artists": completed_campaigns,
+                "total_artists": launched_artists,
+                "completed_artists": completed_artists,
                 "radar_artists": radar_artist_count,
                 "autopilot_enabled": autopilot_enabled
             }
