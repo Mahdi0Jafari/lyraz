@@ -952,6 +952,22 @@ def get_radar_categories_api():
     cats = db.execute("SELECT * FROM radar_categories ORDER BY is_default DESC, id ASC").fetchall()
     return jsonify({'status': 'success', 'categories': [dict(c) for c in cats]})
 
+@admin_bp.route('/api/admin/spotify_radar/suggest_artists', methods=['GET'])
+def suggest_radar_artists_api():
+    """پیشنهاد خودکار هنرمندان یک ژانر یا جستجوی سریع خواننده برای افزودن به تگ‌ها"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'status': 'success', 'artists': []})
+
+    from core.services.spotify_extractor import spotify_extractor
+    try:
+        artists = spotify_extractor.suggest_artists_by_genre(q, limit=12)
+        return jsonify({'status': 'success', 'artists': artists})
+    except Exception as e:
+        logger.error(f"Error suggesting artists for '{q}': {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @admin_bp.route('/api/admin/spotify_radar/categories/add', methods=['POST'])
 def add_radar_category_api():
     """افزودن دسته‌بندی و کلیدواژه‌های سفارشی جدید به رادار"""
@@ -987,6 +1003,66 @@ def add_radar_category_api():
     except Exception as e:
         logger.error(f"Error adding radar category: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@admin_bp.route('/api/admin/spotify_radar/categories/add_artist', methods=['POST'])
+def add_artist_to_category_api():
+    """افزودن مستقیم یک خواننده به یک دسته‌بندی خاص"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    category_key = data.get('category_key')
+    artist_name = (data.get('artist_name') or '').strip()
+
+    if not category_key or not artist_name:
+        return jsonify({'status': 'error', 'message': 'category_key and artist_name are required'}), 400
+
+    db = get_db()
+    row = db.execute("SELECT search_queries FROM radar_categories WHERE category_key = ?", (category_key,)).fetchone()
+    if not row:
+        return jsonify({'status': 'error', 'message': 'Category not found'}), 404
+
+    existing_queries = [q.strip() for q in row['search_queries'].split(',') if q.strip()]
+    if not any(q.lower() == artist_name.lower() for q in existing_queries):
+        existing_queries.append(artist_name)
+        new_queries_str = ", ".join(existing_queries)
+        db.execute("UPDATE radar_categories SET search_queries = ? WHERE category_key = ?", (new_queries_str, category_key))
+        db.commit()
+
+        # پاکسازی کش رادار
+        from core.services.catalog_autopilot import _RADAR_CACHE
+        _RADAR_CACHE["data"] = None
+        _RADAR_CACHE["cached_at"] = 0
+
+    return jsonify({'status': 'success', 'message': f'Artist "{artist_name}" added to category!'})
+
+@admin_bp.route('/api/admin/spotify_radar/categories/remove_artist', methods=['POST'])
+def remove_artist_from_category_api():
+    """حذف یک خواننده از یک دسته‌بندی خاص"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    data = request.json or {}
+    category_key = data.get('category_key')
+    artist_name = (data.get('artist_name') or '').strip()
+
+    if not category_key or not artist_name:
+        return jsonify({'status': 'error', 'message': 'category_key and artist_name are required'}), 400
+
+    db = get_db()
+    row = db.execute("SELECT search_queries FROM radar_categories WHERE category_key = ?", (category_key,)).fetchone()
+    if not row:
+        return jsonify({'status': 'error', 'message': 'Category not found'}), 404
+
+    existing_queries = [q.strip() for q in row['search_queries'].split(',') if q.strip()]
+    new_queries = [q for q in existing_queries if q.lower() != artist_name.lower()]
+    new_queries_str = ", ".join(new_queries)
+
+    db.execute("UPDATE radar_categories SET search_queries = ? WHERE category_key = ?", (new_queries_str, category_key))
+    db.commit()
+
+    # پاکسازی کش رادار
+    from core.services.catalog_autopilot import _RADAR_CACHE
+    _RADAR_CACHE["data"] = None
+    _RADAR_CACHE["cached_at"] = 0
+
+    return jsonify({'status': 'success', 'message': f'Artist "{artist_name}" removed from category.'})
 
 @admin_bp.route('/api/admin/spotify_radar/categories/delete', methods=['POST'])
 def delete_radar_category_api():
