@@ -113,6 +113,35 @@ class SpotifyExtractorService:
             })
         return artists
 
+    def suggest_artists_by_genre(self, genre_query, limit=12):
+        """پیشنهاد خودکار هنرمندان برتر یک سبک یا کلیدواژه از اسپاتیفای"""
+        genre_query = (genre_query or "").strip()
+        if not genre_query:
+            return []
+        
+        try:
+            data = self.api_get(f"{API_BASE}/search", params={
+                "q": genre_query,
+                "type": "artist",
+                "limit": limit
+            })
+            items = data.get("artists", {}).get("items", [])
+        except Exception:
+            return []
+
+        artists = []
+        for a in items:
+            images = a.get("images", [])
+            artists.append({
+                "id": a.get("id"),
+                "name": a.get("name"),
+                "image": images[0]["url"] if images else None,
+                "followers": (a.get("followers") or {}).get("total", 0),
+                "genres": a.get("genres", []),
+                "spotify_url": (a.get("external_urls") or {}).get("spotify")
+            })
+        return artists
+
     def parse_spotify_link(self, link):
         """تشخیص نوع لینک (آرتیست، پلی‌لیست، آلبوم، ترک) و استخراج شناسه ID"""
         link = (link or "").strip()
