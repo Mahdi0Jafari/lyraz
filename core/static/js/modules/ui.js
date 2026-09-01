@@ -153,7 +153,16 @@ export function renderPlaylist(tracks, loadTrackCallback) {
                 <h4 class="text-sm font-semibold truncate text-gray-200 group-hover:text-white">${track.title}</h4>
                 <p class="text-xs text-gray-500 truncate flex items-center">${track.performer} ${senderHtml}</p>
             </div>
-            <span class="text-xs text-gray-600 font-mono">${formatTime(track.duration)}</span>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="/download/${track.file_unique_id}" 
+                   target="_blank" 
+                   onclick="event.stopPropagation()" 
+                   class="size-7 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-400 hover:text-black transition flex items-center justify-center opacity-0 group-hover:opacity-100" 
+                   title="Download MP3">
+                    <i class="ri-download-2-line text-xs"></i>
+                </a>
+                <span class="text-xs text-gray-600 font-mono">${formatTime(track.duration)}</span>
+            </div>
         `;
         elements.playlistContainer.appendChild(div);
     });
