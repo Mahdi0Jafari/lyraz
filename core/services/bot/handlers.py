@@ -11,6 +11,7 @@ from telegram.constants import ParseMode, ChatAction
 from core.config import Config
 from core.services.youtube import YouTubeService
 from core.services.spotify_official import spotify_keyless 
+from core.services.soundcloud import soundcloud_service 
 from .database import (
     bot_db_exec, get_user_id, update_user_session, get_session_info,
     get_user_current_session, set_device_name, get_active_sessions,
@@ -358,6 +359,70 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
+async def handle_soundcloud_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
+    """پردازش هوشمند و استخراج مستقیم آهنگ‌ها و مجموعه‌های ساندکلاد"""
+    if not await check_quota_and_channel_membership(update, context):
+        return
+
+    status_msg = await update.message.reply_text("🔎 Analyzing SoundCloud link...")
+    
+    # واکشی متادیتا با سرویس ساندکلاد
+    sc_data = await asyncio.to_thread(soundcloud_service.extract_info, url)
+    
+    if sc_data.get('status') == 'error':
+        await status_msg.edit_text(f"❌ {sc_data.get('message', 'Failed to fetch SoundCloud link.')}")
+        return
+
+    # --- Case 1: Single Track ---
+    if sc_data.get('type') == 'track':
+        title = sc_data['title']
+        artist = sc_data['artist']
+        cover_url = sc_data.get('cover')
+        duration = sc_data.get('duration')
+        vid = sc_data['id']
+
+        await status_msg.edit_text(f"📥 Found *{title}* on SoundCloud.\nAdding to queue...", parse_mode=ParseMode.MARKDOWN)
+        await dispatch_to_huey(update, context, vid, title, artist, status_msg, cover_url=cover_url, duration=duration)
+
+    # --- Case 2: Playlist / Set ---
+    elif sc_data.get('type') == 'playlist':
+        tracks = sc_data.get('tracks', [])
+        set_name = sc_data.get('title', 'SoundCloud Collection')
+        cover_url = sc_data.get('cover')
+
+        if not tracks:
+            await status_msg.edit_text("❌ No playable tracks found in this SoundCloud set.")
+            return
+
+        await status_msg.edit_text(
+            f"📥 Found *{len(tracks)}* tracks in *{set_name}*.\nInitializing download engine...",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+        from core.tasks import download_playlist_batch
+        
+        def fetch_meta_sync():
+            return get_user_current_session(update.effective_user.id), get_user_role(update.effective_user.id)
+            
+        current_token, role = await asyncio.to_thread(fetch_meta_sync)
+        from core.services.bot.database import get_user_referral_stats
+        ref_count, _, _ = await asyncio.to_thread(get_user_referral_stats, update.effective_user.id)
+        playlist_prio = 90 if (role == 'admin' or ref_count >= 3) else 45
+
+        download_playlist_batch(
+            tracks=tracks,
+            playlist_name=set_name,
+            cover_url=cover_url,
+            user_id=update.effective_user.id,
+            user_first_name=update.effective_user.first_name,
+            session_token=current_token,
+            chat_id=update.effective_chat.id,
+            message_id=status_msg.message_id,
+            quality=Config.AUDIO_QUALITY,
+            priority=playlist_prio
+        )
+
+
 async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg, cover_url=None, duration=None):
     from core.tasks import download_and_process_track
     user = update.effective_user
@@ -576,6 +641,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     if re.match(r'(https?://)?(open\.spotify\.com)/.+', text):
         await handle_spotify_link(update, context, text)
+        return
+
+    if re.match(r'(https?://)?((www\.|m\.|on\.)?soundcloud\.com)/.+', text, re.IGNORECASE):
+        await handle_soundcloud_link(update, context, text)
         return
 
     # --- Interactive Search Results (NO Blind Auto-Downloading!) ---

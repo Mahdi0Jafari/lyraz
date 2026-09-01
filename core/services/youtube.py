@@ -178,18 +178,30 @@ class YouTubeService:
                 self.apply_metadata_to_file(final_path, metadata)
             return final_path
 
-        # ۱. آماده‌سازی منابع دانلود (لینک مستقیم یوتیوب -> جستجوی ساندکلاد -> جستجوی یوتیوب)
+        # ۱. آماده‌سازی منابع دانلود (لینک مستقیم یوتیوب / ساندکلاد -> جستجوهای پشتیبان)
         raw_artist = metadata.get('artist', '') if metadata else ''
         raw_title = metadata.get('title', '') if metadata else ''
+        source_url = metadata.get('source_url', '') if metadata else ''
         clean_art = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip()
         search_query = f"{clean_art} {raw_title}".strip()
         if search_query in ['Unknown Artist Unknown Track', 'Unknown Artist YouTube Track', 'Unknown Track']:
             search_query = ""
 
-        sources = [f"https://www.youtube.com/watch?v={video_id}"]
-        if search_query:
-            sources.append(f"scsearch3:{search_query}")
-            sources.append(f"ytsearch1:{search_query}")
+        if source_url and ('soundcloud.com' in source_url or video_id.startswith('sc_')):
+            sources = [source_url]
+            if search_query:
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch1:{search_query}")
+        elif video_id.startswith('sc_'):
+            sources = []
+            if search_query:
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch1:{search_query}")
+        else:
+            sources = [f"https://www.youtube.com/watch?v={video_id}"]
+            if search_query:
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch1:{search_query}")
 
         logger.info(f"[*] Starting Multi-Source Download for [{video_id}] | Quality: {target_quality}kbps")
 
