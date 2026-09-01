@@ -140,7 +140,8 @@ def get_tg_link(file_id, track_row=None):
                                 json={"chat_id": Config.STORAGE_CHANNEL_ID, "message_id": fwd_res['result']['message_id']},
                                 timeout=3.0
                             )
-                        except Exception: pass
+                        except Exception:
+                            pass
                         return get_tg_link(new_file_id)
     except Exception as e:
         logger.error(f"Telegram API Error: {e}")
@@ -151,16 +152,47 @@ def get_tg_link(file_id, track_row=None):
 # 🚀 CORE STREAMING ROUTES
 # ==========================================
 
+def resolve_track(identifier):
+    """
+    یافتن هوشمند قطعه در دیتابیس بر اساس file_unique_id، youtube_id یا شناسه عددی جدول tracks یا campaign_tracks.
+    """
+    if not identifier:
+        return None
+    db = get_db()
+    
+    # ۱. جستجو در جدول tracks بر اساس file_unique_id یا youtube_id یا id
+    track = db.execute("""
+        SELECT id, file_id, file_unique_id, file_size, title, performer, storage_message_id, youtube_id, thumb_id, duration
+        FROM tracks 
+        WHERE file_unique_id = ? OR youtube_id = ? OR id = ?
+    """, (identifier, identifier, int(identifier) if str(identifier).isdigit() else -1)).fetchone()
+    
+    if track:
+        return track
+        
+    # ۲. در صورتی که شناسه از جدول campaign_tracks آمده باشد، واکشی از tracks با youtube_id
+    if str(identifier).isdigit():
+        track = db.execute("""
+            SELECT t.id, t.file_id, t.file_unique_id, t.file_size, t.title, t.performer, t.storage_message_id, t.youtube_id, t.thumb_id, t.duration
+            FROM campaign_tracks ct
+            JOIN tracks t ON ct.youtube_id = t.youtube_id
+            WHERE ct.id = ?
+        """, (int(identifier),)).fetchone()
+        if track:
+            return track
+
+    return None
+
+
 @stream_bp.route('/stream/warmup/<unique_id>')
 def warmup_link(unique_id):
     """Pre-fetch Endpoint"""
     try:
-        db = get_db()
-        track = db.execute("SELECT id, file_id, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+        track = resolve_track(unique_id)
         if track:
             link = get_tg_link(track['file_id'], track_row=track)
             if link:
-                return jsonify({"status": "warmed", "unique_id": unique_id})
+                return jsonify({"status": "warmed", "unique_id": track['file_unique_id']})
         return jsonify({"status": "failed"}), 404
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)}), 500
@@ -169,9 +201,7 @@ def warmup_link(unique_id):
 @stream_bp.route('/stream/<unique_id>')
 def audio(unique_id):
     """Real-time Streaming Endpoint"""
-    db = get_db()
-    track = db.execute("SELECT id, file_id, file_size, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
-
+    track = resolve_track(unique_id)
     if not track: return "Track Not Found", 404
     
     link = get_tg_link(track['file_id'], track_row=track)
@@ -216,11 +246,9 @@ def audio(unique_id):
 def download_audio(unique_id):
     """
     نقطه پایانی دانلود مستقیم و امن فایل صوتی (Content-Disposition: attachment)
-    با نام‌گذاری استاندارد، سرعت ماکسیمم چانکینگ، پشتیبانی از IDM و Range Header و ضد ایندکس کپی‌رایت.
+    با نام‌گذاری استاندارد، سرعت ماکسیمم چانکینگ، پشتیبانی از Range Header و ضد ایندکس کپی‌رایت.
     """
-    db = get_db()
-    track = db.execute("SELECT id, file_id, file_size, title, performer, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
-
+    track = resolve_track(unique_id)
     if not track:
         return "Track Not Found", 404
     
@@ -229,7 +257,7 @@ def download_audio(unique_id):
         return "Audio Link Expired or Unavailable", 500
 
     headers = {}
-    if 'Range' in request.headers:
+    if 'Range' in request.headers: 
         headers['Range'] = request.headers['Range']
 
     try:
@@ -237,7 +265,7 @@ def download_audio(unique_id):
         
         def generate():
             try:
-                for chunk in req.iter_content(chunk_size=65536):  # 64KB chunks for fast IDM/browser downloading
+                for chunk in req.iter_content(chunk_size=65536):  # 64KB chunks for fast downloading
                     if chunk: yield chunk
             except Exception:
                 pass
@@ -380,8 +408,7 @@ def get_cover(unique_id):
             'Cache-Control': 'public, max-age=604800, immutable'
         })
 
-    db = get_db()
-    track = db.execute("SELECT thumb_id, title, performer, youtube_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+    track = resolve_track(unique_id)
     
     if not track:
         return Response(DEFAULT_COVER_SVG, mimetype='image/svg+xml', headers={
@@ -449,7 +476,7 @@ def get_lyrics(unique_id):
     except: pass
 
     # 2. Fetch from Central Metadata Service
-    track = db.execute("SELECT title, performer, duration FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+    track = resolve_track(unique_id)
     if not track: return jsonify({"status": "error"}), 404
 
     # استفاده از متد قدرتمندِ fetch_lyrics که خودش اسامی را پاکسازی و بهینه‌سازی می‌کند
@@ -459,7 +486,7 @@ def get_lyrics(unique_id):
         # ذخیره در کش برای دفعات بعد
         try:
             db.execute("INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at) VALUES (?, ?, ?, ?)",
-                       (unique_id, lyrics, "lrclib", int(time.time())))
+                       (track['file_unique_id'] or unique_id, lyrics, "lrclib", int(time.time())))
             db.commit()
         except: pass
         return jsonify({"status": "found", "lyrics": lyrics})

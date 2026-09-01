@@ -715,7 +715,7 @@
                                     </div>
                                 ` : `
                                     <span class="text-[10px] text-gray-500 font-mono">No Live Hub yet</span>
-                                    <button type="button" onclick="openCreateHubModal(${c.id}, '${artistSafe}', event)" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 text-[10px] font-bold transition flex items-center gap-1 border border-white/5">
+                                    <button type="button" onclick="openCreateHubModal(${c.id}, null, event)" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 text-[10px] font-bold transition flex items-center gap-1 border border-white/5">
                                         <span class="material-symbols-outlined text-[13px]">add_link</span> Create Hub
                                     </button>
                                 `}
@@ -816,7 +816,7 @@
                 `;
             } else {
                 hubWrap.innerHTML = `
-                    <button type="button" onclick="openCreateHubModal(${c.id}, '${escapeHtml(c.artist_name)}', event)" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-primary hover:text-black text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
+                    <button type="button" onclick="openCreateHubModal(${c.id}, null, event)" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-primary hover:text-black text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10">
                         <span class="material-symbols-outlined text-[15px]">add_link</span> Create Live Hub
                     </button>
                 `;
@@ -855,14 +855,16 @@
             let statusBadge = '';
             let actionCell = '<span class="text-gray-600 font-mono text-[10px]">-</span>';
 
+            const trackKey = t.file_unique_id || t.youtube_id || t.id;
+
             if (t.status === 'completed') {
                 statusBadge = `<span class="px-2 py-0.5 rounded-md bg-green-500/20 text-green-400 font-bold font-mono text-[10px] flex items-center gap-1"><span class="size-1.5 rounded-full bg-green-400"></span> Delivered</span>`;
                 actionCell = `
                     <div class="flex items-center justify-center gap-1">
-                        <a href="/download/${t.youtube_id || t.id}" target="_blank" class="size-7 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 flex items-center justify-center transition" title="Direct Download MP3">
+                        <a href="/download/${trackKey}" target="_blank" class="size-7 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 flex items-center justify-center transition" title="Direct Download MP3">
                             <span class="material-symbols-outlined text-[14px]">download</span>
                         </a>
-                        <button type="button" onclick="copySingleTrackLink('${t.youtube_id || t.id}')" class="size-7 rounded-lg bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white flex items-center justify-center transition" title="Copy Direct Download Link">
+                        <button type="button" onclick="copySingleTrackLink('${trackKey}')" class="size-7 rounded-lg bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white flex items-center justify-center transition" title="Copy Direct Download Link">
                             <span class="material-symbols-outlined text-[14px]">content_copy</span>
                         </button>
                     </div>
@@ -970,13 +972,21 @@
     // 7. LIVE HUB & IDM BATCH ACTIONS
     // ------------------------------------------
     function openCreateHubModal(campaignId, artistName, event) {
-        if (event) event.stopPropagation();
+        if (event && event.stopPropagation) event.stopPropagation();
         currentCreateHubCampaignId = campaignId;
 
-        document.getElementById('create-hub-artist-label').innerText = artistName;
+        if (!artistName) {
+            const found = (currentCampaigns || []).find(c => c.id === campaignId);
+            artistName = found ? found.artist_name : '';
+        }
+        if (!artistName && currentModalCampaignId === campaignId) {
+            artistName = document.getElementById('modal-artist-name').innerText.trim();
+        }
+
+        document.getElementById('create-hub-artist-label').innerText = artistName || 'Artist';
         
         // تولید اسلاگ پیشنهادی اولیه
-        let cleanSlug = artistName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        let cleanSlug = (artistName || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
         if (!cleanSlug || cleanSlug.length < 2) {
             cleanSlug = `artist-${campaignId}`;
         }
@@ -1081,7 +1091,7 @@
         }
 
         const origin = window.location.origin;
-        const links = completedTracks.map(t => `${origin}/download/${t.youtube_id || t.id}`).join('\n');
+        const links = completedTracks.map(t => `${origin}/download/${t.file_unique_id || t.youtube_id || t.id}`).join('\n');
 
         navigator.clipboard.writeText(links).then(() => {
             if (typeof showToast === 'function') showToast(`📋 Copied ${completedTracks.length} direct download links to clipboard!`);
@@ -1105,7 +1115,7 @@
         }
 
         const origin = window.location.origin;
-        const links = completedTracks.map(t => `${origin}/download/${t.youtube_id || t.id}`).join('\n');
+        const links = completedTracks.map(t => `${origin}/download/${t.file_unique_id || t.youtube_id || t.id}`).join('\n');
         const artistName = document.getElementById('modal-artist-name').innerText.trim() || 'artist';
 
         const blob = new Blob([links], { type: 'text/plain;charset=utf-8' });
