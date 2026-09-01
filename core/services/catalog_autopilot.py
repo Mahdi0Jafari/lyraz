@@ -268,7 +268,51 @@ class CatalogAutopilotService:
                 # صف در حال حاضر پر است، صبر تا خلوت شدن
                 return
 
-            # ۲. بررسی مستقیم دیتابیس برای جلوگیری قطعی از تکرار کمپین‌ها
+            # ۲. 🔥 فرآیند خودترمیمی خودکار (Auto-Healing): تلاش مجدد برای دانلود آهنگ‌های فیل‌شده
+            failed_tracks = conn.execute("""
+                SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
+                FROM campaign_tracks ct
+                JOIN artist_campaigns ac ON ct.campaign_id = ac.id
+                WHERE ct.status = 'failed'
+                LIMIT 10
+            """).fetchall()
+
+            if failed_tracks:
+                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(failed_tracks)} failed tracks...")
+                from core.tasks import download_and_process_track
+                for trk in failed_tracks:
+                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL WHERE id = ?", (trk['id'],))
+                    
+                    cur = conn.execute("""
+                        INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+                        VALUES (?, ?, ?, ?, 'queued')
+                    """, (trk['title'], trk['artist'], trk['youtube_id'], f"auto_retry:{trk['artist_name'][:12]}"))
+                    log_id = cur.lastrowid
+
+                    target_ch = trk['target_channel_id']
+                    distinct_target_ch = target_ch if target_ch and str(target_ch) != str(Config.STORAGE_CHANNEL_ID) else None
+
+                    download_and_process_track(
+                        video_id=trk['youtube_id'],
+                        title=trk['title'],
+                        artist=trk['artist'],
+                        user_id=0,
+                        user_first_name="AutoHealer",
+                        session_token=None,
+                        chat_id=None,
+                        message_id=None,
+                        quality=None,
+                        cover_url=trk['cover_url'],
+                        duration=trk['duration_seconds'],
+                        log_id=log_id,
+                        target_channel_id=distinct_target_ch,
+                        priority=12
+                    )
+                conn.commit()
+                # در این تیک روی ترمیم آهنگ‌های قبلی تمرکز می‌کنیم
+                return
+
+            # ۳. بررسی مستقیم دیتابیس برای جلوگیری قطعی از تکرار کمپین‌ها
             existing_camps = conn.execute("SELECT spotify_id, LOWER(artist_name) FROM artist_campaigns").fetchall()
             existing_sp_ids = set(r[0] for r in existing_camps if r[0])
             existing_names = set(r[1] for r in existing_camps if r[1])
