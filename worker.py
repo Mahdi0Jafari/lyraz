@@ -22,8 +22,8 @@ if __name__ == "__main__":
         # تنظیمات مصرف‌کننده (Consumer)
         consumer = Consumer(
             huey,
-            workers=6,             # ۶ پردازشگر همزمان برای دانلود موازی فوق‌سریع و پاسخگویی آنی صف
-            worker_type='thread',  # استفاده از Thread (چون دانلود I/O است نه CPU)
+            workers=3,             # ۳ پردازشگر همزمان بهینه و هماهنگ با محدودیت سرعت تلگرام برای خنک ماندن سرور
+            worker_type='thread',  # استفاده از Thread
             check_worker_health=True
         )
         consumer.run()
