@@ -268,6 +268,20 @@ def init_db():
                 c.execute('ALTER TABLE artist_campaigns ADD COLUMN hub_token TEXT DEFAULT NULL;')
             except sqlite3.OperationalError:
                 pass
+            
+            # پاکسازی خودکار رکوردهای تکراری کمپین‌ها (نگه‌داشتن کامل‌ترین رکورد)
+            try:
+                c.execute("""
+                    DELETE FROM artist_campaigns 
+                    WHERE id NOT IN (
+                        SELECT MIN(id) 
+                        FROM artist_campaigns 
+                        GROUP BY spotify_id, LOWER(artist_name)
+                    )
+                """)
+            except Exception:
+                pass
+
             c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_status ON artist_campaigns(status);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_channel ON artist_campaigns(target_channel_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_hub_token ON artist_campaigns(hub_token);')

@@ -560,13 +560,32 @@ def artist_hub_ingest_api():
 
     db = get_db()
 
+    # بررسی عدم وجود کمپین تکراری برای همین خواننده
+    sp_id = data.get('spotify_id', '').strip()
+    existing_camp = db.execute("""
+        SELECT id FROM artist_campaigns 
+        WHERE (spotify_id = ? AND spotify_id != '') OR LOWER(artist_name) = ?
+    """, (sp_id, artist_name.lower().strip())).fetchone()
+
+    if existing_camp:
+        campaign_id = existing_camp['id']
+        return jsonify({
+            'status': 'success',
+            'result': {
+                'campaign_id': campaign_id,
+                'artist_name': artist_name,
+                'total_tracks': len(tracks),
+                'message': 'Campaign already active'
+            }
+        })
+
     # ۱. ایجاد رکورد کمپین در جدول artist_campaigns (با کلید اصلی id)
     cur_camp = db.execute("""
         INSERT INTO artist_campaigns (artist_name, spotify_id, spotify_url, avatar_url, target_channel_id, total_tracks, completed_tracks, status)
         VALUES (?, ?, ?, ?, ?, ?, 0, 'processing')
     """, (
         artist_name,
-        data.get('spotify_id', ''),
+        sp_id,
         data.get('spotify_url', ''),
         data.get('avatar_url', ''),
         target_channel_id,
@@ -843,6 +862,62 @@ def create_artist_hub_api(campaign_id):
         'message': f'Live Hub created successfully for {c_row["artist_name"]}!'
     })
 
+
+@admin_bp.route('/api/admin/artist_hub/retry_all_failed', methods=['POST'])
+def retry_all_failed_api():
+    """تلاش مجدد برای دانلود و ذخیره تمام آهنگ‌های ناموفق در سراسر سیستم"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    
+    failed_tracks = db.execute("""
+        SELECT ct.*, ac.target_channel_id, ac.artist_name 
+        FROM campaign_tracks ct
+        JOIN artist_campaigns ac ON ct.campaign_id = ac.id
+        WHERE ct.status = 'failed'
+    """).fetchall()
+
+    if not failed_tracks:
+        return jsonify({'status': 'success', 'message': 'No failed tracks found to retry.', 'retried': 0})
+
+    from core.tasks import download_and_process_track
+    for trk in failed_tracks:
+        db.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL WHERE id = ?", (trk['id'],))
+        
+        cur = db.execute("""
+            INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+            VALUES (?, ?, ?, ?, 'queued')
+        """, (trk['title'], trk['artist'], trk['youtube_id'], f"retry_all:{trk['artist_name'][:12]}"))
+        log_id = cur.lastrowid
+
+        target_ch = trk['target_channel_id']
+        from core.config import Config
+        distinct_target_ch = target_ch if target_ch and str(target_ch) != str(Config.STORAGE_CHANNEL_ID) else None
+
+        download_and_process_track(
+            video_id=trk['youtube_id'],
+            title=trk['title'],
+            artist=trk['artist'],
+            user_id=0,
+            user_first_name="AutoRetry",
+            session_token=None,
+            chat_id=None,
+            message_id=None,
+            quality=None,
+            cover_url=trk['cover_url'],
+            duration=trk['duration_seconds'],
+            log_id=log_id,
+            target_channel_id=distinct_target_ch,
+            priority=15
+        )
+
+    db.execute("UPDATE artist_campaigns SET status = 'processing' WHERE status = 'failed'")
+    db.commit()
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Re-queued {len(failed_tracks)} failed tracks for automatic download!',
+        'retried': len(failed_tracks)
+    })
 
 @admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/sync_hub', methods=['POST'])
 def sync_artist_hub_api(campaign_id):

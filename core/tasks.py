@@ -48,35 +48,51 @@ def notify_web_bridge(data_dict):
     except Exception as e:
         logger.error(f"Bridge notification failed: {e}")
 
-async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None):
-    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل و شناسه پیام کانال"""
+async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None, retries=5):
+    """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل و شناسه پیام کانال با مکانیزم ضد FloodWait"""
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
 
-    try:
-        with open(file_path, 'rb') as f:
-            caption = (
-                f"🎵 Lyraz Cloud Vault\n"
-                f"🏷 Sig: {Config.VAULT_SIGNATURE}\n"
-                f"🆔 YT: {video_id}\n"
-                f"👤 Artist: {artist}\n"
-                f"💽 Title: {title}"
-            )
-            thumb = io.BytesIO(cover_bytes) if cover_bytes else None
-            sent_msg = await local_bot.send_audio(
-                chat_id=Config.STORAGE_CHANNEL_ID,
-                audio=f,
-                title=title,
-                performer=artist,
-                caption=caption,
-                thumbnail=thumb,
-                read_timeout=300,
-                write_timeout=300
-            )
-            return sent_msg.audio, sent_msg.message_id
-    except Exception as e:
-        logger.error(f"Telegram Upload Error: {e}")
-        return None, None
+    for attempt in range(retries):
+        try:
+            with open(file_path, 'rb') as f:
+                caption = (
+                    f"🎵 Lyraz Cloud Vault\n"
+                    f"🏷 Sig: {Config.VAULT_SIGNATURE}\n"
+                    f"🆔 YT: {video_id}\n"
+                    f"👤 Artist: {artist}\n"
+                    f"💽 Title: {title}"
+                )
+                thumb = io.BytesIO(cover_bytes) if cover_bytes else None
+                sent_msg = await local_bot.send_audio(
+                    chat_id=Config.STORAGE_CHANNEL_ID,
+                    audio=f,
+                    title=title,
+                    performer=artist,
+                    caption=caption,
+                    thumbnail=thumb,
+                    read_timeout=300,
+                    write_timeout=300
+                )
+                return sent_msg.audio, sent_msg.message_id
+        except Exception as e:
+            err_msg = str(e).lower()
+            if ("flood control" in err_msg or "retry in" in err_msg or "retryafter" in err_msg) and attempt < retries - 1:
+                wait_seconds = 25
+                m = re.search(r'retry in (\d+)', err_msg)
+                if m:
+                    wait_seconds = int(m.group(1)) + 2
+                logger.warning(f"⏳ [Vault Upload] FloodWait hit. Sleeping {wait_seconds}s before retry (Attempt {attempt+1}/{retries})...")
+                await asyncio.sleep(wait_seconds)
+                continue
+            
+            logger.error(f"Telegram Upload Error (Attempt {attempt+1}): {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(3)
+                continue
+            return None, None
+
+    return None, None
 
 def generate_progress_bar(current, total, length=12):
     """تولید نوار پیشرفت بصری برای پیام تلگرام"""
@@ -372,7 +388,7 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None, target_channel_id=None):
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None, target_channel_id=None, priority=None):
     """ورکر تسک برای دانلود و پردازش یک آهنگ (Non-blocking)"""
     logger.info(f"🚀 Task Started: {title} ({video_id})")
     loop = asyncio.new_event_loop()
