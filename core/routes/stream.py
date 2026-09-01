@@ -9,6 +9,7 @@ from urllib3.util.retry import Retry
 from core.config import Config
 import logging
 import time
+from urllib.parse import quote
 
 # 🔥 استفاده از سرویس مرکزی متادیتا به جای کدهای تکراری
 from core.services.metadata import metadata_service
@@ -209,6 +210,119 @@ def audio(unique_id):
     except Exception as e:
         logger.error(f"Stream Error: {e}")
         return "Stream Failed", 500
+
+
+@stream_bp.route('/download/<unique_id>')
+def download_audio(unique_id):
+    """
+    نقطه پایانی دانلود مستقیم و امن فایل صوتی (Content-Disposition: attachment)
+    با نام‌گذاری استاندارد، سرعت ماکسیمم چانکینگ، پشتیبانی از IDM و Range Header و ضد ایندکس کپی‌رایت.
+    """
+    db = get_db()
+    track = db.execute("SELECT id, file_id, file_size, title, performer, storage_message_id FROM tracks WHERE file_unique_id=?", (unique_id,)).fetchone()
+
+    if not track:
+        return "Track Not Found", 404
+    
+    link = get_tg_link(track['file_id'], track_row=track)
+    if not link:
+        return "Audio Link Expired or Unavailable", 500
+
+    headers = {}
+    if 'Range' in request.headers:
+        headers['Range'] = request.headers['Range']
+
+    try:
+        req = http_session.get(link, stream=True, headers=headers, timeout=(3.05, 300))
+        
+        def generate():
+            try:
+                for chunk in req.iter_content(chunk_size=65536):  # 64KB chunks for fast IDM/browser downloading
+                    if chunk: yield chunk
+            except Exception:
+                pass
+
+        response = Response(
+            stream_with_context(generate()), 
+            status=req.status_code, 
+            content_type='audio/mpeg'
+        )
+        
+        # نام‌گذاری فایل با فرمت "Artist - Title.mp3" با پشتیبانی کامل از کاراکترهای فارسی و استاندارد RFC 5987
+        raw_artist = (track['performer'] or 'Lyraz').strip()
+        raw_title = (track['title'] or 'Track').strip()
+        clean_filename = f"{raw_artist} - {raw_title}.mp3"
+        safe_ascii_name = "".join([c for c in clean_filename if c.isalnum() or c in " .-_"]).strip() or "track.mp3"
+        encoded_filename = quote(clean_filename)
+
+        response.headers['Content-Disposition'] = f'attachment; filename="{safe_ascii_name}"; filename*=UTF-8\'\'{encoded_filename}'
+        
+        safe_headers = ['Content-Range', 'Content-Length', 'Accept-Ranges']
+        for h in safe_headers:
+            if h in req.headers: response.headers[h] = req.headers[h]
+        
+        if req.status_code == 200 and 'Content-Length' not in response.headers and track['file_size']:
+            response.headers['Content-Length'] = track['file_size']
+
+        response.headers['X-Accel-Buffering'] = 'no'
+        response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        return response
+    except Exception as e:
+        logger.error(f"Download Stream Error: {e}")
+        return "Download Failed", 500
+
+
+@stream_bp.route('/api/hub/<token>/export_links')
+def export_hub_links(token):
+    """
+    خروجی لیست تجمیعی لینک‌های دانلود تمام آهنگ‌های یک هاب جهت کپی در IDM یا دانلود فایل TXT.
+    """
+    db = get_db()
+    session = db.execute("SELECT * FROM sessions WHERE token = ?", (token,)).fetchone()
+    if not session:
+        return jsonify({"status": "error", "message": "Hub not found"}), 404
+
+    query = """
+        SELECT t.id, t.title, t.performer, t.file_unique_id, t.file_size, t.duration
+        FROM playlist_items pi
+        JOIN tracks t ON pi.track_id = t.id
+        WHERE pi.session_token = ?
+        ORDER BY pi.id ASC
+    """
+    tracks = db.execute(query, (token,)).fetchall()
+
+    base_url = request.host_url.rstrip('/')
+    links = []
+    lines = []
+    for trk in tracks:
+        dl_url = f"{base_url}/download/{trk['file_unique_id']}"
+        links.append({
+            "title": trk["title"],
+            "performer": trk["performer"],
+            "unique_id": trk["file_unique_id"],
+            "url": dl_url
+        })
+        lines.append(dl_url)
+
+    fmt = request.args.get('format', 'json').lower()
+    if fmt == 'txt':
+        content = "\n".join(lines)
+        response = Response(content, mimetype="text/plain; charset=utf-8")
+        hub_name = session['device_name'] or token
+        safe_name = quote(f"{hub_name}_links.txt")
+        response.headers["Content-Disposition"] = f'attachment; filename="download_links.txt"; filename*=UTF-8\'\'{safe_name}'
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+    return jsonify({
+        "status": "success",
+        "hub_token": token,
+        "device_name": session["device_name"],
+        "total_tracks": len(links),
+        "links": links,
+        "raw_text": "\n".join(lines)
+    })
 
 
 DEFAULT_COVER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">

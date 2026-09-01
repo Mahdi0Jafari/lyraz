@@ -216,9 +216,52 @@ def init_db():
             )''')
             c.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_status ON ingestion_logs(status);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_ingestion_created ON ingestion_logs(created_at);')
+
+            # 11. Artist Vault Campaigns & Campaign Tracks Table
+            c.execute('''CREATE TABLE IF NOT EXISTS artist_campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artist_name TEXT NOT NULL,
+                spotify_id TEXT,
+                spotify_url TEXT,
+                avatar_url TEXT,
+                target_channel_id TEXT,
+                hub_token TEXT DEFAULT NULL,
+                total_tracks INTEGER DEFAULT 0,
+                completed_tracks INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'processing',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            try:
+                c.execute('ALTER TABLE artist_campaigns ADD COLUMN hub_token TEXT DEFAULT NULL;')
+            except sqlite3.OperationalError:
+                pass
+            c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_status ON artist_campaigns(status);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_channel ON artist_campaigns(target_channel_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_hub_token ON artist_campaigns(hub_token);')
+
+            c.execute('''CREATE TABLE IF NOT EXISTS campaign_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                album_name TEXT,
+                release_date TEXT,
+                cover_url TEXT,
+                duration_seconds INTEGER DEFAULT 0,
+                spotify_url TEXT,
+                youtube_id TEXT,
+                status TEXT DEFAULT 'queued',
+                error_msg TEXT,
+                delivered_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES artist_campaigns(id) ON DELETE CASCADE
+            )''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_campaign_tracks_cid ON campaign_tracks(campaign_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_campaign_tracks_status ON campaign_tracks(status);')
             
             conn.commit()
-            print("✅ Database Schema V4.5 Optimized & Ready (WAL + Foreign Keys + Referrals + Downloads + Ingestion)")
+            print("✅ Database Schema V4.6 Optimized & Ready (WAL + Foreign Keys + Referrals + Downloads + Ingestion + Artist Hubs)")
             
     except sqlite3.Error as e:
         print(f"❌ Database Initialization Failed: {e}")

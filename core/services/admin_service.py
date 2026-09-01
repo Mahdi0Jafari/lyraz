@@ -117,14 +117,21 @@ class AdminAnalyticsService:
                 spotify_url TEXT,
                 avatar_url TEXT,
                 target_channel_id TEXT,
+                hub_token TEXT DEFAULT NULL,
                 total_tracks INTEGER DEFAULT 0,
                 completed_tracks INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'processing',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+            try:
+                db.execute('ALTER TABLE artist_campaigns ADD COLUMN hub_token TEXT DEFAULT NULL;')
+            except:
+                pass
+
             db.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_status ON artist_campaigns(status);')
             db.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_channel ON artist_campaigns(target_channel_id);')
+            db.execute('CREATE INDEX IF NOT EXISTS idx_campaigns_hub_token ON artist_campaigns(hub_token);')
 
             db.execute('''CREATE TABLE IF NOT EXISTS campaign_tracks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

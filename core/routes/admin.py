@@ -750,3 +750,135 @@ def retry_campaign_failed_api(campaign_id):
 
     db.commit()
     return jsonify({'status': 'success', 'retried': len(failed_tracks)})
+
+
+@admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/create_hub', methods=['POST'])
+def create_artist_hub_api(campaign_id):
+    """ایجاد یا ویرایش هاب اختصاصی لایو برای آرتیست با امکان انتخاب اسلاگ سفارشی"""
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
+    import re
+    import unicodedata
+    
+    db = get_db()
+    c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    if not c_row:
+        return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
+
+    data = request.json or {}
+    custom_slug = (data.get('custom_slug') or '').strip()
+
+    # ۱. تولید و پاکسازی اسلاگ
+    if custom_slug:
+        slug = re.sub(r'[^a-zA-Z0-9_\-]', '', custom_slug.lower())
+    else:
+        # ساخت اسلاگ پیش‌فرض از نام انگلیسی یا شناسه
+        raw_name = c_row['artist_name'] or 'artist'
+        # حذف کاراکترهای غیراستاندارد
+        clean_slug = re.sub(r'[^a-zA-Z0-9_\-]', '', raw_name.lower().replace(' ', '-'))
+        if not clean_slug or len(clean_slug) < 2:
+            clean_slug = f"artist-{campaign_id}"
+        slug = clean_slug
+
+    if not slug:
+        return jsonify({'status': 'error', 'message': 'Invalid slug. Please use English letters, numbers, dashes or underscores.'}), 400
+
+    # ۲. بررسی تداخل با سشن‌های موجود دیگر
+    existing_session = db.execute("SELECT * FROM sessions WHERE token = ?", (slug,)).fetchone()
+    if existing_session and c_row['hub_token'] != slug:
+        # بررسی اینکه آیا این سشن متعلق به کمپین دیگری است یا خیر
+        other_camp = db.execute("SELECT id, artist_name FROM artist_campaigns WHERE hub_token = ? AND id != ?", (slug, campaign_id)).fetchone()
+        if other_camp:
+            return jsonify({
+                'status': 'error', 
+                'message': f'Slug "{slug}" is already assigned to artist "{other_camp["artist_name"]}". Please choose a different slug.'
+            }), 400
+
+    # ۳. ثبت یا آپدیت سشن در جدول sessions
+    hub_name = f"{c_row['artist_name']} Discography"
+    db.execute("""
+        INSERT INTO sessions (token, admin_id, status, device_name, is_persistent, play_status)
+        VALUES (?, 1, 'active', ?, 1, 'stop')
+        ON CONFLICT(token) DO UPDATE SET 
+            status='active',
+            device_name=excluded.device_name,
+            is_persistent=1
+    """, (slug, hub_name))
+
+    # ۴. انتقال تمام آهنگ‌های تکمیل‌شده کمپین به جدول playlist_items این هاب
+    completed_tracks = db.execute("""
+        SELECT ct.*, t.id as global_track_id 
+        FROM campaign_tracks ct
+        JOIN tracks t ON ct.youtube_id = t.youtube_id
+        WHERE ct.campaign_id = ? AND ct.status = 'completed'
+        ORDER BY ct.id ASC
+    """, (campaign_id,)).fetchall()
+
+    synced_count = 0
+    for idx, trk in enumerate(completed_tracks):
+        existing_item = db.execute(
+            "SELECT id FROM playlist_items WHERE session_token = ? AND track_id = ?", 
+            (slug, trk['global_track_id'])
+        ).fetchone()
+        
+        if not existing_item:
+            db.execute("""
+                INSERT INTO playlist_items (session_token, track_id, added_by, position, is_played)
+                VALUES (?, ?, 1, ?, 0)
+            """, (slug, trk['global_track_id'], idx))
+            synced_count += 1
+
+    # ۵. اتصال hub_token به رکورد کمپین
+    db.execute("UPDATE artist_campaigns SET hub_token = ? WHERE id = ?", (slug, campaign_id))
+    db.commit()
+
+    return jsonify({
+        'status': 'success',
+        'hub_token': slug,
+        'hub_url': f'/live/{slug}',
+        'total_tracks': len(completed_tracks),
+        'newly_synced': synced_count,
+        'message': f'Live Hub created successfully for {c_row["artist_name"]}!'
+    })
+
+
+@admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/sync_hub', methods=['POST'])
+def sync_artist_hub_api(campaign_id):
+    """سینک کردن آهنگ‌های جدیداً دانلود شده کمپین به پلی‌لیست هاب"""
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    db = get_db()
+    c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
+    if not c_row or not c_row['hub_token']:
+        return jsonify({'status': 'error', 'message': 'Campaign or Hub not found'}), 404
+
+    slug = c_row['hub_token']
+
+    completed_tracks = db.execute("""
+        SELECT ct.*, t.id as global_track_id 
+        FROM campaign_tracks ct
+        JOIN tracks t ON ct.youtube_id = t.youtube_id
+        WHERE ct.campaign_id = ? AND ct.status = 'completed'
+        ORDER BY ct.id ASC
+    """, (campaign_id,)).fetchall()
+
+    synced_count = 0
+    for idx, trk in enumerate(completed_tracks):
+        existing_item = db.execute(
+            "SELECT id FROM playlist_items WHERE session_token = ? AND track_id = ?", 
+            (slug, trk['global_track_id'])
+        ).fetchone()
+        
+        if not existing_item:
+            db.execute("""
+                INSERT INTO playlist_items (session_token, track_id, added_by, position, is_played)
+                VALUES (?, ?, 1, ?, 0)
+            """, (slug, trk['global_track_id'], idx))
+            synced_count += 1
+
+    db.commit()
+    return jsonify({
+        'status': 'success',
+        'hub_token': slug,
+        'hub_url': f'/live/{slug}',
+        'total_tracks': len(completed_tracks),
+        'newly_synced': synced_count
+    })
