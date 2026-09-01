@@ -172,6 +172,16 @@ class CatalogAutopilotService:
         target_ch = target_channel_id if target_channel_id and str(target_channel_id) != str(Config.STORAGE_CHANNEL_ID) else None
         
         with sqlite3.connect(Config.DATABASE_URI) as conn:
+            existing = conn.execute("SELECT id FROM artist_campaigns WHERE spotify_id = ? OR LOWER(artist_name) = ?", (spotify_id, artist_name.lower().strip())).fetchone()
+            if existing:
+                campaign_id = existing[0]
+                logger.info(f"Campaign #{campaign_id} already exists for {artist_name}, skipping new campaign creation.")
+                return {
+                    "campaign_id": campaign_id,
+                    "artist_name": artist_name,
+                    "total_tracks": len(tracks)
+                }
+
             cur = conn.execute("""
                 INSERT INTO artist_campaigns (artist_name, spotify_id, spotify_url, avatar_url, target_channel_id, total_tracks, completed_tracks, status)
                 VALUES (?, ?, ?, ?, ?, ?, 0, 'processing')
@@ -185,6 +195,11 @@ class CatalogAutopilotService:
             ))
             campaign_id = cur.lastrowid
             conn.commit()
+
+        # پاکسازی کش فید رادار
+        global _RADAR_CACHE
+        _RADAR_CACHE["data"] = None
+        _RADAR_CACHE["cached_at"] = 0
 
         # ۲. ارسال تسک به ورکر پس‌زمینه Huey
         from core.tasks import ingest_artist_campaign_task
@@ -253,12 +268,19 @@ class CatalogAutopilotService:
                 # صف در حال حاضر پر است، صبر تا خلوت شدن
                 return
 
-            # ۲. پیدا کردن خواننده بعدی از رادار که هنوز کمپین آن ساخته نشده است
+            # ۲. بررسی مستقیم دیتابیس برای جلوگیری قطعی از تکرار کمپین‌ها
+            existing_camps = conn.execute("SELECT spotify_id, LOWER(artist_name) FROM artist_campaigns").fetchall()
+            existing_sp_ids = set(r[0] for r in existing_camps if r[0])
+            existing_names = set(r[1] for r in existing_camps if r[1])
+
+            # ۳. پیدا کردن خواننده بعدی از رادار
             feed = self.get_radar_feed(force_refresh=False)
             candidate_artist = None
             for cat in feed.get("categories", []):
                 for art in cat.get("artists", []):
-                    if art.get("status") == "ready":
+                    art_id = art.get("id")
+                    art_name = (art.get("name") or "").lower().strip()
+                    if art_id not in existing_sp_ids and art_name not in existing_names:
                         candidate_artist = art
                         break
                 if candidate_artist:
