@@ -169,7 +169,7 @@ class CatalogAutopilotService:
         spotify_url = disco.get("artist_url")
         tracks = disco["tracks"]
 
-        target_ch = target_channel_id or Config.STORAGE_CHANNEL_ID
+        target_ch = target_channel_id if target_channel_id and str(target_channel_id) != str(Config.STORAGE_CHANNEL_ID) else None
         
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             cur = conn.execute("""
@@ -180,7 +180,7 @@ class CatalogAutopilotService:
                 spotify_id,
                 spotify_url,
                 avatar_url,
-                str(target_ch),
+                str(target_ch) if target_ch else None,
                 len(tracks)
             ))
             campaign_id = cur.lastrowid
@@ -192,7 +192,7 @@ class CatalogAutopilotService:
             campaign_id=campaign_id,
             tracks=tracks,
             artist_name=artist_name,
-            target_channel_id=str(target_ch)
+            target_channel_id=str(target_ch) if target_ch else None
         )
 
         return {
