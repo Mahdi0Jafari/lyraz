@@ -42,10 +42,34 @@ class CatalogAutopilotService:
             campaign_artists_count = conn.execute("SELECT COUNT(*) FROM artist_campaigns").fetchone()[0]
             completed_campaigns = conn.execute("SELECT COUNT(*) FROM artist_campaigns WHERE status = 'completed'").fetchone()[0]
             
-            # تنظیمات اتوپایلوت
             settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
             autopilot_enabled = bool(settings['autopilot_enabled']) if settings and 'autopilot_enabled' in settings.keys() else False
-            target_goal = int(settings['autopilot_target_goal']) if settings and 'autopilot_target_goal' in settings.keys() and settings['autopilot_target_goal'] else self.TARGET_GOAL
+
+            # محاسبه مجموع کل قطعات موجود در رادار (آرتیست‌ها + پلی‌لیست‌ها)
+            radar_artist_count = 0
+            radar_playlist_tracks = 0
+            try:
+                cat_rows = conn.execute("SELECT search_queries FROM radar_categories").fetchall()
+                for cr in cat_rows:
+                    names = [n.strip() for n in cr['search_queries'].split(',') if n.strip()]
+                    radar_artist_count += len(names)
+            except Exception:
+                radar_artist_count = 65
+
+            try:
+                import json
+                from pathlib import Path
+                json_path = Path(__file__).resolve().parent.parent / "data" / "radar_categories.json"
+                if json_path.exists():
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        j_data = json.load(f)
+                    radar_playlist_tracks = len(j_data.get("featured_playlists", [])) * 50
+            except Exception:
+                radar_playlist_tracks = 350
+
+            # هر آرتیست به طور میانگین ۶۰ ترک دیسکوگرافی دارد
+            estimated_radar_total = (radar_artist_count * 60) + radar_playlist_tracks
+            target_goal = max(total_tracks, estimated_radar_total)
 
             percent = round((total_tracks / max(1, target_goal)) * 100, 1)
             if percent > 100: percent = 100.0
@@ -60,6 +84,7 @@ class CatalogAutopilotService:
                 "ingested_today": ingested_today,
                 "total_artists": campaign_artists_count,
                 "completed_artists": completed_campaigns,
+                "radar_artists": radar_artist_count,
                 "autopilot_enabled": autopilot_enabled
             }
 
