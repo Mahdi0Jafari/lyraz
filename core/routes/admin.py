@@ -621,7 +621,7 @@ def get_artist_campaigns_api():
 
 @admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>/tracks', methods=['GET'])
 def get_campaign_tracks_api(campaign_id):
-    """واکشی ریز وضعیت تک‌تک آهنگ‌های یک کمپین آرتیست برای مودال جزییات"""
+    """واکشی ریز وضعیت تک‌تک آهنگ‌های یک کمپین آرتیست برای مودال جزییات با شناسه اختصاصی استریم"""
     if not is_admin(): return jsonify({'status': 'error'}), 403
     db = get_db()
     c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
@@ -629,9 +629,11 @@ def get_campaign_tracks_api(campaign_id):
         return jsonify({'status': 'error', 'message': 'Campaign not found'}), 404
 
     tracks = db.execute("""
-        SELECT * FROM campaign_tracks 
-        WHERE campaign_id = ? 
-        ORDER BY id ASC
+        SELECT ct.*, t.file_unique_id, t.id as global_track_id
+        FROM campaign_tracks ct
+        LEFT JOIN tracks t ON ct.youtube_id = t.youtube_id
+        WHERE ct.campaign_id = ? 
+        ORDER BY ct.id ASC
     """, (campaign_id,)).fetchall()
 
     return jsonify({
@@ -639,6 +641,7 @@ def get_campaign_tracks_api(campaign_id):
         'campaign': dict(c_row),
         'tracks': [dict(t) for t in tracks]
     })
+
 
 @admin_bp.route('/api/admin/artist_hub/campaign/<int:campaign_id>', methods=['DELETE'])
 def delete_artist_campaign_api(campaign_id):
@@ -660,36 +663,32 @@ def verify_channel_api():
     if not chat_id:
         return jsonify({'status': 'error', 'message': 'Channel ID is required'}), 400
 
-    from core.tasks import get_bot_instance
+    from core.services.bot.instance import get_bot_instance
     import asyncio
-
+    
+    local_bot = get_bot_instance()
+    
     async def _check_access():
-        bot = get_bot_instance()
-        async with bot:
-            me = await bot.get_me()
+        async with local_bot:
             try:
-                chat = await bot.get_chat(chat_id=chat_id)
+                # 1. دریافت اطلاعات چت
+                chat = await local_bot.get_chat(chat_id)
+                # 2. بررسی دسترسی بات در کانال
+                me = await local_bot.get_me()
+                member = await local_bot.get_chat_member(chat_id, me.id)
+                
+                is_admin_or_creator = member.status in ['administrator', 'creator']
+                can_post = getattr(member, 'can_post_messages', True) or getattr(member, 'can_manage_chat', True)
+                
+                if is_admin_or_creator:
+                    return True, "Bot is verified as Administrator in this channel.", chat.title
+                else:
+                    return False, "Bot is in channel but DOES NOT have Admin/Post rights.", getattr(chat, 'title', chat_id)
             except Exception as e:
-                return False, f"Channel not found or bot has not been added: {e}", None
-
-            try:
-                member = await bot.get_chat_member(chat_id=chat_id, user_id=me.id)
-                # بررسی وضعیت ادمین یا سازنده
-                status = getattr(member, 'status', None)
-                can_post = getattr(member, 'can_post_messages', True) # در سوپرگروه‌ها معمولاً True یا ادمین
-                is_admin_member = status in ('administrator', 'creator')
-                if not is_admin_member:
-                    return False, f"Bot is present but NOT an Administrator in '{chat.title}'!", chat.title
-
-                return True, "Verified", {
-                    'title': chat.title,
-                    'username': chat.username,
-                    'chat_id': chat_id,
-                    'is_admin': True,
-                    'can_post': can_post
-                }
-            except Exception as e:
-                return False, f"Could not check bot permissions: {e}", getattr(chat, 'title', chat_id)
+                err_str = str(e)
+                if 'chat not found' in err_str.lower():
+                    return False, "Channel not found. Ensure bot is added as Administrator to this channel first.", chat_id
+                return False, f"Could not check bot permissions: {e}", chat_id
 
     try:
         ok, msg, info = asyncio.run(_check_access())
@@ -757,7 +756,6 @@ def create_artist_hub_api(campaign_id):
     """ایجاد یا ویرایش هاب اختصاصی لایو برای آرتیست با امکان انتخاب اسلاگ سفارشی"""
     if not is_admin(): return jsonify({'status': 'error', 'message': 'Forbidden'}), 403
     import re
-    import unicodedata
     
     db = get_db()
     c_row = db.execute("SELECT * FROM artist_campaigns WHERE id = ?", (campaign_id,)).fetchone()
@@ -773,7 +771,6 @@ def create_artist_hub_api(campaign_id):
     else:
         # ساخت اسلاگ پیش‌فرض از نام انگلیسی یا شناسه
         raw_name = c_row['artist_name'] or 'artist'
-        # حذف کاراکترهای غیراستاندارد
         clean_slug = re.sub(r'[^a-zA-Z0-9_\-]', '', raw_name.lower().replace(' ', '-'))
         if not clean_slug or len(clean_slug) < 2:
             clean_slug = f"artist-{campaign_id}"
@@ -785,7 +782,6 @@ def create_artist_hub_api(campaign_id):
     # ۲. بررسی تداخل با سشن‌های موجود دیگر
     existing_session = db.execute("SELECT * FROM sessions WHERE token = ?", (slug,)).fetchone()
     if existing_session and c_row['hub_token'] != slug:
-        # بررسی اینکه آیا این سشن متعلق به کمپین دیگری است یا خیر
         other_camp = db.execute("SELECT id, artist_name FROM artist_campaigns WHERE hub_token = ? AND id != ?", (slug, campaign_id)).fetchone()
         if other_camp:
             return jsonify({
@@ -793,11 +789,11 @@ def create_artist_hub_api(campaign_id):
                 'message': f'Slug "{slug}" is already assigned to artist "{other_camp["artist_name"]}". Please choose a different slug.'
             }), 400
 
-    # ۳. ثبت یا آپدیت سشن در جدول sessions
+    # ۳. ثبت یا آپدیت سشن در جدول sessions (بدون ارور foreign key)
     hub_name = f"{c_row['artist_name']} Discography"
     db.execute("""
         INSERT INTO sessions (token, admin_id, status, device_name, is_persistent, play_status)
-        VALUES (?, 1, 'active', ?, 1, 'stop')
+        VALUES (?, NULL, 'active', ?, 1, 'stop')
         ON CONFLICT(token) DO UPDATE SET 
             status='active',
             device_name=excluded.device_name,
@@ -814,7 +810,11 @@ def create_artist_hub_api(campaign_id):
     """, (campaign_id,)).fetchall()
 
     synced_count = 0
+    first_track_id = None
     for idx, trk in enumerate(completed_tracks):
+        if idx == 0:
+            first_track_id = trk['global_track_id']
+
         existing_item = db.execute(
             "SELECT id FROM playlist_items WHERE session_token = ? AND track_id = ?", 
             (slug, trk['global_track_id'])
@@ -823,9 +823,12 @@ def create_artist_hub_api(campaign_id):
         if not existing_item:
             db.execute("""
                 INSERT INTO playlist_items (session_token, track_id, added_by, position, is_played)
-                VALUES (?, ?, 1, ?, 0)
+                VALUES (?, ?, NULL, ?, 0)
             """, (slug, trk['global_track_id'], idx))
             synced_count += 1
+
+    if first_track_id:
+        db.execute("UPDATE sessions SET current_track_id = ? WHERE token = ? AND (current_track_id IS NULL OR current_track_id = 0)", (first_track_id, slug))
 
     # ۵. اتصال hub_token به رکورد کمپین
     db.execute("UPDATE artist_campaigns SET hub_token = ? WHERE id = ?", (slug, campaign_id))
