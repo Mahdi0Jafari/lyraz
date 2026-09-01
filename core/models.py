@@ -17,14 +17,13 @@ def get_db():
         try:
             db = g._database = sqlite3.connect(Config.DATABASE_URI)
             
-            # 🔥 بهینه‌سازی حیاتی: فعال‌سازی WAL Mode برای جلوگیری از قفل شدن دیتابیس
+            # 🔥 بهینه‌سازی‌های حیاتی مقیاس کلان (High-Scale 200k+ Pragmas)
             db.execute('PRAGMA journal_mode=WAL;')
-            
-            # تنظیم همگام‌سازی روی NORMAL برای تعادل بین امنیت و سرعت
             db.execute('PRAGMA synchronous=NORMAL;')
-            
-            # 🔥 فعال‌سازی Foreign Keys (در SQLite پیش‌فرض خاموش است)
-            # این کار از وجود داده‌های یتیم (مثل آیتم‌های پلی‌لیست بدون سشن) جلوگیری می‌کند
+            db.execute('PRAGMA cache_size=-64000;')          # ۶۴ مگابایت کش رم اختصاصی
+            db.execute('PRAGMA mmap_size=268435456;')        # ۲۵۶ مگابایت Memory-Mapped I/O
+            db.execute('PRAGMA temp_store=MEMORY;')          # سورت و جداول موقت روی رم
+            db.execute('PRAGMA busy_timeout=10000;')         # انتظار تا ۱۰ ثانیه برای جلوگیری از قفل
             db.execute('PRAGMA foreign_keys=ON;')
             
             db.row_factory = sqlite3.Row
@@ -41,7 +40,7 @@ def close_db(e=None):
 
 def init_db():
     """
-    ایجاد ساختار اولیه دیتابیس (Schema V4.2 - Live Hubs)
+    ایجاد ساختار اولیه دیتابیس (Schema V4.7 - High-Scale 200k+ Engine with FTS5)
     """
     db_folder = os.path.dirname(Config.DATABASE_URI)
     if db_folder and not os.path.exists(db_folder):
@@ -55,11 +54,15 @@ def init_db():
     try:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.execute('PRAGMA journal_mode=WAL;')
+            conn.execute('PRAGMA synchronous=NORMAL;')
+            conn.execute('PRAGMA cache_size=-64000;')
+            conn.execute('PRAGMA mmap_size=268435456;')
+            conn.execute('PRAGMA temp_store=MEMORY;')
+            conn.execute('PRAGMA busy_timeout=10000;')
             conn.execute('PRAGMA foreign_keys=ON;')
             c = conn.cursor()
             
             # 1. Users Table (RBAC Architecture)
-            # 🔥 بازگشت حیاتی current_session: این فیلد مشخص می‌کند آهنگ ارسالی کاربر باید به کدام هاب برود
             c.execute('''CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
@@ -92,11 +95,43 @@ def init_db():
             except Exception:
                 pass
 
-            # ایندکس‌های حیاتی برای کش کردن و مپینگ سریع
+            # ایندکس‌های B-Tree برای مپینگ و جستجوی پرسرعت
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_unique ON tracks(file_unique_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_youtube ON tracks(youtube_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_spotify ON tracks(spotify_id);')
             c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_storage_msg ON tracks(storage_message_id);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_performer ON tracks(performer);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_tracks_created ON tracks(created_at DESC);')
+
+            # 🔥 موتور جستجوی متنی فوق‌سریع SQLite FTS5 با توکنایزر چندزبانه و رتبه‌بندی BM25
+            c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+                title,
+                performer,
+                content='tracks',
+                content_rowid='id',
+                tokenize='unicode61 remove_diacritics 2'
+            );''')
+
+            # تریگرهای سه‌گانه همگام‌سازی بی‌درنگ FTS5
+            c.execute('''CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                INSERT INTO tracks_fts(rowid, title, performer) VALUES (new.id, new.title, new.performer);
+            END;''')
+
+            c.execute('''CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, performer) VALUES('delete', old.id, old.title, old.performer);
+            END;''')
+
+            c.execute('''CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+                INSERT INTO tracks_fts(tracks_fts, rowid, title, performer) VALUES('delete', old.id, old.title, old.performer);
+                INSERT INTO tracks_fts(rowid, title, performer) VALUES (new.id, new.title, new.performer);
+            END;''')
+
+            # مهاجرت و ایندکس خودکار تمام آهنگ‌های قبلی موجود در دیتابیس
+            c.execute('''
+                INSERT OR IGNORE INTO tracks_fts(rowid, title, performer)
+                SELECT id, title, performer FROM tracks;
+            ''')
             
             # 3. Channels Table
             c.execute('''CREATE TABLE IF NOT EXISTS channels (
