@@ -5,7 +5,7 @@ import logging
 import sqlite3
 from core.config import Config
 from core.models import get_db
-from core.services.spotify_extractor import spotify_extractor
+from core.services.spotify_extractor import spotify_extractor, API_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +420,7 @@ class CatalogAutopilotService:
                 SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('downloading', 'queued')
             """).fetchone()[0]
 
-            if active_or_queued > 60:
+            if active_or_queued > 120:
                 # صف در حال حاضر پر است، صبر تا خلوت شدن
                 return
 
