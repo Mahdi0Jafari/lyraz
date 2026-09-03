@@ -42,69 +42,39 @@ class CatalogAutopilotService:
             campaign_artists_count = conn.execute("SELECT COUNT(*) FROM artist_campaigns").fetchone()[0]
             completed_campaigns = conn.execute("SELECT COUNT(*) FROM artist_campaigns WHERE status = 'completed'").fetchone()[0]
             
+            # ۱. تعداد کل فایل‌های صوتی یکتا در دیتابیس و کلود (دقیقاً منطبق با هدر پنل)
+            total_tracks = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+
+            campaign_artists_count = conn.execute("SELECT COUNT(*) FROM artist_campaigns").fetchone()[0]
+            completed_campaigns = conn.execute("SELECT COUNT(*) FROM artist_campaigns WHERE status = 'completed'").fetchone()[0]
+            
             settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
             autopilot_enabled = bool(settings['autopilot_enabled']) if settings and 'autopilot_enabled' in settings.keys() else False
 
-            # آمار دقیق کمپین‌های رادار
-            camp_row = conn.execute("""
-                SELECT 
-                    COALESCE(SUM(total_tracks), 0) as launched_tracks,
-                    COALESCE(SUM(completed_tracks), 0) as completed_tracks,
-                    COUNT(*) as launched_artists,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_artists
-                FROM artist_campaigns
-            """).fetchone()
+            # ۲. قطعات باقیمانده در صف انتظار یا در حال پردازش
+            pending_tracks = conn.execute("""
+                SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('queued', 'downloading')
+            """).fetchone()[0]
 
-            launched_artists = camp_row['launched_artists']
-            completed_artists = camp_row['completed_artists']
-            launched_tracks = camp_row['launched_tracks']
-            completed_tracks = camp_row['completed_tracks']
+            # هدف پویا و یکدست: مجموع فایل‌های تکمیل‌شده + فایل‌های در حال انتظار صف
+            target_goal = total_tracks + pending_tracks
+            if target_goal == 0:
+                target_goal = 1
 
-            # محاسبه تعداد کل آرتیست‌های تعریف‌شده در دسته‌بندی‌های رادار
-            radar_artist_count = 0
-            try:
-                import json
-                from pathlib import Path
-                json_path = Path(__file__).resolve().parent.parent / "data" / "radar_categories.json"
-                if json_path.exists():
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        j_data = json.load(f)
-                    all_queries = set()
-                    for cat in j_data.get("categories", []):
-                        for q in cat.get("queries", []):
-                            all_queries.add(q.strip().lower())
-                    radar_artist_count = len(all_queries)
-            except Exception:
-                radar_artist_count = 77
-
-            if radar_artist_count == 0:
-                radar_artist_count = 77
-
-            # تعداد آرتیست‌های باقیمانده در لیست رادار که هنوز لانچ نشده‌اند
-            remaining_artists = max(0, radar_artist_count - launched_artists)
-            
-            # میانگین واقعی ترک به ازای هر آرتیست بر اساس داده‌های استخراج‌شده
-            avg_tracks = round(launched_tracks / max(1, launched_artists)) if launched_artists > 0 else 120
-            
-            # مجموع کل ترک‌های لیست اسپاتیفای رادار (آرتیست‌های لانچ‌شده + باقیمانده‌های لیست)
-            total_radar_goal = launched_tracks + (remaining_artists * avg_tracks)
-            if total_radar_goal < completed_tracks:
-                total_radar_goal = completed_tracks
-
-            percent = round((completed_tracks / max(1, total_radar_goal)) * 100, 1)
+            percent = round((total_tracks / max(1, target_goal)) * 100, 1)
             if percent > 100: percent = 100.0
 
             return {
-                "total_tracks": completed_tracks,
-                "target_goal": total_radar_goal,
+                "total_tracks": total_tracks,
+                "target_goal": target_goal,
                 "progress_percent": percent,
                 "total_size_mb": round(total_size_bytes / (1024 * 1024), 1),
                 "total_size_gb": round(total_size_bytes / (1024 * 1024 * 1024), 2),
                 "total_hours": round(total_duration_sec / 3600, 1),
                 "ingested_today": ingested_today,
-                "total_artists": launched_artists,
-                "completed_artists": completed_artists,
-                "radar_artists": radar_artist_count,
+                "total_artists": campaign_artists_count,
+                "completed_artists": completed_campaigns,
+                "radar_artists": campaign_artists_count,
                 "autopilot_enabled": autopilot_enabled
             }
 
@@ -129,11 +99,13 @@ class CatalogAutopilotService:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
             
-            campaigns = conn.execute("SELECT id, artist_name, spotify_id, total_tracks, completed_tracks, status, hub_token FROM artist_campaigns").fetchall()
+            campaigns = conn.execute("SELECT id, artist_name, spotify_id, spotify_url, avatar_url, total_tracks, completed_tracks, status, hub_token FROM artist_campaigns").fetchall()
             campaign_map = {c['spotify_id']: dict(c) for c in campaigns if c['spotify_id']}
             artist_name_map = {c['artist_name'].lower().strip(): dict(c) for c in campaigns if c['artist_name']}
 
             enriched_categories = []
+            matched_camp_ids = set()
+
             for cat in radar_data.get("categories", []):
                 enriched_artists = []
                 for a in cat.get("artists", []):
@@ -150,6 +122,7 @@ class CatalogAutopilotService:
                     
                     if matched_camp:
                         camp_id = matched_camp['id']
+                        matched_camp_ids.add(camp_id)
                         hub_token = matched_camp.get('hub_token')
                         completed_count = matched_camp['completed_tracks'] or 0
                         total_count = matched_camp['total_tracks'] or 0
@@ -170,6 +143,34 @@ class CatalogAutopilotService:
                 enriched_categories.append({
                     **cat,
                     "artists": enriched_artists
+                })
+
+            # آرتیست‌هایی که خارج از دسته‌بندی‌های ثابت اولیه و به صورت خودکار کشف شده‌اند
+            discovered_camps = [c for c in campaigns if c['id'] not in matched_camp_ids]
+            if discovered_camps:
+                discovered_artists = []
+                for dc in discovered_camps:
+                    discovered_artists.append({
+                        "id": dc['spotify_id'],
+                        "name": dc['artist_name'],
+                        "image": dc['avatar_url'],
+                        "followers": 0,
+                        "genres": ["Autonomous Discovery"],
+                        "spotify_url": dc['spotify_url'],
+                        "status": "completed" if dc['status'] == 'completed' else "in_progress",
+                        "campaign_id": dc['id'],
+                        "hub_token": dc.get('hub_token'),
+                        "completed_tracks": dc['completed_tracks'] or 0,
+                        "total_tracks": dc['total_tracks'] or 0
+                    })
+
+                enriched_categories.append({
+                    "id": "auto_discoveries",
+                    "key": "auto_discoveries",
+                    "title": "🔮 کشف‌های هوشمند رادار",
+                    "subtitle": "هنرمندان جدید کشف‌شده به صورت خودکار از گراف اسپاتیفای",
+                    "is_default": False,
+                    "artists": discovered_artists
                 })
 
             return {
@@ -279,6 +280,19 @@ class CatalogAutopilotService:
             if not settings or 'autopilot_enabled' not in settings.keys() or not settings['autopilot_enabled']:
                 return
 
+            # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده
+            conn.execute("""
+                UPDATE artist_campaigns 
+                SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed'),
+                    total_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id),
+                    status = 'completed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE status != 'completed'
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status IN ('queued', 'downloading')) = 0
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed') > 0
+            """)
+            conn.commit()
+
             # ۱. بررسی شلوغی صف
             active_or_queued = conn.execute("""
                 SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('downloading', 'queued')
@@ -288,20 +302,21 @@ class CatalogAutopilotService:
                 # صف در حال حاضر پر است، صبر تا خلوت شدن
                 return
 
-            # ۲. 🔥 فرآیند خودترمیمی خودکار (Auto-Healing): تلاش مجدد برای دانلود آهنگ‌های فیل‌شده
-            failed_tracks = conn.execute("""
+            # ۲. 🔥 فرآیند خودترمیمی خودکار (Auto-Healing): دانلود آهنگ‌های فیل‌شده یا در صف مانده
+            stuck_tracks = conn.execute("""
                 SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
                 FROM campaign_tracks ct
                 JOIN artist_campaigns ac ON ct.campaign_id = ac.id
                 WHERE ct.status = 'failed'
+                   OR (ct.status = 'queued' AND ct.created_at < datetime('now', '-30 minutes'))
                 LIMIT 10
             """).fetchall()
 
-            if failed_tracks:
-                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(failed_tracks)} failed tracks...")
+            if stuck_tracks:
+                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(stuck_tracks)} stuck/failed tracks...")
                 from core.tasks import download_and_process_track
-                for trk in failed_tracks:
-                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL WHERE id = ?", (trk['id'],))
+                for trk in stuck_tracks:
+                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL, created_at = CURRENT_TIMESTAMP WHERE id = ?", (trk['id'],))
                     
                     cur = conn.execute("""
                         INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
@@ -349,6 +364,28 @@ class CatalogAutopilotService:
                         break
                 if candidate_artist:
                     break
+
+            # ۴. 🔮 کشف خودکار ۲۴ ساعته (Continuous Autonomous Discovery): اگر لیست اصلی تمام شد، کشف آرتیست‌های هم‌سبک
+            if not candidate_artist:
+                try:
+                    completed_parents = conn.execute("""
+                        SELECT spotify_id, artist_name FROM artist_campaigns 
+                        WHERE spotify_id IS NOT NULL AND status = 'completed'
+                        ORDER BY RANDOM() LIMIT 5
+                    """).fetchall()
+                    for parent in completed_parents:
+                        related = spotify_extractor.fetch_related_artists(parent['spotify_id'])
+                        for r_art in related:
+                            r_id = r_art.get('id')
+                            r_name = (r_art.get('name') or '').lower().strip()
+                            if r_id and r_id not in existing_sp_ids and r_name not in existing_names:
+                                candidate_artist = r_art
+                                logger.info(f"🔮 [Autopilot Auto-Discovery] Found new related artist via {parent['artist_name']}: {r_art['name']} ({r_id})")
+                                break
+                        if candidate_artist:
+                            break
+                except Exception as disc_err:
+                    logger.warning(f"Auto-Discovery related artists error: {disc_err}")
 
             if candidate_artist:
                 logger.info(f"⚡️ [Autopilot] Auto-Launching Next Artist: {candidate_artist['name']} ({candidate_artist['id']})...")
