@@ -174,9 +174,27 @@ class CatalogAutopilotService:
                     "artists": discovered_artists
                 })
 
+            # وضعیت زنده پلی‌لیست‌ها در دیتابیس
+            raw_playlists = radar_data.get("playlists", [])
+            existing_sources = {r[0]: r[1] for r in conn.execute("SELECT source, COUNT(*) FROM ingestion_logs WHERE source LIKE 'pl:%' GROUP BY source").fetchall()}
+            active_sources = set(r[0] for r in conn.execute("SELECT DISTINCT source FROM ingestion_logs WHERE source LIKE 'pl:%' AND status IN ('queued', 'downloading')").fetchall())
+
+            enriched_playlists = []
+            for pl in raw_playlists:
+                pld = dict(pl)
+                pl_title = pld.get("title") or pld.get("name") or "playlist"
+                source_label = f"pl:{pl_title[:15]}"
+                if source_label in active_sources:
+                    pld["status"] = "in_progress"
+                elif source_label in existing_sources:
+                    pld["status"] = "completed"
+                else:
+                    pld["status"] = "ready"
+                enriched_playlists.append(pld)
+
             return {
                 "categories": enriched_categories,
-                "playlists": radar_data.get("playlists", [])
+                "playlists": enriched_playlists
             }
 
     def launch_artist_campaign(self, spotify_id, target_channel_id=None):
@@ -262,6 +280,11 @@ class CatalogAutopilotService:
             max_limit=len(formatted_tracks)
         )
 
+        # پاکسازی کش فید رادار
+        global _RADAR_CACHE
+        _RADAR_CACHE["data"] = None
+        _RADAR_CACHE["cached_at"] = 0
+
         return {
             "playlist_id": playlist_id,
             "title": pl_data.get("title"),
@@ -269,84 +292,6 @@ class CatalogAutopilotService:
             "queued": res.get("queued", 0),
             "skipped": res.get("skipped", 0)
         }
-
-    def autopilot_tick(self):
-        """
-        تپش دوره‌ای اتوپایلوت (هر چند دقیقه یک‌بار):
-        اگر اتوپایلوت فعال باشد، بررسی می‌کند که آیا صف ورکر خلوت است یا خیر؛ در این صورت آرتیست یا پلی‌لیست بعدی را لانچ می‌کند.
-        """
-        with sqlite3.connect(Config.DATABASE_URI) as conn:
-            conn.row_factory = sqlite3.Row
-            settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-            if not settings or 'autopilot_enabled' not in settings.keys() or not settings['autopilot_enabled']:
-                return
-
-            # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده
-            conn.execute("""
-                UPDATE artist_campaigns 
-                SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed'),
-                    total_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id),
-                    status = 'completed',
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE status != 'completed'
-                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status IN ('queued', 'downloading')) = 0
-                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed') > 0
-            """)
-            conn.commit()
-
-            # ۱. بررسی شلوغی صف
-            active_or_queued = conn.execute("""
-                SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('downloading', 'queued')
-            """).fetchone()[0]
-
-            if active_or_queued > 30:
-                # صف در حال حاضر پر است، صبر تا خلوت شدن
-                return
-
-            # ۲. 🔥 فرآیند خودترمیمی خودکار (Auto-Healing): دانلود آهنگ‌های فیل‌شده یا در صف مانده
-            stuck_tracks = conn.execute("""
-                SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
-                FROM campaign_tracks ct
-                JOIN artist_campaigns ac ON ct.campaign_id = ac.id
-                WHERE ct.status = 'failed'
-                   OR (ct.status = 'queued' AND ct.created_at < datetime('now', '-30 minutes'))
-                LIMIT 10
-            """).fetchall()
-
-            if stuck_tracks:
-                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(stuck_tracks)} stuck/failed tracks...")
-                from core.tasks import download_and_process_track
-                for trk in stuck_tracks:
-                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL, created_at = CURRENT_TIMESTAMP WHERE id = ?", (trk['id'],))
-                    
-                    cur = conn.execute("""
-                        INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
-                        VALUES (?, ?, ?, ?, 'queued')
-                    """, (trk['title'], trk['artist'], trk['youtube_id'], f"auto_retry:{trk['artist_name'][:12]}"))
-                    log_id = cur.lastrowid
-
-                    target_ch = trk['target_channel_id']
-                    distinct_target_ch = target_ch if target_ch and str(target_ch) != str(Config.STORAGE_CHANNEL_ID) else None
-
-                    download_and_process_track(
-                        video_id=trk['youtube_id'],
-                        title=trk['title'],
-                        artist=trk['artist'],
-                        user_id=0,
-                        user_first_name="AutoHealer",
-                        session_token=None,
-                        chat_id=None,
-                        message_id=None,
-                        quality=None,
-                        cover_url=trk['cover_url'],
-                        duration=trk['duration_seconds'],
-                        log_id=log_id,
-                        target_channel_id=distinct_target_ch,
-                        priority=12
-                    )
-                conn.commit()
-                # در این تیک روی ترمیم آهنگ‌های قبلی تمرکز می‌کنیم
-                return
 
     def _discover_top_spotify_artists_dynamically(self, existing_sp_ids, existing_names, limit_needed=5):
         """کشف کاملاً پویا و خودکار برترین هنرمندان بر اساس بیشترین فالوور و محبوبیت از اسپاتیفای (بدون هاردکد)"""
@@ -466,7 +411,6 @@ class CatalogAutopilotService:
                         priority=12
                     )
                 conn.commit()
-                return
 
             # ۳. لیست موجودی برای جلوگیری قطعی از تکرار
             existing_camps = conn.execute("SELECT spotify_id, LOWER(artist_name) FROM artist_campaigns").fetchall()
