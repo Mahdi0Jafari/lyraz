@@ -355,8 +355,9 @@
         if (toggle) toggle.checked = m.autopilot_enabled;
         const sub = document.getElementById('autopilot-rate-sub');
         if (sub) {
-            sub.innerText = m.autopilot_enabled ? '🟢 Active (Drip Feed)' : 'Smooth 3s Throttle';
-            sub.className = m.autopilot_enabled ? 'text-[10px] text-primary font-mono font-bold' : 'text-[10px] text-gray-400 font-mono';
+            sub.innerHTML = m.autopilot_enabled 
+                ? '<span class="flex items-center justify-end gap-1.5 text-primary font-bold font-mono"><span class="size-1.5 rounded-full bg-primary animate-ping"></span> 🟢 Continuous Discovery Active</span>' 
+                : '<span class="text-gray-400 font-mono">Smooth 3s Throttle</span>';
         }
     }
 
@@ -435,21 +436,27 @@
             // در تب All Radar به صورت پیش‌فرض بسته باشند، مگر کاربر باز کند
             const isOpen = (currentRadarCategory === cat.id) || (expandedShelves[cat.id] === true);
 
+            const isAutoDisc = (cat.id === 'auto_discoveries');
             const shelf = document.createElement('div');
             shelf.id = `shelf-${cat.id}`;
-            shelf.className = 'glass-panel rounded-2xl border border-white/5 hover:border-white/10 transition overflow-hidden';
+            shelf.className = isAutoDisc 
+                ? 'glass-panel rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-950/20 via-black/40 to-black hover:border-purple-500/50 transition overflow-hidden shadow-[0_0_25px_rgba(168,85,247,0.1)]'
+                : 'glass-panel rounded-2xl border border-white/5 hover:border-white/10 transition overflow-hidden';
             
             shelf.innerHTML = `
                 <!-- Shelf Header Bar (Click to Toggle) -->
-                <div class="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none bg-white/[0.01] hover:bg-white/[0.03] transition" onclick="toggleCategoryShelf('${cat.id}')">
+                <div class="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none ${isAutoDisc ? 'bg-purple-500/[0.05] hover:bg-purple-500/[0.08]' : 'bg-white/[0.01] hover:bg-white/[0.03]'} transition" onclick="toggleCategoryShelf('${cat.id}')">
                     <div class="flex items-center gap-3">
-                        <div class="size-9 rounded-xl bg-white/5 text-gray-300 flex items-center justify-center border border-white/10">
-                            <span class="material-symbols-outlined text-[18px]">library_music</span>
+                        <div class="size-9 rounded-xl ${isAutoDisc ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.3)]' : 'bg-white/5 text-gray-300 border border-white/10'} flex items-center justify-center">
+                            <span class="material-symbols-outlined text-[18px]">${isAutoDisc ? 'auto_awesome' : 'library_music'}</span>
                         </div>
                         <div>
                             <div class="flex items-center gap-2">
-                                <h3 class="text-sm sm:text-base font-bold text-white">${cat.title}</h3>
-                                <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${cat.total_artists} Artists</span>
+                                <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                                    ${cat.title}
+                                    ${isAutoDisc ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500 text-black font-mono shadow-sm">AI RADAR</span>' : ''}
+                                </h3>
+                                <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${(cat.artists || []).length} Artists</span>
                             </div>
                             <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">${cat.subtitle || 'مجموعه برترین خوانندگان این سبک'}</p>
                         </div>
@@ -457,12 +464,18 @@
 
                     <!-- Shelf Action Buttons -->
                     <div class="flex items-center gap-2" onclick="event.stopPropagation()">
-                        <button type="button" onclick="openQuickAddArtistModal('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')" class="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition flex items-center gap-1 border border-primary/25 shadow-sm" title="Add artist to this genre">
-                            <span class="material-symbols-outlined text-[15px]">person_add</span>
-                            <span class="hidden sm:inline">Add Artist</span>
-                        </button>
+                        ${!isAutoDisc ? `
+                            <button type="button" onclick="openQuickAddArtistModal('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')" class="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition flex items-center gap-1 border border-primary/25 shadow-sm" title="Add artist to this genre">
+                                <span class="material-symbols-outlined text-[15px]">person_add</span>
+                                <span class="hidden sm:inline">Add Artist</span>
+                            </button>
+                        ` : `
+                            <span class="text-[11px] text-purple-400 font-mono flex items-center gap-1 bg-purple-500/10 px-3 py-1 rounded-xl border border-purple-500/20">
+                                <span class="size-1.5 rounded-full bg-purple-400 animate-ping"></span> 24/7 Autonomous Graph
+                            </span>
+                        `}
                         
-                        ${!cat.is_default ? `
+                        ${(!cat.is_default && !isAutoDisc) ? `
                             <button type="button" onclick="deleteRadarCategory('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 text-xs font-bold transition flex items-center gap-1 border border-red-500/20" title="Delete custom genre">
                                 <span class="material-symbols-outlined text-[15px]">delete</span>
                             </button>
@@ -479,13 +492,15 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4">
                         ${(cat.artists || []).map(a => renderArtistRadarCard(a, cat.id)).join('')}
                         
-                        <!-- Add Artist Card at the end -->
-                        <div onclick="openQuickAddArtistModal('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')" class="glass-panel p-4 rounded-2xl border border-dashed border-white/10 hover:border-primary/50 transition cursor-pointer flex flex-col items-center justify-center gap-2 py-8 group text-gray-400 hover:text-primary">
-                            <div class="size-10 rounded-full bg-white/5 group-hover:bg-primary/20 text-gray-400 group-hover:text-primary flex items-center justify-center transition border border-white/10">
-                                <span class="material-symbols-outlined text-[20px]">add</span>
+                        ${!isAutoDisc ? `
+                            <!-- Add Artist Card at the end -->
+                            <div onclick="openQuickAddArtistModal('${cat.id}', '${cat.title.replace(/'/g, "\\'")}')" class="glass-panel p-4 rounded-2xl border border-dashed border-white/10 hover:border-primary/50 transition cursor-pointer flex flex-col items-center justify-center gap-2 py-8 group text-gray-400 hover:text-primary">
+                                <div class="size-10 rounded-full bg-white/5 group-hover:bg-primary/20 text-gray-400 group-hover:text-primary flex items-center justify-center transition border border-white/10">
+                                    <span class="material-symbols-outlined text-[20px]">add</span>
+                                </div>
+                                <span class="text-xs font-bold">Add Artist to ${cat.title}</span>
                             </div>
-                            <span class="text-xs font-bold">Add Artist to ${cat.title}</span>
-                        </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -571,16 +586,28 @@
             `;
         }
 
+        const isAuto = (catKey === 'auto_discoveries') || (a.genres && a.genres.includes('Autonomous Discovery'));
+
         return `
-            <div class="radar-card glass-panel p-4 rounded-2xl border border-white/5 hover:border-white/15 transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300 relative">
-                <!-- Delete artist from category button -->
-                <button type="button" onclick="removeArtistFromGenre('${catKey}', '${a.name.replace(/'/g, "\\'")}')" class="absolute top-2.5 right-2.5 size-6 rounded-full bg-black/60 hover:bg-red-500 text-gray-400 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md z-10" title="Remove from this genre">
-                    <span class="material-symbols-outlined text-[13px]">close</span>
-                </button>
+            <div class="radar-card glass-panel p-4 rounded-2xl ${isAuto ? 'border border-purple-500/30 bg-gradient-to-b from-purple-950/20 via-black/40 to-black hover:border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'border border-white/5 hover:border-white/15'} transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300 relative">
+                <!-- Delete artist from category button (only for manual categories) -->
+                ${catKey !== 'auto_discoveries' ? `
+                    <button type="button" onclick="removeArtistFromGenre('${catKey}', '${a.name.replace(/'/g, "\\'")}')" class="absolute top-2.5 right-2.5 size-6 rounded-full bg-black/60 hover:bg-red-500 text-gray-400 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md z-10" title="Remove from this genre">
+                        <span class="material-symbols-outlined text-[13px]">close</span>
+                    </button>
+                ` : ''}
 
                 <div>
+                    ${isAuto ? `
+                        <div class="mb-2.5 flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[11px]">auto_awesome</span> Auto-Discovered
+                            </span>
+                            <span class="text-[9px] text-purple-400/80 font-mono">Related Artist</span>
+                        </div>
+                    ` : ''}
                     <div class="flex items-center gap-3 mb-3">
-                        <img src="${a.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40">
+                        <img src="${a.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover ${isAuto ? 'border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'border border-white/10'} shadow-md bg-black/40">
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-1">
                                 <h4 class="text-sm font-bold text-white truncate" title="${a.name}">${a.name}</h4>

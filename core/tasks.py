@@ -680,7 +680,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                         UPDATE artist_campaigns 
                         SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed'),
                             status = CASE 
-                                WHEN (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed') >= total_tracks 
+                                WHEN (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status IN ('queued', 'downloading')) = 0 
+                                     AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = ? AND status = 'completed') > 0
                                 THEN 'completed' 
                                 ELSE 'processing' 
                             END,
