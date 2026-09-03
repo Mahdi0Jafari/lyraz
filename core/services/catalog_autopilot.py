@@ -150,18 +150,19 @@ class CatalogAutopilotService:
             if discovered_camps:
                 discovered_artists = []
                 for dc in discovered_camps:
+                    dcd = dict(dc)
                     discovered_artists.append({
-                        "id": dc['spotify_id'],
-                        "name": dc['artist_name'],
-                        "image": dc['avatar_url'],
+                        "id": dcd.get('spotify_id'),
+                        "name": dcd.get('artist_name'),
+                        "image": dcd.get('avatar_url'),
                         "followers": 0,
                         "genres": ["Autonomous Discovery"],
-                        "spotify_url": dc['spotify_url'],
-                        "status": "completed" if dc['status'] == 'completed' else "in_progress",
-                        "campaign_id": dc['id'],
-                        "hub_token": dc.get('hub_token'),
-                        "completed_tracks": dc['completed_tracks'] or 0,
-                        "total_tracks": dc['total_tracks'] or 0
+                        "spotify_url": dcd.get('spotify_url'),
+                        "status": "completed" if dcd.get('status') == 'completed' else "in_progress",
+                        "campaign_id": dcd.get('id'),
+                        "hub_token": dcd.get('hub_token'),
+                        "completed_tracks": dcd.get('completed_tracks') or 0,
+                        "total_tracks": dcd.get('total_tracks') or 0
                     })
 
                 enriched_categories.append({
