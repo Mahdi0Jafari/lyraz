@@ -192,9 +192,73 @@ class CatalogAutopilotService:
                     pld["status"] = "ready"
                 enriched_playlists.append(pld)
 
+            # استخراج ساختار یافته و شفاف برای پایپ‌لاین فعال (Active Pipeline Cockpit)
+            active_artist_camps = conn.execute("""
+                SELECT id, artist_name, avatar_url, spotify_url, spotify_id, hub_token, 
+                       total_tracks, completed_tracks, status
+                FROM artist_campaigns 
+                WHERE status = 'processing'
+                ORDER BY id DESC
+            """).fetchall()
+
+            pipeline_artists = []
+            for a in active_artist_camps:
+                ad = dict(a)
+                total = ad.get('total_tracks') or 1
+                comp = ad.get('completed_tracks') or 0
+                pct = round((comp / total) * 100, 1)
+                pipeline_artists.append({
+                    "id": ad.get('spotify_id'),
+                    "campaign_id": ad.get('id'),
+                    "name": ad.get('artist_name'),
+                    "image": ad.get('avatar_url'),
+                    "hub_token": ad.get('hub_token'),
+                    "total_tracks": total,
+                    "completed_tracks": comp,
+                    "remaining_tracks": max(0, total - comp),
+                    "percent": pct,
+                    "status": "in_progress"
+                })
+
+            active_pl_sources = conn.execute("""
+                SELECT source, 
+                       COUNT(*) as total,
+                       SUM(CASE WHEN status IN ('queued', 'downloading') THEN 1 ELSE 0 END) as pending,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+                FROM ingestion_logs 
+                WHERE source LIKE 'pl:%'
+                GROUP BY source
+                HAVING pending > 0
+                ORDER BY total DESC
+            """).fetchall()
+
+            pipeline_playlists = []
+            for pl in active_pl_sources:
+                pld = dict(pl)
+                src = pld['source']
+                clean_title = src.replace("pl:", "").strip()
+                matched_meta = next((p for p in raw_playlists if clean_title.lower() in (p.get('title') or '').lower()), None)
+                pipeline_playlists.append({
+                    "source": src,
+                    "title": clean_title,
+                    "image": matched_meta.get('image') if matched_meta else None,
+                    "total": pld['total'],
+                    "pending": pld['pending'],
+                    "completed": pld['completed'],
+                    "status": "in_progress"
+                })
+
             return {
                 "categories": enriched_categories,
-                "playlists": enriched_playlists
+                "playlists": enriched_playlists,
+                "pipeline": {
+                    "artists": pipeline_artists,
+                    "playlists": pipeline_playlists,
+                    "target_artists": 10,
+                    "target_playlists": 6,
+                    "active_artists_count": len(pipeline_artists),
+                    "active_playlists_count": len(pipeline_playlists)
+                }
             }
 
     def launch_artist_campaign(self, spotify_id, target_channel_id=None):
@@ -379,16 +443,7 @@ class CatalogAutopilotService:
             """)
             conn.commit()
 
-            # ۱. بررسی شلوغی کلی صف
-            active_or_queued = conn.execute("""
-                SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('downloading', 'queued')
-            """).fetchone()[0]
-
-            if active_or_queued > 120:
-                # صف در حال حاضر پر است، صبر تا خلوت شدن
-                return
-
-            # ۲. خودترمیمی آهنگ‌های فیل‌شده یا معلق در صف
+            # ۱. خودترمیمی آهنگ‌های فیل‌شده یا معلق در صف
             stuck_tracks = conn.execute("""
                 SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
                 FROM campaign_tracks ct

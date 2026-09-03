@@ -73,6 +73,64 @@
 
 
     <!-- ========================================== -->
+    <!-- ⚡️ ACTIVE BUFFER COCKPIT (10 ARTISTS + 6 PLAYLISTS) -->
+    <!-- ========================================== -->
+    <div id="radar-pipeline-cockpit" class="glass-panel p-5 sm:p-6 rounded-3xl border border-white/10 bg-gradient-to-b from-gray-900/60 via-black/80 to-black shadow-2xl relative overflow-hidden space-y-5 hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-4">
+            <div class="flex items-center gap-3">
+                <div class="size-9 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                    <span class="material-symbols-outlined text-[20px]">stream</span>
+                </div>
+                <div>
+                    <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        کنسول پایپ‌لاین شناور و زنده کاتالوگ (Active Buffer Cockpit)
+                        <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono animate-pulse">LIVE 24/7</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">حفظ پیوسته و پایدار ۱۰ سوپراستار و ۶ پلی‌لیست در صف دانلود با جایگزینی آنی</p>
+                </div>
+            </div>
+
+            <!-- Throughput Counter -->
+            <div class="flex items-center gap-2 text-xs font-mono bg-white/[0.03] px-3.5 py-1.5 rounded-xl border border-white/5">
+                <span class="size-2 rounded-full bg-primary animate-ping"></span>
+                <span class="text-gray-300">صف پردازش فعال:</span>
+                <span class="text-primary font-bold" id="cockpit-queue-count">~2,000 قطعه</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Pool 1: 10 Active Artists -->
+            <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 transition space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="size-2 rounded-full bg-purple-400"></span>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">👑 استخر ۱۰ آرتیست فعال (Artists Buffer)</h4>
+                    </div>
+                    <span id="cockpit-artists-badge" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">10 / 10 Slots</span>
+                </div>
+                <div id="cockpit-artists-slots" class="grid grid-cols-5 sm:grid-cols-10 gap-2 pt-1">
+                    <!-- Dynamic mini avatars -->
+                </div>
+            </div>
+
+            <!-- Pool 2: 6 Active Playlists -->
+            <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-primary/30 transition space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="size-2 rounded-full bg-primary"></span>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">🎧 استخر ۶ پلی‌لیست فعال (Playlists Buffer)</h4>
+                    </div>
+                    <span id="cockpit-playlists-badge" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/20 text-primary font-mono border border-primary/30">6 / 6 Slots</span>
+                </div>
+                <div id="cockpit-playlists-slots" class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                    <!-- Dynamic mini playlist covers -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
     <!-- 🎛 CATEGORY FILTER TABS & SEARCH           -->
     <!-- ========================================== -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -361,13 +419,99 @@
         }
     }
 
+    function updatePipelineCockpit(pipeline) {
+        const cockpit = document.getElementById('radar-pipeline-cockpit');
+        if (!cockpit) return;
+        if (!pipeline) {
+            cockpit.classList.add('hidden');
+            return;
+        }
+        cockpit.classList.remove('hidden');
+
+        const artBadge = document.getElementById('cockpit-artists-badge');
+        if (artBadge) artBadge.innerText = `${pipeline.active_artists_count || 0} / 10 Slots`;
+
+        const plBadge = document.getElementById('cockpit-playlists-badge');
+        if (plBadge) plBadge.innerText = `${pipeline.active_playlists_count || 0} / 6 Slots`;
+
+        // اسلات‌های مینی آواتار آرتیست‌ها
+        const artSlots = document.getElementById('cockpit-artists-slots');
+        if (artSlots) {
+            let artHtml = '';
+            const artists = pipeline.artists || [];
+            for (let i = 0; i < 10; i++) {
+                if (i < artists.length) {
+                    const a = artists[i];
+                    const isDownloading = a.status === 'in_progress' && (a.completed_tracks > 0 || i < 3);
+                    artHtml += `
+                        <div class="flex flex-col items-center gap-1 group relative cursor-pointer" title="${a.name} (${a.completed_tracks}/${a.total_tracks} tracks - ${a.percent}%)" onclick="switchRadarCategory('active_pipeline')">
+                            <div class="relative size-10 rounded-full p-0.5 border ${isDownloading ? 'border-primary shadow-[0_0_10px_rgba(13,242,51,0.5)]' : 'border-white/20'} bg-black/60">
+                                <img src="${a.image || 'https://via.placeholder.com/40'}" class="size-full rounded-full object-cover">
+                                ${isDownloading ? `<span class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary animate-ping"></span>` : ''}
+                            </div>
+                            <span class="text-[9px] font-mono text-gray-300 truncate max-w-[46px]">${a.name.split(' ')[0]}</span>
+                            <span class="text-[8px] font-mono text-primary font-bold">${a.percent}%</span>
+                        </div>
+                    `;
+                } else {
+                    artHtml += `
+                        <div class="flex flex-col items-center gap-1 opacity-40">
+                            <div class="size-10 rounded-full border border-dashed border-white/20 flex items-center justify-center text-gray-500 text-[10px]">
+                                +
+                            </div>
+                            <span class="text-[9px] font-mono text-gray-500">خالی</span>
+                        </div>
+                    `;
+                }
+            }
+            artSlots.innerHTML = artHtml;
+        }
+
+        // اسلات‌های مینی کاور پلی‌لیست‌ها
+        const plSlots = document.getElementById('cockpit-playlists-slots');
+        if (plSlots) {
+            let plHtml = '';
+            const playlists = pipeline.playlists || [];
+            for (let i = 0; i < 6; i++) {
+                if (i < playlists.length) {
+                    const p = playlists[i];
+                    plHtml += `
+                        <div class="flex items-center gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition cursor-pointer" title="${p.title} (${p.pending} باقی‌مانده)" onclick="switchRadarCategory('active_pipeline')">
+                            <img src="${p.image || 'https://via.placeholder.com/32'}" class="size-8 rounded-lg object-cover border border-white/10 shrink-0">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-[10px] font-bold text-white truncate">${p.title}</p>
+                                <p class="text-[9px] font-mono text-amber-400 flex items-center gap-1">
+                                    <span class="size-1 rounded-full bg-amber-400 animate-ping"></span> ${p.pending} قطعه
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    plHtml += `
+                        <div class="flex items-center gap-2 p-1.5 rounded-xl border border-dashed border-white/10 opacity-40">
+                            <div class="size-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-500 text-[10px]">+</div>
+                            <span class="text-[10px] text-gray-500">خالی</span>
+                        </div>
+                    `;
+                }
+            }
+            plSlots.innerHTML = plHtml;
+        }
+    }
+
     function renderRadarTabs(categories) {
         const nav = document.getElementById('radar-tabs-nav');
         if (!nav) return;
 
         let html = `
+            <button onclick="switchRadarCategory('active_pipeline')" data-cat="active_pipeline" class="radar-tab-btn ${currentRadarCategory === 'active_pipeline' ? 'active bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg font-black' : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 shadow-sm">
+                <span class="size-1.5 rounded-full bg-amber-400 animate-ping"></span> 🔥 پایپ‌لاین فعال (۱۰+۶)
+            </button>
             <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn ${currentRadarCategory === 'all' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
-                All Radar
+                همه رادار (All Radar)
+            </button>
+            <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn ${currentRadarCategory === 'playlists' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
+                🎧 ۶ پلی‌لیست رسمی
             </button>
         `;
 
@@ -381,9 +525,6 @@
         });
 
         html += `
-            <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn ${currentRadarCategory === 'playlists' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
-                🎧 پلی‌لیست‌های رسمی
-            </button>
             <button onclick="openAddCategoryModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1 shadow-sm">
                 <span class="material-symbols-outlined text-[16px]">add_circle</span> Add Genre
             </button>
@@ -395,7 +536,6 @@
     function switchRadarCategory(cat) {
         currentRadarCategory = cat;
         if (cat !== 'all') {
-            // وقتی روی تب دسته‌بندی خاصی کلیک شد، حتماً باز باشد
             expandedShelves[cat] = true;
         }
         if (radarRawData && radarRawData.feed) {
@@ -425,10 +565,63 @@
 
         if (!feed) return;
 
+        // بروزرسانی کنسول پایپ‌لاین شناور
+        if (feed.pipeline) {
+            updatePipelineCockpit(feed.pipeline);
+        }
+
         // رندر تب‌های داینامیک
         renderRadarTabs(feed.categories);
 
-        // ۱. رندر پلی‌لیست‌های رسمی اسپاتیفای در بالای صفحه به صورت باز و برجسته
+        // ۱. حالت اختصاصی تب پایپ‌لاین فعال (Active Pipeline Exclusive Tab)
+        if (currentRadarCategory === 'active_pipeline') {
+            const pipeline = feed.pipeline || { artists: [], playlists: [] };
+            
+            const activeWrap = document.createElement('div');
+            activeWrap.className = 'space-y-6';
+
+            activeWrap.innerHTML = `
+                <!-- 👑 بخش ۱۰ آرتیست فعال -->
+                <div class="glass-panel p-5 sm:p-6 rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-950/20 via-black/60 to-black shadow-xl space-y-4">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div class="flex items-center gap-2.5">
+                            <span class="size-2 rounded-full bg-purple-400 animate-ping"></span>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                👑 استخر ۱۰ آرتیست فعال در صف دانلود (Active Artists Pipeline)
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500 text-black font-mono">${(pipeline.artists || []).length} / 10 Active</span>
+                            </h3>
+                        </div>
+                        <span class="text-xs text-purple-300 font-mono">جایگزینی آنی به محض اتمام</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        ${(pipeline.artists || []).map(a => renderArtistRadarCard(a, 'auto_discoveries')).join('')}
+                    </div>
+                </div>
+
+                <!-- 🎧 بخش ۶ پلی‌لیست فعال -->
+                <div class="glass-panel p-5 sm:p-6 rounded-3xl border border-primary/30 bg-gradient-to-br from-emerald-950/20 via-black/60 to-black shadow-xl space-y-4">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div class="flex items-center gap-2.5">
+                            <span class="size-2 rounded-full bg-primary animate-ping"></span>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                🎧 استخر ۶ پلی‌لیست رسمی در حال استریم (Active Playlists Pipeline)
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-black font-mono">${(pipeline.playlists || []).length} / 6 Active</span>
+                            </h3>
+                        </div>
+                        <span class="text-xs text-primary font-mono">تزریق پیوسته به گنجینه</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        ${(feed.playlists || []).filter(p => p.status === 'in_progress' || p.status === 'completed').concat((feed.playlists || []).filter(p => p.status !== 'in_progress' && p.status !== 'completed')).slice(0, 6).map(p => renderPlaylistRadarCard(p)).join('')}
+                    </div>
+                </div>
+            `;
+            container.appendChild(activeWrap);
+            return;
+        }
+
+        // ۲. رندر پلی‌لیست‌های رسمی اسپاتیفای در بالای صفحه به صورت باز و برجسته
         if (currentRadarCategory === 'all' || currentRadarCategory === 'playlists') {
             const playlists = feed.playlists || [];
             if (playlists.length) {
@@ -475,17 +668,14 @@
             }
         }
 
-        // ۲. رندر دسته‌بندی‌ها به شکل قفسه‌های آکاردئونی شیک و تمیز
+        // ۳. رندر دسته‌بندی‌ها به شکل قفسه‌های آکاردئونی شیک و تمیز
         const categories = feed.categories || [];
-        
-        // دسته‌بندی کشف هوشمند در ابتدا قرار گیرد
         const sortedCats = [...categories].sort((a, b) => (a.id === 'auto_discoveries' ? -1 : 1));
 
         sortedCats.forEach(cat => {
             if (currentRadarCategory !== 'all' && currentRadarCategory !== cat.id) return;
 
             const isAutoDisc = (cat.id === 'auto_discoveries');
-            // قفسه کشف‌های هوشمند به صورت پیش‌فرض باز باشد
             const isOpen = isAutoDisc ? (expandedShelves[cat.id] !== false) : ((currentRadarCategory === cat.id) || (expandedShelves[cat.id] === true));
 
             const shelf = document.createElement('div');
@@ -578,14 +768,20 @@
                 </div>
             `;
         } else if (a.status === 'in_progress') {
+            const comp = a.completed_tracks || 0;
+            const total = a.total_tracks || 1;
+            const pct = Math.min(100, Math.round((comp / total) * 100));
             actionHtml = `
-                <div class="flex items-center justify-between pt-3 border-t border-white/5">
-                    <span class="text-[11px] font-bold text-yellow-400 flex items-center gap-1 font-mono animate-pulse">
-                        <span class="size-1.5 rounded-full bg-yellow-400"></span> ${a.completed_tracks} / ${a.total_tracks} Syncing
-                    </span>
-                    <button type="button" onclick="switchTab('artist_hub')" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition">
-                        View Hub
-                    </button>
+                <div class="pt-3 border-t border-white/5 space-y-2">
+                    <div class="flex items-center justify-between text-[11px] font-mono">
+                        <span class="text-amber-400 font-bold flex items-center gap-1.5">
+                            <span class="size-2 rounded-full bg-amber-400 animate-ping"></span> ${comp} / ${total} Syncing
+                        </span>
+                        <span class="text-white font-bold bg-white/10 px-1.5 py-0.5 rounded text-[10px]">${pct}%</span>
+                    </div>
+                    <div class="w-full h-2 rounded-full bg-white/10 overflow-hidden p-0.5 border border-white/5 shadow-inner">
+                        <div class="h-full rounded-full bg-gradient-to-r from-amber-400 via-primary to-emerald-400 transition-all duration-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" style="width: ${pct}%"></div>
+                    </div>
                 </div>
             `;
         } else {
