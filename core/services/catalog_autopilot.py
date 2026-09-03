@@ -234,6 +234,23 @@ class CatalogAutopilotService:
                 len(tracks)
             ))
             campaign_id = cur.lastrowid
+
+            # درج فوری تمامی قطعات در جدول campaign_tracks با وضعیت queued جهت نمایش آنی صف
+            track_rows = []
+            for t in tracks:
+                t_title = t.get('title')
+                t_artist = t.get('artist_string') or artist_name
+                t_album = (t.get('album') or {}).get('name') or ''
+                t_release = (t.get('album') or {}).get('release_date') or ''
+                t_cover = (t.get('album') or {}).get('cover_url') or avatar_url
+                t_dur = t.get('duration_seconds', 0)
+                t_sp_url = t.get('spotify_url') or ''
+                track_rows.append((campaign_id, t_title, t_artist, t_album, t_release, t_cover, t_dur, t_sp_url, 'queued'))
+
+            conn.executemany("""
+                INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, track_rows)
             conn.commit()
 
         # پاکسازی کش فید رادار

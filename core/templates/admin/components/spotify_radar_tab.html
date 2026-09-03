@@ -428,15 +428,66 @@
         // رندر تب‌های داینامیک
         renderRadarTabs(feed.categories);
 
-        // ۱. رندر دسته‌بندی‌ها به شکل قفسه‌های آکاردئونی شیک و تمیز
+        // ۱. رندر پلی‌لیست‌های رسمی اسپاتیفای در بالای صفحه به صورت باز و برجسته
+        if (currentRadarCategory === 'all' || currentRadarCategory === 'playlists') {
+            const playlists = feed.playlists || [];
+            if (playlists.length) {
+                const isOpenPl = (expandedShelves['playlists'] !== false); // پیش‌فرض باز
+                const plShelf = document.createElement('div');
+                plShelf.id = 'shelf-playlists';
+                plShelf.className = 'glass-panel rounded-2xl border border-primary/30 bg-gradient-to-r from-emerald-950/20 via-black/40 to-black hover:border-primary/50 transition overflow-hidden shadow-[0_0_25px_rgba(16,185,129,0.1)]';
+                
+                plShelf.innerHTML = `
+                    <div class="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none bg-primary/[0.04] hover:bg-primary/[0.08] transition" onclick="toggleCategoryShelf('playlists')">
+                        <div class="flex items-center gap-3">
+                            <div class="size-10 rounded-2xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30 shadow-[0_0_12px_rgba(16,185,129,0.3)]">
+                                <span class="material-symbols-outlined text-[20px]">playlist_play</span>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                                        🎧 ۶ پلی‌لیست فعال و رسمی در صف استریم (Active Playlists Pipeline)
+                                        <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary text-black font-mono shadow-sm">6 ACTIVE</span>
+                                    </h3>
+                                    <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${playlists.length} Curated</span>
+                                </div>
+                                <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">پلی‌لیست‌های گلچین و ترند روز در حال دانلود به گنجینه</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] text-primary font-mono hidden sm:flex items-center gap-1 bg-primary/10 px-3 py-1 rounded-xl border border-primary/20">
+                                <span class="size-1.5 rounded-full bg-primary animate-ping"></span> 24/7 Drip Pipeline
+                            </span>
+                            <button type="button" class="size-8 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition">
+                                <span id="shelf-icon-playlists" class="material-symbols-outlined text-[20px] transition-transform duration-200 ${isOpenPl ? 'rotate-180' : ''}">expand_more</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="shelf-body-playlists" class="p-4 sm:p-5 pt-0 border-t border-white/5 ${isOpenPl ? '' : 'hidden'} animate-in fade-in duration-200">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4">
+                            ${playlists.map(p => renderPlaylistRadarCard(p)).join('')}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(plShelf);
+            }
+        }
+
+        // ۲. رندر دسته‌بندی‌ها به شکل قفسه‌های آکاردئونی شیک و تمیز
         const categories = feed.categories || [];
-        categories.forEach(cat => {
+        
+        // دسته‌بندی کشف هوشمند در ابتدا قرار گیرد
+        const sortedCats = [...categories].sort((a, b) => (a.id === 'auto_discoveries' ? -1 : 1));
+
+        sortedCats.forEach(cat => {
             if (currentRadarCategory !== 'all' && currentRadarCategory !== cat.id) return;
 
-            // در تب All Radar به صورت پیش‌فرض بسته باشند، مگر کاربر باز کند
-            const isOpen = (currentRadarCategory === cat.id) || (expandedShelves[cat.id] === true);
-
             const isAutoDisc = (cat.id === 'auto_discoveries');
+            // قفسه کشف‌های هوشمند به صورت پیش‌فرض باز باشد
+            const isOpen = isAutoDisc ? (expandedShelves[cat.id] !== false) : ((currentRadarCategory === cat.id) || (expandedShelves[cat.id] === true));
+
             const shelf = document.createElement('div');
             shelf.id = `shelf-${cat.id}`;
             shelf.className = isAutoDisc 
@@ -454,7 +505,7 @@
                             <div class="flex items-center gap-2">
                                 <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
                                     ${cat.title}
-                                    ${isAutoDisc ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500 text-black font-mono shadow-sm">AI RADAR</span>' : ''}
+                                    ${isAutoDisc ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500 text-black font-mono shadow-sm">10 ACTIVE POOL</span>' : ''}
                                 </h3>
                                 <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${(cat.artists || []).length} Artists</span>
                             </div>
@@ -471,7 +522,7 @@
                             </button>
                         ` : `
                             <span class="text-[11px] text-purple-400 font-mono flex items-center gap-1 bg-purple-500/10 px-3 py-1 rounded-xl border border-purple-500/20">
-                                <span class="size-1.5 rounded-full bg-purple-400 animate-ping"></span> 24/7 Autonomous Graph
+                                <span class="size-1.5 rounded-full bg-purple-400 animate-ping"></span> 10 Active Artists Stream
                             </span>
                         `}
                         
@@ -506,45 +557,6 @@
             `;
             container.appendChild(shelf);
         });
-
-        // ۲. رندر پلی‌لیست‌های رسمی اسپاتیفای
-        if (currentRadarCategory === 'all' || currentRadarCategory === 'playlists') {
-            const playlists = feed.playlists || [];
-            if (playlists.length) {
-                const isOpenPl = (currentRadarCategory === 'playlists') || (expandedShelves['playlists'] === true);
-                const plShelf = document.createElement('div');
-                plShelf.id = 'shelf-playlists';
-                plShelf.className = 'glass-panel rounded-2xl border border-white/5 hover:border-white/10 transition overflow-hidden';
-                
-                plShelf.innerHTML = `
-                    <div class="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none bg-white/[0.01] hover:bg-white/[0.03] transition" onclick="toggleCategoryShelf('playlists')">
-                        <div class="flex items-center gap-3">
-                            <div class="size-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30">
-                                <span class="material-symbols-outlined text-[18px]">playlist_play</span>
-                            </div>
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <h3 class="text-sm sm:text-base font-bold text-white">🎧 مگا پلی‌لیست‌های رسمی اسپاتیفای (Editorial Playlists)</h3>
-                                    <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${playlists.length} Curated</span>
-                                </div>
-                                <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">برترین و پرشنونده‌ترین پلی‌لیست‌های چارت و گلچین روز</p>
-                            </div>
-                        </div>
-
-                        <button type="button" class="size-8 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition">
-                            <span id="shelf-icon-playlists" class="material-symbols-outlined text-[20px] transition-transform duration-200 ${isOpenPl ? 'rotate-180' : ''}">expand_more</span>
-                        </button>
-                    </div>
-
-                    <div id="shelf-body-playlists" class="p-4 sm:p-5 pt-0 border-t border-white/5 ${isOpenPl ? '' : 'hidden'} animate-in fade-in duration-200">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4">
-                            ${playlists.map(p => renderPlaylistRadarCard(p)).join('')}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(plShelf);
-            }
-        }
     }
 
     function renderArtistRadarCard(a, catKey) {
@@ -624,22 +636,45 @@
     }
 
     function renderPlaylistRadarCard(p) {
+        const isInProgress = (p.status === 'in_progress');
+        const isCompleted = (p.status === 'completed');
+
+        const statusBadge = isInProgress 
+            ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono flex items-center gap-1"><span class="size-1.5 rounded-full bg-amber-400 animate-ping"></span> Syncing</span>`
+            : (isCompleted 
+                ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary/20 text-primary border border-primary/30 font-mono flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">check</span> In Vault</span>`
+                : `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/10 text-gray-300 font-mono">Ready</span>`);
+
         return `
-            <div class="radar-card glass-panel p-4 rounded-2xl border border-white/5 hover:border-white/15 transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300">
+            <div class="radar-card glass-panel p-4 rounded-2xl ${isInProgress ? 'border border-amber-500/30 bg-gradient-to-b from-amber-950/20 via-black/40 to-black shadow-[0_0_15px_rgba(245,158,11,0.15)]' : (isCompleted ? 'border border-primary/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'border border-white/5 hover:border-white/15')} transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300">
                 <div>
+                    <div class="mb-2.5 flex items-center justify-between">
+                        <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary/20 text-primary border border-primary/30 font-mono">PLAYLIST</span>
+                        ${statusBadge}
+                    </div>
                     <div class="flex items-center gap-3 mb-3">
                         <img src="${p.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40">
                         <div class="min-w-0 flex-1">
                             <h4 class="text-sm font-bold text-white truncate" title="${p.title}">${p.title}</h4>
-                            <p class="text-[11px] text-primary font-mono mt-0.5 truncate">${p.tracks_count} Tracks • ${p.category}</p>
-                            <p class="text-[10px] text-gray-500 truncate mt-0.5">By ${p.owner}</p>
+                            <p class="text-[11px] text-primary font-mono mt-0.5 truncate">${p.tracks_count} Tracks • ${p.category || 'Editorial'}</p>
+                            <p class="text-[10px] text-gray-500 truncate mt-0.5">By ${p.owner || 'Spotify'}</p>
                         </div>
                     </div>
                 </div>
                 <div class="pt-3 border-t border-white/5">
-                    <button type="button" onclick="launchRadarPlaylist('${p.id}', this)" class="w-full py-2 rounded-xl bg-white/5 hover:bg-primary hover:text-black text-gray-200 hover:text-black text-xs font-bold transition flex items-center justify-center gap-1.5 border border-white/5 shadow-sm">
-                        <span class="material-symbols-outlined text-[16px]">playlist_add_check</span> Ingest Playlist Tracks
-                    </button>
+                    ${isInProgress ? `
+                        <div class="w-full py-2 rounded-xl bg-amber-500/10 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 border border-amber-500/20 font-mono">
+                            <span class="material-symbols-outlined text-[16px] animate-spin">sync</span> Downloading to Catalog...
+                        </div>
+                    ` : (isCompleted ? `
+                        <div class="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold flex items-center justify-center gap-1.5 border border-primary/20 font-mono">
+                            <span class="material-symbols-outlined text-[16px]">check_circle</span> Ingested into Catalog
+                        </div>
+                    ` : `
+                        <button type="button" onclick="launchRadarPlaylist('${p.id}', this)" class="w-full py-2 rounded-xl bg-white/5 hover:bg-primary hover:text-black text-gray-200 hover:text-black text-xs font-bold transition flex items-center justify-center gap-1.5 border border-white/5 shadow-sm">
+                            <span class="material-symbols-outlined text-[16px]">playlist_add_check</span> Ingest Playlist Tracks
+                        </button>
+                    `)}
                 </div>
             </div>
         `;
