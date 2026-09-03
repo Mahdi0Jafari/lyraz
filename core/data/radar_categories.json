@@ -2,8 +2,8 @@
   "categories": [
     {
       "key": "persian_fusion",
-      "title": "🌿 تلفیقی، آلترناتیو و فیوژن",
-      "subtitle": "برترین گروه‌ها و خوانندگان سبک تلفیقی، ایندی و فیوژن ایرانی",
+      "title": "🌿 Fusion & Alternative",
+      "subtitle": "Top indie, alternative & Persian fusion bands",
       "is_default": true,
       "queries": [
         "Chaartaar",
@@ -25,8 +25,8 @@
     },
     {
       "key": "persian_legends",
-      "title": "👑 اساطیر و بزرگان ماندگار",
-      "subtitle": "دیسکوگرافی چهره‌های ماندگار موسیقی پاپ و اصیل ایران",
+      "title": "👑 Persian Classics & Legends",
+      "subtitle": "Immortal discographies of iconic Persian heritage figures",
       "is_default": true,
       "queries": [
         "Moein",
@@ -49,8 +49,8 @@
     },
     {
       "key": "persian_hiphop",
-      "title": "🔥 غول‌های رپ و هیپ‌هاپ",
-      "subtitle": "پیشگامان و پرشنونده‌ترین رپرهای هیپ‌هاپ فارسی",
+      "title": "🔥 Persian Rap & Hip-Hop",
+      "subtitle": "Pioneers and stream leaders of Iranian rap",
       "is_default": true,
       "queries": [
         "Yas Persian",
@@ -73,8 +73,8 @@
     },
     {
       "key": "modern_pop",
-      "title": "💎 پاپ شاخص و شنیدنی",
-      "subtitle": "هیت‌ترین و محبوب‌ترین خوانندگان پاپ معاصر",
+      "title": "💎 Persian Pop & Hits",
+      "subtitle": "Contemporary superstars and viral hitmakers",
       "is_default": true,
       "queries": [
         "Sami Beigi",
@@ -95,8 +95,8 @@
     },
     {
       "key": "global_superstars",
-      "title": "🌍 اسطوره‌ها و سوپراستارهای جهان",
-      "subtitle": "پرمخاطب‌ترین چهره‌های تاریخ موسیقی جهان",
+      "title": "🌍 Global Superstars & Icons",
+      "subtitle": "Most-streamed icons in global music history",
       "is_default": true,
       "queries": [
         "Michael Jackson",
