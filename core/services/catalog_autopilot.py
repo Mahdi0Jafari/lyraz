@@ -348,71 +348,175 @@ class CatalogAutopilotService:
                 # در این تیک روی ترمیم آهنگ‌های قبلی تمرکز می‌کنیم
                 return
 
-            # ۳. بررسی مستقیم دیتابیس برای جلوگیری قطعی از تکرار کمپین‌ها
+    def _discover_top_spotify_artists_dynamically(self, existing_sp_ids, existing_names, limit_needed=5):
+        """کشف کاملاً پویا و خودکار برترین هنرمندان بر اساس بیشترین فالوور و محبوبیت از اسپاتیفای (بدون هاردکد)"""
+        queries = ["persian", "iranian", "top artists", "persian rap", "persian pop"]
+        candidates = {}
+        for q in queries:
+            try:
+                data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": q, "type": "artist", "limit": 25})
+                for a in data.get("artists", {}).get("items", []):
+                    if a and a.get("id"):
+                        a_id = a["id"]
+                        a_name = (a.get("name") or "").lower().strip()
+                        if a_id not in existing_sp_ids and a_name not in existing_names and a_id not in candidates:
+                            candidates[a_id] = a
+            except Exception as e:
+                logger.warning(f"Error querying dynamic artists for '{q}': {e}")
+
+        # مرتب‌سازی زنده بر اساس بیشترین تعداد فالوور در اسپاتیفای (میلیونی به پایین)
+        sorted_candidates = sorted(
+            candidates.values(),
+            key=lambda x: (x.get("followers") or {}).get("total", 0),
+            reverse=True
+        )
+        return sorted_candidates[:limit_needed]
+
+    def _discover_top_spotify_playlists_dynamically(self, existing_sources, limit_needed=3):
+        """کشف کاملاً پویا و خودکار برترین پلی‌لیست‌های ترند از اسپاتیفای (بدون هاردکد)"""
+        queries = ["top hits persian", "iranian top hits", "top 50 global", "today top hits", "persian hip hop"]
+        candidates = {}
+        for q in queries:
+            try:
+                data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": q, "type": "playlist", "limit": 10})
+                for p in data.get("playlists", {}).get("items", []):
+                    if p and p.get("id") and p["id"] not in candidates:
+                        pl_title = p.get("name") or "playlist"
+                        source_label = f"pl:{pl_title[:15]}"
+                        if source_label not in existing_sources:
+                            candidates[p["id"]] = p
+            except Exception as e:
+                logger.warning(f"Error querying dynamic playlists for '{q}': {e}")
+
+        return list(candidates.values())[:limit_needed]
+
+    def autopilot_tick(self):
+        """
+        تپش دوره‌ای اتوپایلوت (هر ۳ دقیقه یک‌بار):
+        حفظ دائمی بافر فعال ۱۰ آرتیست شاخص + ۶ تاپ پلی‌لیست رسمی اسپاتیفای.
+        به محض تکمیل هرکدام، بلافاصله جایگزین بعدی از دیتابیس زنده اسپاتیفای تزریق می‌شود.
+        """
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+            if not settings or 'autopilot_enabled' not in settings.keys() or not settings['autopilot_enabled']:
+                return
+
+            # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده
+            conn.execute("""
+                UPDATE artist_campaigns 
+                SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed'),
+                    total_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id),
+                    status = 'completed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE status != 'completed'
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status IN ('queued', 'downloading')) = 0
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed') > 0
+            """)
+            conn.commit()
+
+            # ۱. بررسی شلوغی کلی صف
+            active_or_queued = conn.execute("""
+                SELECT COUNT(*) FROM campaign_tracks WHERE status IN ('downloading', 'queued')
+            """).fetchone()[0]
+
+            if active_or_queued > 60:
+                # صف در حال حاضر پر است، صبر تا خلوت شدن
+                return
+
+            # ۲. خودترمیمی آهنگ‌های فیل‌شده یا معلق در صف
+            stuck_tracks = conn.execute("""
+                SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
+                FROM campaign_tracks ct
+                JOIN artist_campaigns ac ON ct.campaign_id = ac.id
+                WHERE ct.status = 'failed'
+                   OR (ct.status = 'queued' AND ct.created_at < datetime('now', '-30 minutes'))
+                LIMIT 10
+            """).fetchall()
+
+            if stuck_tracks:
+                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(stuck_tracks)} stuck/failed tracks...")
+                from core.tasks import download_and_process_track
+                for trk in stuck_tracks:
+                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL, created_at = CURRENT_TIMESTAMP WHERE id = ?", (trk['id'],))
+                    
+                    cur = conn.execute("""
+                        INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
+                        VALUES (?, ?, ?, ?, 'queued')
+                    """, (trk['title'], trk['artist'], trk['youtube_id'], f"auto_retry:{trk['artist_name'][:12]}"))
+                    log_id = cur.lastrowid
+
+                    target_ch = trk['target_channel_id']
+                    distinct_target_ch = target_ch if target_ch and str(target_ch) != str(Config.STORAGE_CHANNEL_ID) else None
+
+                    download_and_process_track(
+                        video_id=trk['youtube_id'],
+                        title=trk['title'],
+                        artist=trk['artist'],
+                        user_id=0,
+                        user_first_name="AutoHealer",
+                        session_token=None,
+                        chat_id=None,
+                        message_id=None,
+                        quality=None,
+                        cover_url=trk['cover_url'],
+                        duration=trk['duration_seconds'],
+                        log_id=log_id,
+                        target_channel_id=distinct_target_ch,
+                        priority=12
+                    )
+                conn.commit()
+                return
+
+            # ۳. لیست موجودی برای جلوگیری قطعی از تکرار
             existing_camps = conn.execute("SELECT spotify_id, LOWER(artist_name) FROM artist_campaigns").fetchall()
             existing_sp_ids = set(r[0] for r in existing_camps if r[0])
             existing_names = set(r[1] for r in existing_camps if r[1])
 
-            # ۳. پیدا کردن خواننده بعدی از رادار
-            feed = self.get_radar_feed(force_refresh=False)
-            candidate_artist = None
-            for cat in feed.get("categories", []):
-                for art in cat.get("artists", []):
-                    art_id = art.get("id")
-                    art_name = (art.get("name") or "").lower().strip()
-                    if art_id not in existing_sp_ids and art_name not in existing_names:
-                        candidate_artist = art
-                        break
-                if candidate_artist:
-                    break
+            # ==========================================
+            # 🎯 POOL 1: حفظ پایدار ۱۰ آرتیست فعال در صف
+            # ==========================================
+            active_artists_count = conn.execute("""
+                SELECT COUNT(*) FROM artist_campaigns WHERE status = 'processing'
+            """).fetchone()[0]
 
-            # ۴. 🔮 کشف خودکار ۲۴ ساعته هنرمندان جدید (Continuous Discovery via Genre Queries)
-            if not candidate_artist:
-                discovery_genres = [
-                    "persian pop", "persian hip hop", "persian traditional",
-                    "iranian alternative", "turkish pop", "top artists", "rock classics",
-                    "deep house", "rap farsi", "sonati"
-                ]
-                import random
-                shuffled_genres = list(discovery_genres)
-                random.shuffle(shuffled_genres)
-                for genre in shuffled_genres:
-                    suggested = spotify_extractor.suggest_artists_by_genre(genre, limit=15)
-                    for s_art in suggested:
-                        s_id = s_art.get('id')
-                        s_name = (s_art.get('name') or '').lower().strip()
-                        if s_id and s_id not in existing_sp_ids and s_name not in existing_names:
-                            candidate_artist = s_art
-                            logger.info(f"🔮 [Autopilot Auto-Discovery] Found new artist via genre '{genre}': {s_art['name']} ({s_id})")
-                            break
-                    if candidate_artist:
-                        break
+            TARGET_ACTIVE_ARTISTS = 10
+            needed_artists = max(0, TARGET_ACTIVE_ARTISTS - active_artists_count)
 
-            # ۵. 🎧 بررسی و تزریق تاپ پلی‌لیست‌های اسپاتیفای در صورتی که آرتیستی لانچ نشد
-            candidate_playlist = None
-            if not candidate_artist:
+            if needed_artists > 0:
+                top_artists = self._discover_top_spotify_artists_dynamically(existing_sp_ids, existing_names, limit_needed=min(needed_artists, 4))
+                for c_art in top_artists:
+                    followers = (c_art.get("followers") or {}).get("total", 0)
+                    logger.info(f"👑 [Autopilot Active Pool: 10 Artists] Launching {c_art['name']} ({followers:,} followers) to maintain 10 active pool...")
+                    try:
+                        self.launch_artist_campaign(c_art["id"])
+                        existing_sp_ids.add(c_art["id"])
+                        existing_names.add((c_art.get("name") or "").lower().strip())
+                    except Exception as e:
+                        logger.error(f"Error launching dynamic artist {c_art.get('name')}: {e}")
+
+            # ==========================================
+            # 🎯 POOL 2: حفظ پایدار ۶ پلی‌لیست فعال در صف
+            # ==========================================
+            active_pl_count = conn.execute("""
+                SELECT COUNT(DISTINCT source) FROM ingestion_logs 
+                WHERE source LIKE 'pl:%' AND status IN ('queued', 'downloading')
+            """).fetchone()[0]
+
+            TARGET_ACTIVE_PLAYLISTS = 6
+            needed_playlists = max(0, TARGET_ACTIVE_PLAYLISTS - active_pl_count)
+
+            if needed_playlists > 0:
                 existing_sources = set(r[0] for r in conn.execute("SELECT DISTINCT source FROM ingestion_logs WHERE source LIKE 'pl:%'").fetchall())
-                for pl in feed.get("playlists", []):
-                    pl_title = pl.get("title") or pl.get("name") or "playlist"
-                    source_label = f"pl:{pl_title[:15]}"
-                    if pl.get("id") and source_label not in existing_sources:
-                        candidate_playlist = pl
-                        break
-
-            if candidate_artist:
-                logger.info(f"⚡️ [Autopilot] Auto-Launching Next Artist: {candidate_artist['name']} ({candidate_artist['id']})...")
-                try:
-                    self.launch_artist_campaign(candidate_artist["id"])
-                    logger.info(f"✅ [Autopilot] Artist {candidate_artist['name']} dispatched to queue.")
-                except Exception as e:
-                    logger.error(f"Autopilot launch error for {candidate_artist.get('name')}: {e}")
-            elif candidate_playlist:
-                pl_name = candidate_playlist.get('title') or candidate_playlist.get('name') or 'Playlist'
-                logger.info(f"⚡️ [Autopilot] Auto-Launching Top Playlist: {pl_name} ({candidate_playlist['id']})...")
-                try:
-                    self.launch_playlist_ingestion(candidate_playlist["id"])
-                    logger.info(f"✅ [Autopilot] Playlist {pl_name} dispatched to queue.")
-                except Exception as e:
-                    logger.error(f"Autopilot launch error for playlist {pl_name}: {e}")
+                top_playlists = self._discover_top_spotify_playlists_dynamically(existing_sources, limit_needed=min(needed_playlists, 2))
+                for c_pl in top_playlists:
+                    pl_name = c_pl.get("name") or "Playlist"
+                    logger.info(f"🎧 [Autopilot Active Pool: 6 Playlists] Launching {pl_name} to maintain 6 active pool...")
+                    try:
+                        self.launch_playlist_ingestion(c_pl["id"])
+                        source_label = f"pl:{pl_name[:15]}"
+                        existing_sources.add(source_label)
+                    except Exception as e:
+                        logger.error(f"Error launching dynamic playlist {pl_name}: {e}")
 
 catalog_autopilot = CatalogAutopilotService()

@@ -687,7 +687,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                             END,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
-                    """, (cid, cid, cid))
+                    """, (cid, cid, cid, cid))
                 conn.commit()
         except Exception as camp_err:
             logger.warning(f"Campaign status update error: {camp_err}")
