@@ -40,10 +40,35 @@ class YouTubeService:
 
     def search(self, query):
         try:
-            return self.yt.search(query, filter="songs", limit=10)
+            res = self.yt.search(query, filter="songs", limit=10)
+            if res:
+                return res
         except Exception as e:
-            logger.error(f"YT Search Error: {e}")
-            return []
+            logger.warning(f"YTMusic API Search Error for '{query}': {e}, falling back to yt-dlp...")
+
+        # پلن پشتیبان سریع و پایدار با yt-dlp (بدون قطعی یا خطای 429)
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'extract_flat': True,
+                'quiet': True,
+                'skip_download': True,
+                'no_warnings': True
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+                entries = info.get('entries', [])
+                if entries and entries[0]:
+                    e = entries[0]
+                    return [{
+                        'videoId': e.get('id'),
+                        'title': e.get('title'),
+                        'duration_seconds': e.get('duration')
+                    }]
+        except Exception as ydl_err:
+            logger.error(f"yt-dlp fallback search error for '{query}': {ydl_err}")
+
+        return []
 
     def get_video_info(self, video_id):
         """

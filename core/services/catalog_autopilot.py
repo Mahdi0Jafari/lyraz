@@ -14,7 +14,7 @@ _RADAR_CACHE = {
     "data": None,
     "cached_at": 0
 }
-RADAR_CACHE_TTL = 1800  # ۳۰ دقیقه کش
+RADAR_CACHE_TTL = 30  # ۳۰ ثانیه کش هوشمند جهت نمایش زنده و سریع در پنل
 
 class CatalogAutopilotService:
     """
@@ -274,10 +274,12 @@ class CatalogAutopilotService:
                 "search_query": f"{t.get('artist_string')} {t.get('title')}"
             })
 
+        # تزریق ۳۵ قطعه برتر پلی‌لیست برای پردازش سریع و روان بدون مسدودی صف
+        batch_tracks = formatted_tracks[:35]
         res = crawler_service.ingest_tracks_one_by_one(
-            formatted_tracks,
+            batch_tracks,
             source_label=f"pl:{pl_data.get('title', 'playlist')[:15]}",
-            max_limit=len(formatted_tracks)
+            max_limit=35
         )
 
         # پاکسازی کش فید رادار
