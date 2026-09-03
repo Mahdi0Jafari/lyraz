@@ -332,24 +332,32 @@ class SpotifyExtractorService:
         }
 
     def fetch_related_artists(self, artist_id):
-        """کشف آرتیست‌های هم‌سبک و مرتبط از روی گراف رسمی اسپاتیفای"""
+        """
+        کشف آرتیست‌های هم‌سبک و مرتبط بر اساس متدهای استاندارد و فعال اسپاتیفای
+        (جایگزین اندپوینت منسوخ‌شده related-artists که از نوامبر ۲۰۲۴ توسط اسپاتیفای ۴۰۴ می‌دهد)
+        """
         try:
-            data = self.api_get(f"{API_BASE}/artists/{artist_id}/related-artists")
-            items = data.get("artists", [])
-            results = []
-            for a in items:
-                imgs = a.get("images", [])
-                results.append({
-                    "id": a.get("id"),
-                    "name": a.get("name"),
-                    "image": imgs[0]["url"] if imgs else None,
-                    "followers": (a.get("followers") or {}).get("total", 0),
-                    "genres": a.get("genres", []),
-                    "spotify_url": (a.get("external_urls") or {}).get("spotify")
-                })
+            art = self.api_get(f"{API_BASE}/artists/{artist_id}")
+            if not art:
+                return []
+            
+            art_name = art.get("name", "")
+            genres = art.get("genres", [])
+            
+            # ۱. جستجو بر اساس ژانر تخصصی خواننده در صورت وجود
+            peers = []
+            if genres:
+                peers = self.suggest_artists_by_genre(f'genre:"{genres[0]}"', limit=12)
+
+            # ۲. در صورت خالی بودن ژانر (مانند اکثر خوانندگان ایرانی)، جستجو بر اساس کلیدواژه نام خواننده
+            if not peers and art_name:
+                peers = self.suggest_artists_by_genre(art_name, limit=12)
+
+            # حذف خود خواننده از لیست نتایج
+            results = [p for p in peers if p.get("id") != artist_id and p.get("name", "").lower() != art_name.lower()]
             return results
         except Exception as e:
-            logger.warning(f"Error fetching related artists for {artist_id}: {e}")
+            logger.warning(f"Error discovering peer artists for {artist_id}: {e}")
             return []
 
     def fetch_live_curated_radar(self):
