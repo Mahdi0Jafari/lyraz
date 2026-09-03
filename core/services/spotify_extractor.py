@@ -461,9 +461,9 @@ class SpotifyExtractorService:
             # ۲. واکشی موازی پلی‌لیست‌ها
             def _fetch_pl(pl_q):
                 try:
-                    res = self.api_get(f"{API_BASE}/search", params={"q": pl_q["query"], "type": "playlist", "limit": 1})
-                    items = res.get("playlists", {}).get("items", [])
-                    if items and items[0]:
+                    res = self.api_get(f"{API_BASE}/search", params={"q": pl_q["query"], "type": "playlist", "limit": 5})
+                    items = [p for p in res.get("playlists", {}).get("items", []) if p]
+                    if items:
                         p = items[0]
                         imgs = p.get("images", [])
                         return {
