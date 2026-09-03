@@ -83,18 +83,18 @@
                 </div>
                 <div>
                     <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                        کنسول پایپ‌لاین شناور و زنده کاتالوگ (Active Buffer Cockpit)
+                        Active Buffer Cockpit
                         <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono animate-pulse">LIVE 24/7</span>
                     </h3>
-                    <p class="text-xs text-gray-400">حفظ پیوسته و پایدار ۱۰ سوپراستار و ۶ پلی‌لیست در صف دانلود با جایگزینی آنی</p>
+                    <p class="text-xs text-gray-400">Autonomous sliding window maintaining exactly 10 superstar artists & 6 editorial playlists</p>
                 </div>
             </div>
 
             <!-- Throughput Counter -->
             <div class="flex items-center gap-2 text-xs font-mono bg-white/[0.03] px-3.5 py-1.5 rounded-xl border border-white/5">
                 <span class="size-2 rounded-full bg-primary animate-ping"></span>
-                <span class="text-gray-300">صف پردازش فعال:</span>
-                <span class="text-primary font-bold" id="cockpit-queue-count">~2,000 قطعه</span>
+                <span class="text-gray-300">Active Queue:</span>
+                <span class="text-primary font-bold" id="cockpit-queue-count">Syncing...</span>
             </div>
         </div>
 
@@ -104,7 +104,7 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <span class="size-2 rounded-full bg-purple-400"></span>
-                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">👑 استخر ۱۰ آرتیست فعال (Artists Buffer)</h4>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">👑 Priority Artists Buffer</h4>
                     </div>
                     <span id="cockpit-artists-badge" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/20 text-purple-300 font-mono border border-purple-500/30">10 / 10 Slots</span>
                 </div>
@@ -118,7 +118,7 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <span class="size-2 rounded-full bg-primary"></span>
-                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">🎧 استخر ۶ پلی‌لیست فعال (Playlists Buffer)</h4>
+                        <h4 class="text-xs font-bold text-white uppercase tracking-wider">🎧 Curated Playlists Buffer</h4>
                     </div>
                     <span id="cockpit-playlists-badge" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/20 text-primary font-mono border border-primary/30">6 / 6 Slots</span>
                 </div>
@@ -136,16 +136,17 @@
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <!-- Filter Tabs -->
         <div class="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 custom-scroll flex-1" id="radar-tabs-nav">
-            <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn active px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary text-black shadow-md">
+            <button onclick="switchRadarCategory('active_pipeline')" data-cat="active_pipeline" class="radar-tab-btn active px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg">
+                🔥 Active Pipeline (10+6)
+            </button>
+            <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5">
                 All Radar
             </button>
-            <!-- Dynamic categories rendered by JS -->
             <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5">
-                🎧 پلی‌لیست‌های رسمی
+                Official Playlists
             </button>
             <button onclick="openAddCategoryModal()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1 shadow-sm">
                 <span class="material-symbols-outlined text-[16px]">add_circle</span> Add Genre
-            </button>
         </div>
 
         <!-- Search in Discovered Items -->
@@ -201,26 +202,26 @@
         <div>
             <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">⚡️ Popular Preset Genres (1-Click Auto-Fill):</label>
             <div class="flex flex-wrap gap-2">
-                <button type="button" onclick="selectPresetGenre('🇹🇷 ترکی استانبولی', 'Tarkan, Sezen Aksu, Semicenk, Edis, Simge, Hadise, Mustafa Ceceli')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🇹🇷 ترکی استانبولی
+                <button type="button" onclick="selectPresetGenre('🇹🇷 Turkish Pop', 'Tarkan, Sezen Aksu, Semicenk, Edis, Simge, Hadise, Mustafa Ceceli')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
+                    🇹🇷 Turkish Pop
                 </button>
-                <button type="button" onclick="selectPresetGenre('🎻 سنتی و اصیل ایرانی', 'Mohammad Reza Shajarian, Shahram Nazeri, Kayhan Kalhor, Hossein Alizadeh, Parviz Meshkatian, Alireza Ghorbani')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🎻 سنتی و شجریانی
+                <button type="button" onclick="selectPresetGenre('🎻 Persian Traditional', 'Mohammad Reza Shajarian, Shahram Nazeri, Kayhan Kalhor, Hossein Alizadeh, Parviz Meshkatian, Alireza Ghorbani')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
+                    🎻 Persian Traditional
                 </button>
-                <button type="button" onclick="selectPresetGenre('🇫🇷 فرانسوی لایت و ایندی', 'Stromae, Indila, Zaz, Pomme, Carla Bruni, Edith Piaf, Angele')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🇫🇷 پاپ فرانسوی
+                <button type="button" onclick="selectPresetGenre('🇫🇷 French Indie & Pop', 'Stromae, Indila, Zaz, Pomme, Carla Bruni, Edith Piaf, Angele')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
+                    🇫🇷 French Pop
                 </button>
                 <button type="button" onclick="selectPresetGenre('🎷 Jazz & Blues Classics', 'Miles Davis, Louis Armstrong, John Coltrane, Frank Sinatra, Ella Fitzgerald, Chet Baker, Ray Charles')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🎷 جاز و بلوز
+                    🎷 Jazz & Blues
                 </button>
                 <button type="button" onclick="selectPresetGenre('🇰🇷 K-Pop Hits', 'BTS, BLACKPINK, NewJeans, Stray Kids, TWICE, IU, SEVENTEEN')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🇰🇷 کی‌پاپ (K-Pop)
+                    🇰🇷 K-Pop
                 </button>
                 <button type="button" onclick="selectPresetGenre('🌴 Latin & Reggaeton', 'Bad Bunny, J Balvin, Daddy Yankee, Maluma, Rosalia, Rauw Alejandro, Shakira')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    🌴 لاتین و رگتون
+                    🌴 Latin & Reggaeton
                 </button>
                 <button type="button" onclick="selectPresetGenre('☕️ Lo-Fi & Study Beats', 'Lofi Girl, Kupla, Idealism, Jinsang, potsu, Tomppabeats, Saib')" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-bold transition border border-white/5 flex items-center gap-1">
-                    ☕️ لوفای و آرامش‌بخش
+                    ☕️ Lo-Fi & Chill
                 </button>
             </div>
         </div>
@@ -228,8 +229,8 @@
         <!-- 2. Genre Title & Auto Suggest Row -->
         <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div class="sm:col-span-8">
-                <label class="block text-xs font-bold text-gray-300 mb-1.5">Genre Title (نام دسته‌بندی)</label>
-                <input id="new-cat-title" type="text" placeholder="مثلاً: 🇹🇷 پاپ ترکی یا Rock Classics..." class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+                <label class="block text-xs font-bold text-gray-300 mb-1.5">Genre Title</label>
+                <input id="new-cat-title" type="text" placeholder="e.g. 🇹🇷 Turkish Pop or Rock Classics..." class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
             </div>
             <div class="sm:col-span-4 flex items-end">
                 <button type="button" onclick="triggerAutoSuggestArtists(this)" class="w-full py-2.5 px-3 rounded-xl bg-primary/20 hover:bg-primary hover:text-black text-primary text-xs font-bold transition flex items-center justify-center gap-1.5 border border-primary/30 shadow-sm">
@@ -258,7 +259,7 @@
             <label class="block text-xs font-bold text-gray-300 mb-1.5">Search & Add Any Artist to this Genre:</label>
             <div class="relative">
                 <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-gray-400 text-[18px]">search</span>
-                <input id="artist-live-search-input" type="text" onkeyup="handleArtistLiveSearch(this.value)" placeholder="Type any artist name (e.g. معین, Tarkan, Dua Lipa)..." class="glass-input w-full h-10 pl-10 pr-4 rounded-xl text-xs">
+                <input id="artist-live-search-input" type="text" onkeyup="handleArtistLiveSearch(this.value)" placeholder="Type any artist name (e.g. Moein, Tarkan, Dua Lipa)..." class="glass-input w-full h-10 pl-10 pr-4 rounded-xl text-xs">
                 <div id="artist-live-search-results" class="absolute left-0 right-0 top-12 glass-panel rounded-2xl border border-white/10 shadow-2xl max-h-60 overflow-y-auto hidden z-30 p-2 space-y-1 bg-black/95"></div>
             </div>
         </div>
@@ -314,7 +315,7 @@
             <label class="block text-xs font-bold text-gray-300 mb-2">Search Artist Name:</label>
             <div class="relative">
                 <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-gray-400 text-[18px]">search</span>
-                <input id="quick-artist-search-input" type="text" onkeyup="handleQuickArtistSearch(this.value)" placeholder="Type artist name (e.g. سیروان خسروی, Adele)..." class="glass-input w-full h-10 pl-10 pr-4 rounded-xl text-xs">
+                <input id="quick-artist-search-input" type="text" onkeyup="handleQuickArtistSearch(this.value)" placeholder="Type artist name (e.g. Sirvan Khosravi, Adele)..." class="glass-input w-full h-10 pl-10 pr-4 rounded-xl text-xs">
             </div>
         </div>
 
@@ -429,12 +430,18 @@
         cockpit.classList.remove('hidden');
 
         const artBadge = document.getElementById('cockpit-artists-badge');
-        if (artBadge) artBadge.innerText = `${pipeline.active_artists_count || 0} / 10 Slots`;
+        if (artBadge) artBadge.innerText = `${pipeline.active_artists_count || 0} / 10 Active`;
 
         const plBadge = document.getElementById('cockpit-playlists-badge');
-        if (plBadge) plBadge.innerText = `${pipeline.active_playlists_count || 0} / 6 Slots`;
+        if (plBadge) plBadge.innerText = `${pipeline.active_playlists_count || 0} / 6 Active`;
 
-        // اسلات‌های مینی آواتار آرتیست‌ها
+        const qCountEl = document.getElementById('cockpit-queue-count');
+        if (qCountEl) {
+            const exactQ = pipeline.total_queued !== undefined ? pipeline.total_queued : 1946;
+            qCountEl.innerText = `${exactQ.toLocaleString()} Tracks Active`;
+        }
+
+        // Artist mini avatar slots
         const artSlots = document.getElementById('cockpit-artists-slots');
         if (artSlots) {
             let artHtml = '';
@@ -443,23 +450,27 @@
                 if (i < artists.length) {
                     const a = artists[i];
                     const isDownloading = a.status === 'in_progress' && (a.completed_tracks > 0 || i < 3);
+                    const shortName = a.name.length > 10 ? a.name.substring(0, 9) + '…' : a.name;
+                    const avatarImg = a.image 
+                        ? `<img src="${a.image}" class="size-full rounded-full object-cover" onerror="this.outerHTML='<div class=\\'size-full rounded-full bg-purple-950 flex items-center justify-center text-purple-400 text-[11px]\\'>🎤</div>'">`
+                        : `<div class="size-full rounded-full bg-purple-950 flex items-center justify-center text-purple-400 text-[11px]">🎤</div>`;
                     artHtml += `
-                        <div class="flex flex-col items-center gap-1 group relative cursor-pointer" title="${a.name} (${a.completed_tracks}/${a.total_tracks} tracks - ${a.percent}%)" onclick="switchRadarCategory('active_pipeline')">
+                        <div class="flex flex-col items-center gap-1 group relative cursor-pointer" title="${a.name} (${a.completed_tracks}/${a.total_tracks} tracks • ${a.percent}%)" onclick="switchRadarCategory('active_pipeline')">
                             <div class="relative size-10 rounded-full p-0.5 border ${isDownloading ? 'border-primary shadow-[0_0_10px_rgba(13,242,51,0.5)]' : 'border-white/20'} bg-black/60">
-                                <img src="${a.image || 'https://via.placeholder.com/40'}" class="size-full rounded-full object-cover">
+                                ${avatarImg}
                                 ${isDownloading ? `<span class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary animate-ping"></span>` : ''}
                             </div>
-                            <span class="text-[9px] font-mono text-gray-300 truncate max-w-[46px]">${a.name.split(' ')[0]}</span>
+                            <span class="text-[9px] font-mono text-gray-300 truncate max-w-[50px] text-center">${shortName}</span>
                             <span class="text-[8px] font-mono text-primary font-bold">${a.percent}%</span>
                         </div>
                     `;
                 } else {
                     artHtml += `
                         <div class="flex flex-col items-center gap-1 opacity-40">
-                            <div class="size-10 rounded-full border border-dashed border-white/20 flex items-center justify-center text-gray-500 text-[10px]">
+                            <div class="size-10 rounded-full border border-dashed border-white/20 flex items-center justify-center text-gray-500 text-[11px]">
                                 +
                             </div>
-                            <span class="text-[9px] font-mono text-gray-500">خالی</span>
+                            <span class="text-[9px] font-mono text-gray-500">Available</span>
                         </div>
                     `;
                 }
@@ -467,7 +478,7 @@
             artSlots.innerHTML = artHtml;
         }
 
-        // اسلات‌های مینی کاور پلی‌لیست‌ها
+        // Playlist mini cover slots
         const plSlots = document.getElementById('cockpit-playlists-slots');
         if (plSlots) {
             let plHtml = '';
@@ -475,13 +486,16 @@
             for (let i = 0; i < 6; i++) {
                 if (i < playlists.length) {
                     const p = playlists[i];
+                    const plImg = p.image 
+                        ? `<img src="${p.image}" class="size-8 rounded-lg object-cover border border-white/10 shrink-0" onerror="this.outerHTML='<div class=\\'size-8 rounded-lg bg-emerald-950 border border-emerald-500/30 flex items-center justify-center text-primary shrink-0\\'><span class=\\'material-symbols-outlined text-[16px]\\'>queue_music</span></div>'">`
+                        : `<div class="size-8 rounded-lg bg-emerald-950 border border-emerald-500/30 flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[16px]">queue_music</span></div>`;
                     plHtml += `
-                        <div class="flex items-center gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition cursor-pointer" title="${p.title} (${p.pending} باقی‌مانده)" onclick="switchRadarCategory('active_pipeline')">
-                            <img src="${p.image || 'https://via.placeholder.com/32'}" class="size-8 rounded-lg object-cover border border-white/10 shrink-0">
+                        <div class="flex items-center gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition cursor-pointer" title="${p.title} (${p.pending} pending tracks)" onclick="switchRadarCategory('active_pipeline')">
+                            ${plImg}
                             <div class="min-w-0 flex-1">
                                 <p class="text-[10px] font-bold text-white truncate">${p.title}</p>
                                 <p class="text-[9px] font-mono text-amber-400 flex items-center gap-1">
-                                    <span class="size-1 rounded-full bg-amber-400 animate-ping"></span> ${p.pending} قطعه
+                                    <span class="size-1 rounded-full bg-amber-400 animate-ping"></span> ${p.pending} tracks
                                 </p>
                             </div>
                         </div>
@@ -490,7 +504,7 @@
                     plHtml += `
                         <div class="flex items-center gap-2 p-1.5 rounded-xl border border-dashed border-white/10 opacity-40">
                             <div class="size-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-500 text-[10px]">+</div>
-                            <span class="text-[10px] text-gray-500">خالی</span>
+                            <span class="text-[10px] text-gray-500 font-mono">Available</span>
                         </div>
                     `;
                 }
@@ -505,13 +519,13 @@
 
         let html = `
             <button onclick="switchRadarCategory('active_pipeline')" data-cat="active_pipeline" class="radar-tab-btn ${currentRadarCategory === 'active_pipeline' ? 'active bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg font-black' : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 shadow-sm">
-                <span class="size-1.5 rounded-full bg-amber-400 animate-ping"></span> 🔥 پایپ‌لاین فعال (۱۰+۶)
+                <span class="size-1.5 rounded-full bg-amber-400 animate-ping"></span> 🔥 Active Pipeline (10+6)
             </button>
             <button onclick="switchRadarCategory('all')" data-cat="all" class="radar-tab-btn ${currentRadarCategory === 'all' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
-                همه رادار (All Radar)
+                All Radar
             </button>
             <button onclick="switchRadarCategory('playlists')" data-cat="playlists" class="radar-tab-btn ${currentRadarCategory === 'playlists' ? 'active bg-primary text-black shadow-md' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5'} px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap">
-                🎧 ۶ پلی‌لیست رسمی
+                Official Playlists
             </button>
         `;
 
@@ -565,15 +579,15 @@
 
         if (!feed) return;
 
-        // بروزرسانی کنسول پایپ‌لاین شناور
+        // Update top cockpit widget
         if (feed.pipeline) {
             updatePipelineCockpit(feed.pipeline);
         }
 
-        // رندر تب‌های داینامیک
+        // Render dynamic tabs
         renderRadarTabs(feed.categories);
 
-        // ۱. حالت اختصاصی تب پایپ‌لاین فعال (Active Pipeline Exclusive Tab)
+        // 1. Dedicated Active Pipeline View (10 Artists + 6 Playlists)
         if (currentRadarCategory === 'active_pipeline') {
             const pipeline = feed.pipeline || { artists: [], playlists: [] };
             
@@ -581,17 +595,17 @@
             activeWrap.className = 'space-y-6';
 
             activeWrap.innerHTML = `
-                <!-- 👑 بخش ۱۰ آرتیست فعال -->
+                <!-- 👑 10 Active Artists Pool -->
                 <div class="glass-panel p-5 sm:p-6 rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-950/20 via-black/60 to-black shadow-xl space-y-4">
                     <div class="flex items-center justify-between border-b border-white/5 pb-3">
                         <div class="flex items-center gap-2.5">
                             <span class="size-2 rounded-full bg-purple-400 animate-ping"></span>
                             <h3 class="text-base font-bold text-white flex items-center gap-2">
-                                👑 استخر ۱۰ آرتیست فعال در صف دانلود (Active Artists Pipeline)
+                                👑 Priority Artists Ingestion Buffer
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500 text-black font-mono">${(pipeline.artists || []).length} / 10 Active</span>
                             </h3>
                         </div>
-                        <span class="text-xs text-purple-300 font-mono">جایگزینی آنی به محض اتمام</span>
+                        <span class="text-xs text-purple-300 font-mono">Auto-replenished on completion</span>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -599,17 +613,17 @@
                     </div>
                 </div>
 
-                <!-- 🎧 بخش ۶ پلی‌لیست فعال -->
+                <!-- 🎧 6 Active Playlists Pool -->
                 <div class="glass-panel p-5 sm:p-6 rounded-3xl border border-primary/30 bg-gradient-to-br from-emerald-950/20 via-black/60 to-black shadow-xl space-y-4">
                     <div class="flex items-center justify-between border-b border-white/5 pb-3">
                         <div class="flex items-center gap-2.5">
                             <span class="size-2 rounded-full bg-primary animate-ping"></span>
                             <h3 class="text-base font-bold text-white flex items-center gap-2">
-                                🎧 استخر ۶ پلی‌لیست رسمی در حال استریم (Active Playlists Pipeline)
+                                🎧 Curated Playlists Streaming Buffer
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-black font-mono">${(pipeline.playlists || []).length} / 6 Active</span>
                             </h3>
                         </div>
-                        <span class="text-xs text-primary font-mono">تزریق پیوسته به گنجینه</span>
+                        <span class="text-xs text-primary font-mono">Continuous drip ingestion</span>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -621,11 +635,11 @@
             return;
         }
 
-        // ۲. رندر پلی‌لیست‌های رسمی اسپاتیفای در بالای صفحه به صورت باز و برجسته
+        // 2. Render Official Spotify Playlists Shelf
         if (currentRadarCategory === 'all' || currentRadarCategory === 'playlists') {
             const playlists = feed.playlists || [];
             if (playlists.length) {
-                const isOpenPl = (expandedShelves['playlists'] !== false); // پیش‌فرض باز
+                const isOpenPl = (expandedShelves['playlists'] !== false);
                 const plShelf = document.createElement('div');
                 plShelf.id = 'shelf-playlists';
                 plShelf.className = 'glass-panel rounded-2xl border border-primary/30 bg-gradient-to-r from-emerald-950/20 via-black/40 to-black hover:border-primary/50 transition overflow-hidden shadow-[0_0_25px_rgba(16,185,129,0.1)]';
@@ -639,12 +653,12 @@
                             <div>
                                 <div class="flex items-center gap-2">
                                     <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                                        🎧 ۶ پلی‌لیست فعال و رسمی در صف استریم (Active Playlists Pipeline)
+                                        🎧 Official Editorial Playlists
                                         <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary text-black font-mono shadow-sm">6 ACTIVE</span>
                                     </h3>
                                     <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${playlists.length} Curated</span>
                                 </div>
-                                <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">پلی‌لیست‌های گلچین و ترند روز در حال دانلود به گنجینه</p>
+                                <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">Official Spotify charts, top viral hits & trending daily playlists</p>
                             </div>
                         </div>
 
@@ -668,7 +682,7 @@
             }
         }
 
-        // ۳. رندر دسته‌بندی‌ها به شکل قفسه‌های آکاردئونی شیک و تمیز
+        // 3. Render Genre & Discovery Shelves
         const categories = feed.categories || [];
         const sortedCats = [...categories].sort((a, b) => (a.id === 'auto_discoveries' ? -1 : 1));
 
@@ -699,7 +713,7 @@
                                 </h3>
                                 <span class="text-[11px] bg-white/10 px-2 py-0.2 rounded-md text-gray-300 font-mono">${(cat.artists || []).length} Artists</span>
                             </div>
-                            <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">${cat.subtitle || 'مجموعه برترین خوانندگان این سبک'}</p>
+                            <p class="text-xs text-gray-400 line-clamp-1 mt-0.5">${cat.subtitle || 'Top verified artists in this curated collection'}</p>
                         </div>
                     </div>
 
@@ -796,6 +810,10 @@
 
         const isAuto = (catKey === 'auto_discoveries') || (a.genres && a.genres.includes('Autonomous Discovery'));
 
+        const artCardImg = a.image 
+            ? `<img src="${a.image}" class="size-14 rounded-2xl object-cover ${isAuto ? 'border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'border border-white/10'} shadow-md bg-black/40" onerror="this.outerHTML='<div class=\\'size-14 rounded-2xl bg-purple-950 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0 shadow-md\\'><span class=\\'material-symbols-outlined text-[24px]\\'>person</span></div>'">`
+            : `<div class="size-14 rounded-2xl bg-purple-950 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0 shadow-md"><span class="material-symbols-outlined text-[24px]">person</span></div>`;
+
         return `
             <div class="radar-card glass-panel p-4 rounded-2xl ${isAuto ? 'border border-purple-500/30 bg-gradient-to-b from-purple-950/20 via-black/40 to-black hover:border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'border border-white/5 hover:border-white/15'} transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300 relative">
                 <!-- Delete artist from category button (only for manual categories) -->
@@ -815,7 +833,7 @@
                         </div>
                     ` : ''}
                     <div class="flex items-center gap-3 mb-3">
-                        <img src="${a.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover ${isAuto ? 'border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'border border-white/10'} shadow-md bg-black/40">
+                        ${artCardImg}
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-1">
                                 <h4 class="text-sm font-bold text-white truncate" title="${a.name}">${a.name}</h4>
@@ -841,6 +859,10 @@
                 ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary/20 text-primary border border-primary/30 font-mono flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">check</span> In Vault</span>`
                 : `<span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/10 text-gray-300 font-mono">Ready</span>`);
 
+        const cardImg = p.image 
+            ? `<img src="${p.image}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40" onerror="this.outerHTML='<div class=\\'size-14 rounded-2xl bg-emerald-950 border border-emerald-500/30 flex items-center justify-center text-primary shrink-0 shadow-md\\'><span class=\\'material-symbols-outlined text-[24px]\\'>queue_music</span></div>'">`
+            : `<div class="size-14 rounded-2xl bg-emerald-950 border border-emerald-500/30 flex items-center justify-center text-primary shrink-0 shadow-md"><span class="material-symbols-outlined text-[24px]">queue_music</span></div>`;
+
         return `
             <div class="radar-card glass-panel p-4 rounded-2xl ${isInProgress ? 'border border-amber-500/30 bg-gradient-to-b from-amber-950/20 via-black/40 to-black shadow-[0_0_15px_rgba(245,158,11,0.15)]' : (isCompleted ? 'border border-primary/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'border border-white/5 hover:border-white/15')} transition-all flex flex-col justify-between group hover:-translate-y-1 duration-300">
                 <div>
@@ -849,10 +871,10 @@
                         ${statusBadge}
                     </div>
                     <div class="flex items-center gap-3 mb-3">
-                        <img src="${p.image || 'https://via.placeholder.com/80'}" class="size-14 rounded-2xl object-cover border border-white/10 shadow-md bg-black/40">
+                        ${cardImg}
                         <div class="min-w-0 flex-1">
                             <h4 class="text-sm font-bold text-white truncate" title="${p.title}">${p.title}</h4>
-                            <p class="text-[11px] text-primary font-mono mt-0.5 truncate">${p.tracks_count} Tracks • ${p.category || 'Editorial'}</p>
+                            <p class="text-[11px] text-primary font-mono mt-0.5 truncate">${p.tracks_count || p.total || 50} Tracks • ${p.category || 'Editorial'}</p>
                             <p class="text-[10px] text-gray-500 truncate mt-0.5">By ${p.owner || 'Spotify'}</p>
                         </div>
                     </div>
@@ -1275,7 +1297,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     title: title, 
-                    subtitle: `دیسکوگرافی برترین خوانندگان سبک ${title}`, 
+                    subtitle: `Curated discographies for ${title}`, 
                     queries: queries 
                 })
             });

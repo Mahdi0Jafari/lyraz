@@ -168,8 +168,8 @@ class CatalogAutopilotService:
                 enriched_categories.append({
                     "id": "auto_discoveries",
                     "key": "auto_discoveries",
-                    "title": "🔮 کشف‌های هوشمند رادار",
-                    "subtitle": "هنرمندان جدید کشف‌شده به صورت خودکار از گراف اسپاتیفای",
+                    "title": "🔮 AI Radar Discoveries",
+                    "subtitle": "Autonomous machine-discovered artists from Spotify graph",
                     "is_default": False,
                     "artists": discovered_artists
                 })
@@ -232,21 +232,35 @@ class CatalogAutopilotService:
                 ORDER BY total DESC
             """).fetchall()
 
+            # استخراج کاورهای واقعی پلی‌لیست‌ها از جدول playlist_meta
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS playlist_meta (
+                    source TEXT PRIMARY KEY,
+                    title TEXT,
+                    image_url TEXT,
+                    spotify_id TEXT
+                )
+            """)
+            meta_imgs = {r[0]: r[1] for r in conn.execute("SELECT source, image_url FROM playlist_meta WHERE image_url IS NOT NULL").fetchall()}
+
             pipeline_playlists = []
             for pl in active_pl_sources:
                 pld = dict(pl)
                 src = pld['source']
                 clean_title = src.replace("pl:", "").strip()
                 matched_meta = next((p for p in raw_playlists if clean_title.lower() in (p.get('title') or '').lower()), None)
+                img = meta_imgs.get(src) or (matched_meta.get('image') if matched_meta else None)
                 pipeline_playlists.append({
                     "source": src,
                     "title": clean_title,
-                    "image": matched_meta.get('image') if matched_meta else None,
+                    "image": img,
                     "total": pld['total'],
                     "pending": pld['pending'],
                     "completed": pld['completed'],
                     "status": "in_progress"
                 })
+
+            exact_queued = conn.execute("SELECT COUNT(*) FROM ingestion_logs WHERE status IN ('queued', 'downloading')").fetchone()[0]
 
             return {
                 "categories": enriched_categories,
@@ -257,7 +271,8 @@ class CatalogAutopilotService:
                     "target_artists": 10,
                     "target_playlists": 6,
                     "active_artists_count": len(pipeline_artists),
-                    "active_playlists_count": len(pipeline_playlists)
+                    "active_playlists_count": len(pipeline_playlists),
+                    "total_queued": exact_queued
                 }
             }
 
@@ -362,6 +377,22 @@ class CatalogAutopilotService:
             source_label=f"pl:{pl_data.get('title', 'playlist')[:15]}",
             max_limit=35
         )
+
+        # ذخیره متادیتای کاور پلی‌لیست
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS playlist_meta (
+                    source TEXT PRIMARY KEY,
+                    title TEXT,
+                    image_url TEXT,
+                    spotify_id TEXT
+                )
+            """)
+            conn.execute("""
+                INSERT OR REPLACE INTO playlist_meta (source, title, image_url, spotify_id)
+                VALUES (?, ?, ?, ?)
+            """, (f"pl:{pl_data.get('title', 'playlist')[:15]}", pl_data.get('title'), pl_data.get('image'), playlist_id))
+            conn.commit()
 
         # پاکسازی کش فید رادار
         global _RADAR_CACHE
