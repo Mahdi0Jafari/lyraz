@@ -366,27 +366,38 @@ class CatalogAutopilotService:
                 if candidate_artist:
                     break
 
-            # ۴. 🔮 کشف خودکار ۲۴ ساعته (Continuous Autonomous Discovery): اگر لیست اصلی تمام شد، کشف آرتیست‌های هم‌سبک
+            # ۴. 🔮 کشف خودکار ۲۴ ساعته هنرمندان جدید (Continuous Discovery via Genre Queries)
             if not candidate_artist:
-                try:
-                    completed_parents = conn.execute("""
-                        SELECT spotify_id, artist_name FROM artist_campaigns 
-                        WHERE spotify_id IS NOT NULL AND status = 'completed'
-                        ORDER BY RANDOM() LIMIT 5
-                    """).fetchall()
-                    for parent in completed_parents:
-                        related = spotify_extractor.fetch_related_artists(parent['spotify_id'])
-                        for r_art in related:
-                            r_id = r_art.get('id')
-                            r_name = (r_art.get('name') or '').lower().strip()
-                            if r_id and r_id not in existing_sp_ids and r_name not in existing_names:
-                                candidate_artist = r_art
-                                logger.info(f"🔮 [Autopilot Auto-Discovery] Found new related artist via {parent['artist_name']}: {r_art['name']} ({r_id})")
-                                break
-                        if candidate_artist:
+                discovery_genres = [
+                    "persian pop", "persian hip hop", "persian traditional",
+                    "iranian alternative", "turkish pop", "top artists", "rock classics",
+                    "deep house", "rap farsi", "sonati"
+                ]
+                import random
+                shuffled_genres = list(discovery_genres)
+                random.shuffle(shuffled_genres)
+                for genre in shuffled_genres:
+                    suggested = spotify_extractor.suggest_artists_by_genre(genre, limit=15)
+                    for s_art in suggested:
+                        s_id = s_art.get('id')
+                        s_name = (s_art.get('name') or '').lower().strip()
+                        if s_id and s_id not in existing_sp_ids and s_name not in existing_names:
+                            candidate_artist = s_art
+                            logger.info(f"🔮 [Autopilot Auto-Discovery] Found new artist via genre '{genre}': {s_art['name']} ({s_id})")
                             break
-                except Exception as disc_err:
-                    logger.warning(f"Auto-Discovery related artists error: {disc_err}")
+                    if candidate_artist:
+                        break
+
+            # ۵. 🎧 بررسی و تزریق تاپ پلی‌لیست‌های اسپاتیفای در صورتی که آرتیستی لانچ نشد
+            candidate_playlist = None
+            if not candidate_artist:
+                existing_sources = set(r[0] for r in conn.execute("SELECT DISTINCT source FROM ingestion_logs WHERE source LIKE 'pl:%'").fetchall())
+                for pl in feed.get("playlists", []):
+                    pl_title = pl.get("title") or pl.get("name") or "playlist"
+                    source_label = f"pl:{pl_title[:15]}"
+                    if pl.get("id") and source_label not in existing_sources:
+                        candidate_playlist = pl
+                        break
 
             if candidate_artist:
                 logger.info(f"⚡️ [Autopilot] Auto-Launching Next Artist: {candidate_artist['name']} ({candidate_artist['id']})...")
@@ -395,5 +406,13 @@ class CatalogAutopilotService:
                     logger.info(f"✅ [Autopilot] Artist {candidate_artist['name']} dispatched to queue.")
                 except Exception as e:
                     logger.error(f"Autopilot launch error for {candidate_artist.get('name')}: {e}")
+            elif candidate_playlist:
+                pl_name = candidate_playlist.get('title') or candidate_playlist.get('name') or 'Playlist'
+                logger.info(f"⚡️ [Autopilot] Auto-Launching Top Playlist: {pl_name} ({candidate_playlist['id']})...")
+                try:
+                    self.launch_playlist_ingestion(candidate_playlist["id"])
+                    logger.info(f"✅ [Autopilot] Playlist {pl_name} dispatched to queue.")
+                except Exception as e:
+                    logger.error(f"Autopilot launch error for playlist {pl_name}: {e}")
 
 catalog_autopilot = CatalogAutopilotService()
