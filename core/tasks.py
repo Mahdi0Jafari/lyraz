@@ -53,6 +53,10 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
 
+    if not file_path or not os.path.exists(file_path):
+        logger.error(f"Cannot upload to Telegram: file '{file_path}' does not exist.")
+        return None, None
+
     for attempt in range(retries):
         try:
             with open(file_path, 'rb') as f:
@@ -351,11 +355,19 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
             continue
 
         with sqlite3.connect(Config.DATABASE_URI) as conn:
-            # ۲. ثبت در جدول campaign_tracks
-            conn.execute("""
-                INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, youtube_id, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
-            """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
+            # ۲. به‌روزرسانی ردیف موجود در جدول campaign_tracks به جای درج تکراری
+            existing = conn.execute("SELECT id FROM campaign_tracks WHERE campaign_id = ? AND title = ?", (campaign_id, title)).fetchone()
+            if existing:
+                conn.execute("""
+                    UPDATE campaign_tracks 
+                    SET youtube_id = ?, status = 'queued', duration_seconds = coalesce(nullif(duration_seconds, 0), ?)
+                    WHERE id = ?
+                """, (vid, duration_sec, existing[0]))
+            else:
+                conn.execute("""
+                    INSERT INTO campaign_tracks (campaign_id, title, artist, album_name, release_date, cover_url, duration_seconds, spotify_url, youtube_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+                """, (campaign_id, title, artist, album_name, release_date, cover_url, duration_sec, spotify_url, vid))
 
             # ۳. ثبت در جدول صف ingestion_logs
             cur = conn.execute("""
@@ -365,7 +377,7 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
             log_id = cur.lastrowid
             conn.commit()
 
-        # ۴. ارسال ترک به صف پس‌زمینه با اولویت پایه (تا جلوی کاربران زنده را نگیرد)
+        # ۴. ارسال ترک به صف پس‌زمینه با اولویت استاندارد (تا جلوی کاربران زنده را نگیرد)
         download_and_process_track(
             video_id=vid,
             title=title,
@@ -380,7 +392,7 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
             duration=duration_sec,
             log_id=log_id,
             target_channel_id=target_channel_id,
-            priority=10
+            priority=8
         )
 
 # ==========================================
@@ -479,6 +491,12 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                         conn.execute("UPDATE campaign_tracks SET status = 'failed', error_msg = 'Download failed' WHERE youtube_id = ?", (video_id,))
                         conn.commit()
                 except Exception: pass
+
+                if message_id and not is_batch:
+                    try:
+                        await local_bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="❌ Failed to download audio.")
+                    except Exception: pass
+                return False
 
             # ۳.۵. 🛡 بازرسی نهایی حجم فایل برحسب سایز واقعی دیسک (Strict Size Guard)
             # اگر حجم فایل خروجی تحت هر شرایطی بالای ۴۸ مگابایت بود، با ffmpeg فشرده‌سازی سریع انجام بده
@@ -701,7 +719,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         logger.error(f"Worker Task Failed: {e}")
         return False
     finally:
-        if path: yt_service.cleanup(path)
+        if path or video_id:
+            yt_service.cleanup(path, video_id=video_id)
         try: await local_bot.initialize() ; await local_bot.shutdown()
         except: pass
 
@@ -992,12 +1011,22 @@ async def _async_bulk_broadcast(target_telegram_ids, message_text):
 # ⏰ AUTONOMOUS CATALOG PRE-WARMER SCHEDULER
 # ==========================================
 
-@huey.periodic_task(crontab(minute='*/10'))
+_LAST_CRAWLER_CHECK = 0
+
+@huey.periodic_task(crontab(minute='*/15'), expires=600)
+@huey.lock_task('lock_crawler_schedule')
 def check_crawler_schedule():
     """
-    تسک زمان‌بندی‌شده دوره‌ای: بررسی اجرای کرولر خودکار بر اساس ساعت محلی تنظیم‌شده در پنل ادمین
-    با پشتیبانی کامل از منطقه زمانی ایران (Asia/Tehran) و جلوگیری از اجرای تکراری در طول روز.
+    تسک زمان‌بندی‌شده دوره‌ای (هر ۱۵ دقیقه):
+    بررسی ساعت اجرای کراولر خودکار طبق ساعت تنظیم‌شده در داشبورد ادمین
+    با قفل انحصاری (lock_task) و انقضای خودکار (expires) برای جلوگیری از انباشت در صف
     """
+    global _LAST_CRAWLER_CHECK
+    now_ts = time.time()
+    if now_ts - _LAST_CRAWLER_CHECK < 600:
+        return
+    _LAST_CRAWLER_CHECK = now_ts
+
     try:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
@@ -1062,13 +1091,28 @@ def check_crawler_schedule():
 # ⚡️ SPOTIFY RADAR & VAULT AUTOPILOT
 # ==========================================
 
-@huey.periodic_task(crontab(minute='*/3'))
+_LAST_AUTOPILOT_TICK = 0
+
+@huey.periodic_task(crontab(minute='*/3'), expires=120)
+@huey.lock_task('lock_autopilot_tick')
 def check_autopilot_tick():
     """
     تسک زمان‌بندی‌شده دوره‌ای (هر ۳ دقیقه):
     بررسی و اجرای اتوپایلوت مداوم گنجینه برای تزریق روان و پیوسته دیسکوگرافی خوانندگان و پلی‌لیست‌ها
+    با قفل انحصاری، انقضای ۲ دقیقه‌ای، مکانیزم ضد انباشتگی (Debounce) و پاکسازی خودکار کش‌های موقت
     """
+    global _LAST_AUTOPILOT_TICK
+    now_ts = time.time()
+    # اگر کمتر از ۱۲۰ ثانیه گذشته باشد، تسک‌های معلق انباشته شده را سریعا نادیده بگیر
+    if now_ts - _LAST_AUTOPILOT_TICK < 120:
+        return
+    _LAST_AUTOPILOT_TICK = now_ts
+
     try:
+        # ۱. پاکسازی خودکار فایل‌های واسط و موقت yt_cache قدیمی‌تر از ۱ ساعت
+        yt_service.purge_stale_cache(max_age_seconds=3600)
+
+        # ۲. تپش اتوپایلوت
         from core.services.catalog_autopilot import catalog_autopilot
         catalog_autopilot.autopilot_tick()
     except Exception as e:

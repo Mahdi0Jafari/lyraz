@@ -474,21 +474,31 @@ class CatalogAutopilotService:
             """)
             conn.commit()
 
-            # ۱. خودترمیمی آهنگ‌های فیل‌شده یا معلق در صف
+            # ۱. خودترمیمی هوشمند با سقف تلاش مجدد (حداکثر ۲ بار تلاش)
+            # فقط آهنگ‌هایی که شناسه یوتیوب معتبر دارند و خطای دائمی نگرفته‌اند
             stuck_tracks = conn.execute("""
                 SELECT ct.id, ct.title, ct.artist, ct.youtube_id, ct.cover_url, ct.duration_seconds, ac.target_channel_id, ac.artist_name 
                 FROM campaign_tracks ct
                 JOIN artist_campaigns ac ON ct.campaign_id = ac.id
-                WHERE ct.status = 'failed'
-                   OR (ct.status = 'queued' AND ct.created_at < datetime('now', '-30 minutes'))
-                LIMIT 10
+                WHERE ct.youtube_id IS NOT NULL 
+                  AND (
+                    (ct.status = 'failed' AND (ct.error_msg IS NULL OR ct.error_msg NOT LIKE '%[max_retries]%'))
+                    OR (ct.status = 'downloading' AND ct.created_at < datetime('now', '-20 minutes'))
+                  )
+                LIMIT 5
             """).fetchall()
 
             if stuck_tracks:
-                logger.info(f"🔄 [Autopilot Auto-Healer] Auto-retrying {len(stuck_tracks)} stuck/failed tracks...")
+                logger.info(f"🔄 [Autopilot Auto-Healer] Safely checking {len(stuck_tracks)} stuck/failed tracks...")
                 from core.tasks import download_and_process_track
                 for trk in stuck_tracks:
-                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL, created_at = CURRENT_TIMESTAMP WHERE id = ?", (trk['id'],))
+                    # بررسی سابقه تلاش‌های ناموفق در ingestion_logs
+                    fail_count = conn.execute("SELECT COUNT(*) FROM ingestion_logs WHERE youtube_id = ? AND status = 'failed'", (trk['youtube_id'],)).fetchone()[0]
+                    if fail_count >= 2:
+                        conn.execute("UPDATE campaign_tracks SET status = 'failed', error_msg = 'Permanently unavailable [max_retries]' WHERE id = ?", (trk['id'],))
+                        continue
+
+                    conn.execute("UPDATE campaign_tracks SET status = 'queued', error_msg = NULL WHERE id = ?", (trk['id'],))
                     
                     cur = conn.execute("""
                         INSERT INTO ingestion_logs (title, performer, youtube_id, source, status)
@@ -513,9 +523,43 @@ class CatalogAutopilotService:
                         duration=trk['duration_seconds'],
                         log_id=log_id,
                         target_channel_id=distinct_target_ch,
-                        priority=12
+                        priority=3  # اولویت بسیار پایین‌تر تا جلوی دانلودهای فعال را نگیرد
                     )
                 conn.commit()
+
+            # ۲. تزریق و استخراج پیوسته برای کمپین‌هایی که هنوز در انتظار استخراج یوتیوب هستند
+            unresolved_camps = conn.execute("""
+                SELECT ac.id, ac.artist_name, ac.target_channel_id
+                FROM artist_campaigns ac
+                WHERE ac.status = 'processing'
+                  AND EXISTS (SELECT 1 FROM campaign_tracks WHERE campaign_id = ac.id AND youtube_id IS NULL)
+                LIMIT 2
+            """).fetchall()
+
+            for u_camp in unresolved_camps:
+                cid = u_camp['id']
+                unresolved_tracks = conn.execute("""
+                    SELECT title, artist, cover_url, duration_seconds, spotify_url
+                    FROM campaign_tracks
+                    WHERE campaign_id = ? AND youtube_id IS NULL
+                    LIMIT 40
+                """, (cid,)).fetchall()
+                if unresolved_tracks:
+                    from core.tasks import ingest_artist_campaign_task
+                    formatted_trks = [{
+                        'title': r[0],
+                        'artist_string': r[1],
+                        'cover_url': r[2],
+                        'duration_seconds': r[3],
+                        'spotify_url': r[4]
+                    } for r in unresolved_tracks]
+                    logger.info(f"⚡️ [Autopilot Resolution] Dispatching {len(formatted_trks)} tracks for campaign #{cid} ({u_camp['artist_name']})...")
+                    ingest_artist_campaign_task(
+                        campaign_id=cid,
+                        tracks=formatted_trks,
+                        artist_name=u_camp['artist_name'],
+                        target_channel_id=u_camp['target_channel_id']
+                    )
 
             # ۳. لیست موجودی برای جلوگیری قطعی از تکرار
             existing_camps = conn.execute("SELECT spotify_id, LOWER(artist_name) FROM artist_campaigns").fetchall()
