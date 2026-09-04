@@ -296,8 +296,43 @@ class YouTubeService:
         logger.error(f"[-] All download sources exhausted for: {video_id}")
         return None
 
-    def cleanup(self, file_path):
+    def purge_stale_cache(self, max_age_seconds=3600):
+        """پاکسازی خودکار فایل‌های واسط و کش‌های موقت yt_cache که بیش از ۱ ساعت از ساخت آن‌ها گذشته است"""
+        try:
+            if not os.path.exists(self.download_dir):
+                return
+            now = time.time()
+            for fname in os.listdir(self.download_dir):
+                fpath = os.path.join(self.download_dir, fname)
+                if os.path.isfile(fpath):
+                    try:
+                        if (now - os.path.getmtime(fpath)) > max_age_seconds:
+                            os.remove(fpath)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def cleanup(self, file_path=None, video_id=None):
+        """پاکسازی کامل فایل اصلی و کلیه فایل‌های موقت واسط (.webm, .m4a, .part, cmp_*)"""
         try:
             if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-        except: pass
+                try: os.remove(file_path)
+                except: pass
+
+            vid = video_id
+            if not vid and file_path:
+                base = os.path.basename(file_path)
+                vid = os.path.splitext(base)[0]
+                if vid.startswith('cmp_'):
+                    vid = vid[4:]
+
+            if vid and os.path.exists(self.download_dir):
+                for fname in os.listdir(self.download_dir):
+                    if vid in fname:
+                        fpath = os.path.join(self.download_dir, fname)
+                        if os.path.isfile(fpath):
+                            try: os.remove(fpath)
+                            except: pass
+        except Exception:
+            pass
