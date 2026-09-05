@@ -204,9 +204,9 @@ class CatalogAutopilotService:
             pipeline_artists = []
             for a in active_artist_camps:
                 ad = dict(a)
-                total = ad.get('total_tracks') or 1
                 comp = ad.get('completed_tracks') or 0
-                pct = round((comp / total) * 100, 1)
+                total = max(ad.get('total_tracks') or 1, comp)
+                pct = min(100.0, round((comp / total) * 100, 1)) if total > 0 else 0.0
                 pipeline_artists.append({
                     "id": ad.get('spotify_id'),
                     "campaign_id": ad.get('id'),
@@ -261,6 +261,15 @@ class CatalogAutopilotService:
                 })
 
             exact_queued = conn.execute("SELECT COUNT(*) FROM ingestion_logs WHERE status IN ('queued', 'downloading')").fetchone()[0]
+
+            # پر کردن تضمینی بافر در صورتی که اسلاتی خالی شده باشد و اتوپایلوت فعال باشد
+            settings = conn.execute("SELECT autopilot_enabled FROM settings WHERE id = 1").fetchone()
+            if settings and settings[0] and (len(pipeline_artists) < 10 or len(pipeline_playlists) < 6):
+                try:
+                    from core.tasks import check_autopilot_tick
+                    check_autopilot_tick()
+                except Exception:
+                    pass
 
             return {
                 "categories": enriched_categories,
@@ -577,7 +586,7 @@ class CatalogAutopilotService:
             needed_artists = max(0, TARGET_ACTIVE_ARTISTS - active_artists_count)
 
             if needed_artists > 0:
-                top_artists = self._discover_top_spotify_artists_dynamically(existing_sp_ids, existing_names, limit_needed=min(needed_artists, 4))
+                top_artists = self._discover_top_spotify_artists_dynamically(existing_sp_ids, existing_names, limit_needed=needed_artists)
                 for c_art in top_artists:
                     followers = (c_art.get("followers") or {}).get("total", 0)
                     logger.info(f"👑 [Autopilot Active Pool: 10 Artists] Launching {c_art['name']} ({followers:,} followers) to maintain 10 active pool...")
@@ -601,7 +610,7 @@ class CatalogAutopilotService:
 
             if needed_playlists > 0:
                 existing_sources = set(r[0] for r in conn.execute("SELECT DISTINCT source FROM ingestion_logs WHERE source LIKE 'pl:%'").fetchall())
-                top_playlists = self._discover_top_spotify_playlists_dynamically(existing_sources, limit_needed=min(needed_playlists, 2))
+                top_playlists = self._discover_top_spotify_playlists_dynamically(existing_sources, limit_needed=needed_playlists)
                 for c_pl in top_playlists:
                     pl_name = c_pl.get("name") or "Playlist"
                     logger.info(f"🎧 [Autopilot Active Pool: 6 Playlists] Launching {pl_name} to maintain 6 active pool...")
