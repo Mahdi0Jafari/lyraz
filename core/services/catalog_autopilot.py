@@ -482,7 +482,12 @@ class CatalogAutopilotService:
             if not settings or 'autopilot_enabled' not in settings.keys() or not settings['autopilot_enabled']:
                 return
 
-            # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده
+            # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده و پاکسازی لاگ‌های معلق قدیمی
+            conn.execute("""
+                UPDATE ingestion_logs 
+                SET status = 'failed', error_msg = 'Worker timeout / interrupted'
+                WHERE status = 'downloading' AND created_at < datetime('now', '-2 hours')
+            """)
             conn.execute("""
                 UPDATE artist_campaigns 
                 SET completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed'),

@@ -159,7 +159,7 @@ class CatalogCrawlerService:
                 conn.commit()
                 log_id = c.lastrowid
 
-                # ۳. ارسال به صف استاندارد ورکر (Huey)
+                # ۳. ارسال به صف استاندارد ورکر (Huey) با اولویت یکسان با آرتیست‌ها
                 download_and_process_track(
                     video_id=vid,
                     title=title,
@@ -172,7 +172,8 @@ class CatalogCrawlerService:
                     quality=Config.AUDIO_QUALITY,
                     cover_url=item.get('cover'),
                     duration=item.get('duration'),
-                    log_id=log_id
+                    log_id=log_id,
+                    priority=8
                 )
                 queued_count += 1
                 
