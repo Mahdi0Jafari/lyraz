@@ -192,21 +192,33 @@ class CatalogAutopilotService:
                     pld["status"] = "ready"
                 enriched_playlists.append(pld)
 
-            # استخراج ساختار یافته و شفاف برای پایپ‌لاین فعال (Active Pipeline Cockpit)
+            # استخراج ساختار یافته و شفاف برای پایپ‌لاین فعال (Active Pipeline Cockpit) با آمار زنده از جدول قطعات
             active_artist_camps = conn.execute("""
-                SELECT id, artist_name, avatar_url, spotify_url, spotify_id, hub_token, 
-                       total_tracks, completed_tracks, status
-                FROM artist_campaigns 
-                WHERE status = 'processing'
-                ORDER BY id DESC
+                SELECT ac.id, ac.artist_name, ac.avatar_url, ac.spotify_url, ac.spotify_id, ac.hub_token, ac.status,
+                       COUNT(ct.id) as real_total,
+                       SUM(CASE WHEN ct.status = 'completed' THEN 1 ELSE 0 END) as real_comp,
+                       SUM(CASE WHEN ct.status IN ('queued', 'downloading') THEN 1 ELSE 0 END) as real_pending
+                FROM artist_campaigns ac
+                LEFT JOIN campaign_tracks ct ON ct.campaign_id = ac.id
+                WHERE ac.status = 'processing'
+                GROUP BY ac.id
+                ORDER BY ac.id DESC
             """).fetchall()
 
             pipeline_artists = []
             for a in active_artist_camps:
                 ad = dict(a)
-                comp = ad.get('completed_tracks') or 0
-                total = max(ad.get('total_tracks') or 1, comp)
-                pct = min(100.0, round((comp / total) * 100, 1)) if total > 0 else 0.0
+                total = ad.get('real_total') or 1
+                comp = ad.get('real_comp') or 0
+                pending = ad.get('real_pending') or 0
+                
+                # اگر هیچ ترکی در صف انتظار نمانده باشد، کمپین تکمیل است و فوراً از بافر خارج می‌شود
+                if pending == 0 and comp > 0:
+                    conn.execute("UPDATE artist_campaigns SET status = 'completed', completed_tracks = ?, total_tracks = ? WHERE id = ?", (comp, total, ad['id']))
+                    conn.commit()
+                    continue
+
+                pct = min(100.0, round((comp / max(1, total)) * 100, 1))
                 pipeline_artists.append({
                     "id": ad.get('spotify_id'),
                     "campaign_id": ad.get('id'),
@@ -215,7 +227,7 @@ class CatalogAutopilotService:
                     "hub_token": ad.get('hub_token'),
                     "total_tracks": total,
                     "completed_tracks": comp,
-                    "remaining_tracks": max(0, total - comp),
+                    "remaining_tracks": pending,
                     "percent": pct,
                     "status": "in_progress"
                 })
@@ -578,6 +590,18 @@ class CatalogAutopilotService:
             # ==========================================
             # 🎯 POOL 1: حفظ پایدار ۱۰ آرتیست فعال در صف
             # ==========================================
+            # به‌روزرسانی آنی کمپین‌هایی که تمام قطعاتشان پردازش شده تا از صف فعال خارج شوند
+            conn.execute("""
+                UPDATE artist_campaigns
+                SET status = 'completed',
+                    completed_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed'),
+                    total_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id)
+                WHERE status = 'processing'
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status IN ('queued', 'downloading')) = 0
+                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed') > 0
+            """)
+            conn.commit()
+
             active_artists_count = conn.execute("""
                 SELECT COUNT(*) FROM artist_campaigns WHERE status = 'processing'
             """).fetchone()[0]
