@@ -1013,7 +1013,7 @@ async def _async_bulk_broadcast(target_telegram_ids, message_text):
 
 _LAST_CRAWLER_CHECK = 0
 
-@huey.periodic_task(crontab(minute='*/15'), expires=600)
+@huey.periodic_task(crontab(minute='*/15'), priority=15, expires=600)
 @huey.lock_task('lock_crawler_schedule')
 def check_crawler_schedule():
     """
@@ -1093,7 +1093,7 @@ def check_crawler_schedule():
 
 _LAST_AUTOPILOT_TICK = 0
 
-@huey.periodic_task(crontab(minute='*/3'), expires=120)
+@huey.periodic_task(crontab(minute='*/3'), priority=15, expires=120)
 @huey.lock_task('lock_autopilot_tick')
 def check_autopilot_tick():
     """
