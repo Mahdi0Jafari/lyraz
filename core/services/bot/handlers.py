@@ -602,67 +602,6 @@ async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
         disable_web_page_preview=True
     )
 
-# ==========================================
-# 💬 TEXT & NAVIGATION HANDLER
-# ==========================================
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if not update.message or not update.message.text: 
-        return
-    text = update.message.text.strip()
-    
-    if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs", "📺 Devices"]: 
-        await list_devices(update, context)
-        return
-        
-    if text in ["📖 Setup Guide", "❓ Help", "📖 Guide"]: 
-        guide_text = (
-            "🚀 *Lyraz Hubs Quick Guide:*\n\n"
-            "1️⃣ *Connect Hub:* Open the Web Player on your screen/TV and scan the QR code with your phone.\n"
-            "2️⃣ *Play Music:* Paste any Spotify playlist or YouTube link here—it will download and play live on your Hub.\n"
-            "3️⃣ *Remote Control:* Tap 'Remote Control' in the menu to manage volume, seeking, and playback.\n"
-            "4️⃣ *Track Queue:* Tap 'Queue' anytime to view upcoming tracks in your active session."
-        )
-        await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
-        return
-
-    if text in ["🔍 Search Music", "🔍 Search"]:
-        bot_username = Config.BOT_USERNAME
-        await update.message.reply_text(
-            f"🔎 *How to Search:*\n"
-            f"Simply type `@{bot_username} [song name/artist]` right here in the chat, or tap the button below!",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]
-            ])
-        )
-        return
-        
-    if text in ["📥 Download Link", "📥 Download"]:
-        await update.message.reply_text("🔗 Send me any valid *Spotify* (track/playlist) or *YouTube* link to start playback.", parse_mode=ParseMode.MARKDOWN)
-        return
-
-    if text in ["🎁 Invite Friends", "🎁 Invite", "🎁 Referral"]:
-        await show_referral_info(update, context)
-        return
-
-    if text in ["🎛 Remote Control", "🎛 Remote"]:
-        token = await asyncio.to_thread(get_user_current_session, user.id)
-        if not token:
-            await update.message.reply_text("❌ You are not connected to any Hub yet. Scan the QR code on your Web Player to get started.", reply_markup=get_main_menu_keyboard())
-            return
-        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
-        remote_url = f"{base_url}/remote/{token}"
-        remote_btn = InlineKeyboardButton("📱 Open Remote Control", web_app=WebAppInfo(url=remote_url)) if remote_url.startswith('https') else InlineKeyboardButton("📱 Open Remote Control", url=remote_url)
-        await update.message.reply_text(
-            "🎛 *Hub Mobile Remote Control*\n\n"
-            "Tap below to manage playback, volume, and the playlist queue from your phone:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup([[remote_btn]])
-        )
-        return
-
 async def render_queue_info(user_id, token):
     """Fetches queue tracks and builds formatted markdown message and interactive inline controls."""
     def get_data():
@@ -740,7 +679,68 @@ async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q_text, q_markup = await render_queue_info(user.id, token)
     await update.message.reply_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
 
-    if text in ["📋 Queue", "📋 Playlist"]:
+# ==========================================
+# 💬 TEXT & NAVIGATION HANDLER
+# ==========================================
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not update.message or not update.message.text: 
+        return
+    text = update.message.text.strip()
+    
+    if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs", "📺 Devices"]: 
+        await list_devices(update, context)
+        return
+        
+    if text in ["📖 Setup Guide", "❓ Help", "📖 Guide"]: 
+        guide_text = (
+            "🚀 *Lyraz Hubs Quick Guide:*\n\n"
+            "1️⃣ *Connect Hub:* Open the Web Player on your screen/TV and scan the QR code with your phone.\n"
+            "2️⃣ *Play Music:* Paste any Spotify playlist or YouTube link here—it will download and play live on your Hub.\n"
+            "3️⃣ *Remote Control:* Tap 'Remote Control' in the menu to manage volume, seeking, and playback.\n"
+            "4️⃣ *Track Queue:* Tap 'Queue' anytime to view upcoming tracks in your active session."
+        )
+        await update.message.reply_text(guide_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
+        return
+
+    if text in ["🔍 Search Music", "🔍 Search"]:
+        bot_username = Config.BOT_USERNAME
+        await update.message.reply_text(
+            f"🔎 *How to Search:*\n"
+            f"Simply type `@{bot_username} [song name/artist]` right here in the chat, or tap the button below!",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Open Search Panel", switch_inline_query_current_chat="")]
+            ])
+        )
+        return
+        
+    if text in ["📥 Download Link", "📥 Download"]:
+        await update.message.reply_text("🔗 Send me any valid *Spotify* (track/playlist) or *YouTube* link to start playback.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if text in ["🎁 Invite Friends", "🎁 Invite", "🎁 Referral"]:
+        await show_referral_info(update, context)
+        return
+
+    if text in ["🎛 Remote Control", "🎛 Remote"]:
+        token = await asyncio.to_thread(get_user_current_session, user.id)
+        if not token:
+            await update.message.reply_text("❌ You are not connected to any Hub yet. Scan the QR code on your Web Player to get started.", reply_markup=get_main_menu_keyboard())
+            return
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+        remote_url = f"{base_url}/remote/{token}"
+        remote_btn = InlineKeyboardButton("📱 Open Remote Control", web_app=WebAppInfo(url=remote_url)) if remote_url.startswith('https') else InlineKeyboardButton("📱 Open Remote Control", url=remote_url)
+        await update.message.reply_text(
+            "🎛 *Hub Mobile Remote Control*\n\n"
+            "Tap below to manage playback, volume, and the playlist queue from your phone:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([[remote_btn]])
+        )
+        return
+
+    if text in ["📋 Queue", "📋 Playlist"] or "queue" in text.lower():
         token = await asyncio.to_thread(get_user_current_session, user.id)
         if not token:
             await update.message.reply_text(
