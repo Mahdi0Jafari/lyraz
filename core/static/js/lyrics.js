@@ -18,6 +18,8 @@ async function fetchLyrics(uniqueId) {
     // پاکسازی و نمایش لودینگ
     lyricsData = [];
     lyricsPanel.innerHTML = '<div class="h-full flex items-center justify-center"><span class="animate-pulse text-primary text-lg font-bold">Searching...</span></div>';
+    const mobPreview = document.getElementById('mobile-lyric-preview');
+    if (mobPreview) mobPreview.innerText = '';
     
     // اگر دکمه لیریک وجود دارد (در موبایل)، آن را فعال نشان بده
     if(lyricsBtn) lyricsBtn.classList.add('text-primary');
@@ -121,6 +123,9 @@ function syncLyrics(currentTime) {
         if (newLine) {
             newLine.classList.add('active');
             
+            const mobPreview = document.getElementById('mobile-lyric-preview');
+            if (mobPreview) mobPreview.innerText = newLine.innerText;
+
             // اسکرول نرم و سینمایی به وسط صفحه
             newLine.scrollIntoView({ 
                 behavior: 'smooth', 

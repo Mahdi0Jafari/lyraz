@@ -127,47 +127,56 @@ export function updateProgress(currentTime, duration) {
     }
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export function renderPlaylist(tracks, loadTrackCallback) {
     elements.playlistContainer.innerHTML = "";
     tracks.forEach((track, i) => {
         const div = document.createElement('div');
-        div.className = `track-item flex items-center gap-4 p-3 rounded-xl cursor-pointer hover:bg-white/5 transition border border-transparent group`;
+        div.className = `track-item flex items-center gap-3.5 sm:gap-4 p-2.5 sm:p-3 rounded-xl cursor-pointer hover:bg-white/5 transition border border-transparent group select-none`;
         div.onclick = () => loadTrackCallback(i);
         
-        // 🔥 افزودن تگِ نام فرستنده زیر نام خواننده در لیست پخش
+        const safeTitle = escapeHtml(track.title);
+        const safePerformer = escapeHtml(track.performer);
+        
         let senderHtml = '';
         if (track.sender_name && track.sender_name !== "Unknown") {
-            senderHtml = `<span class="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 ml-2"><i class="ri-user-smile-line"></i> ${track.sender_name}</span>`;
+            senderHtml = `<span class="text-[9px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400 ml-2 inline-flex items-center gap-1"><i class="ri-user-smile-line text-[10px]"></i> ${escapeHtml(track.sender_name)}</span>`;
         }
 
         div.innerHTML = `
-            <div class="relative w-12 h-12 flex-shrink-0">
+            <div class="relative w-11 h-11 sm:w-12 sm:h-12 shrink-0">
                 <img src="/cover/${track.file_unique_id}" 
                      class="w-full h-full rounded-lg object-cover bg-gray-800" 
                      loading="lazy" 
-                     crossOrigin="Anonymous"
+                     crossOrigin="Anonymous" 
                      onerror="this.onerror=null; this.src='/cover/default';">
                 <div class="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><i class="ri-play-fill text-white"></i></div>
             </div>
             <div class="flex-1 min-w-0">
-                <h4 class="text-sm font-semibold truncate text-gray-200 group-hover:text-white">${track.title}</h4>
-                <p class="text-xs text-gray-500 truncate flex items-center">${track.performer} ${senderHtml}</p>
+                <h4 class="text-xs sm:text-sm font-semibold truncate text-gray-200 group-hover:text-white transition">${safeTitle}</h4>
+                <p class="text-[11px] sm:text-xs text-gray-400 truncate flex items-center mt-0.5">${safePerformer} ${senderHtml}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <a href="/download/${track.file_unique_id}" 
                    target="_blank" 
                    onclick="event.stopPropagation()" 
-                   class="size-7 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-400 hover:text-black transition flex items-center justify-center opacity-0 group-hover:opacity-100" 
+                   class="size-7 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-400 hover:text-black transition flex items-center justify-center opacity-70 sm:opacity-0 sm:group-hover:opacity-100 active:scale-90" 
                    title="Download MP3">
                     <i class="ri-download-2-line text-xs"></i>
                 </a>
-                <span class="text-xs text-gray-600 font-mono">${formatTime(track.duration)}</span>
+                <span class="text-[11px] sm:text-xs text-gray-500 font-mono">${formatTime(track.duration)}</span>
             </div>
         `;
         elements.playlistContainer.appendChild(div);
     });
     updateActiveItem(state.currentIndex);
     if(elements.trackCount) elements.trackCount.innerText = tracks.length;
+    const mobCount = document.getElementById('mobile-queue-count');
+    if(mobCount) mobCount.innerText = tracks.length;
 }
 
 export function updateActiveItem(index) {
@@ -175,7 +184,7 @@ export function updateActiveItem(index) {
     const items = elements.playlistContainer.children;
     if (items[index]) {
         items[index].classList.add('active', 'bg-white/10', 'border-white/10');
-        items[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        items[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
@@ -233,6 +242,9 @@ export function showLoginQR(url) {
             qrEl.style.objectFit = 'contain';
             qrEl.style.display = 'block';
         }
+
+        const mobTgBtn = document.getElementById('mobile-tg-link');
+        if (mobTgBtn && url) mobTgBtn.href = url;
     }
 }
 

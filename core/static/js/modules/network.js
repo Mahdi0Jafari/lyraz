@@ -161,6 +161,12 @@ export function initControlSSE(callbacks) {
                  callbacks.onQueueUpdate();
             }
             
+            // دریافت تعداد دستگاه‌های آنلاین متصل
+            if (data.type === 'device_count' && data.count !== undefined) {
+                const devBadge = document.getElementById('device-count-val');
+                if (devBadge) devBadge.innerText = data.count;
+            }
+
             // دریافت فرمان کنترل
             if (data.type === 'command') {
                 callbacks.onCommand(data);

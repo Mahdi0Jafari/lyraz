@@ -167,8 +167,13 @@ async function loadTrack(index, autoPlay = true, startPos = 0) {
                 state.isPlaying = true;
                 UI.updatePlayBtn(true);
                 preloadNextTrack();
+                document.getElementById('audio-unlock-banner')?.classList.add('hidden');
+                requestWakeLock();
                 if(!state.isSyncing) reportStatus(true); 
-            }).catch(e => console.warn("Auto-play prevented by browser:", e));
+            }).catch(e => {
+                console.warn("Auto-play prevented by browser:", e);
+                document.getElementById('audio-unlock-banner')?.classList.remove('hidden');
+            });
         }
     } else if (state.isPlaying) {
         preloadNextTrack();
@@ -228,7 +233,19 @@ function nextTrack() {
 
 function togglePlay() {
     if (state.tracks.length === 0) return;
-    state.isPlaying ? engines.active.pause() : engines.active.play();
+    if (state.isPlaying) {
+        engines.active.pause();
+    } else {
+        const audioCtx = getAudioContext();
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        engines.active.play().then(() => {
+            document.getElementById('audio-unlock-banner')?.classList.add('hidden');
+            requestWakeLock();
+        }).catch(e => {
+            console.warn("Play blocked:", e);
+            document.getElementById('audio-unlock-banner')?.classList.remove('hidden');
+        });
+    }
 }
 
 function seekToTime(seconds) {
@@ -459,6 +476,49 @@ function setupNetworkRecovery() {
     });
 }
 
+let wakeLock = null;
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+    } catch (e) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.isPlaying) {
+        requestWakeLock();
+    }
+});
+
+function unlockAudio() {
+    const audioCtx = getAudioContext();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (engines.active) {
+        engines.active.play().then(() => {
+            state.isPlaying = true;
+            UI.updatePlayBtn(true);
+            document.getElementById('audio-unlock-banner')?.classList.add('hidden');
+            requestWakeLock();
+        }).catch(err => console.warn("Unlock attempt blocked:", err));
+    }
+}
+
+// باز کردن اتوماتیک قفل ساند کارت مرورگر با اولین اشاره کاربر روی صفحه
+const unlockOnGesture = () => {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    if (engines.active && state.isPlaying && engines.active.paused) {
+        engines.active.play().catch(() => {});
+    }
+    document.getElementById('audio-unlock-banner')?.classList.add('hidden');
+    document.removeEventListener('pointerdown', unlockOnGesture);
+    document.removeEventListener('keydown', unlockOnGesture);
+};
+document.addEventListener('pointerdown', unlockOnGesture, { once: true });
+document.addEventListener('keydown', unlockOnGesture, { once: true });
+
 window.playPause = togglePlay;
 window.nextTrack = nextTrack;
 window.prevTrack = () => loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);
@@ -469,3 +529,5 @@ window.toggleRepeat = () => {
     UI.updateControlButtons();
 };
 window.seekToTime = seekToTime;
+window.unlockAudio = unlockAudio;
+window.engines = engines;
