@@ -14,9 +14,9 @@ from core.services.spotify_official import spotify_keyless
 from core.services.soundcloud import soundcloud_service 
 from .database import (
     bot_db_exec, get_user_id, update_user_session, get_session_info,
-    get_user_current_session, set_device_name, get_active_sessions,
-    get_track_by_youtube_id, get_user_role, check_user_quota_status,
-    register_referral, get_user_referral_stats
+    get_user_current_session, get_user_session_token, get_db_connection,
+    set_device_name, get_active_sessions, get_track_by_youtube_id,
+    get_user_role, check_user_quota_status, register_referral, get_user_referral_stats
 )
 from .keyboards import (
     get_main_menu_keyboard, get_smart_buttons, get_onboarding_keyboard,
@@ -603,16 +603,19 @@ async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 async def render_queue_info(user_id, token):
-    """Fetches queue tracks and builds formatted markdown message and interactive inline controls."""
+    """Fetches queue tracks and builds bulletproof formatted HTML message and interactive inline controls."""
+    import html
+
     def get_data():
-        import sqlite3
         internal_uid = get_user_id(user_id)
         session = get_session_info(token)
         is_admin = (session['admin_id'] == internal_uid) if session else False
-        d_name = session['device_name'] or f"Hub-{token[:4]}" if session else "Hub"
+        d_name = (session['device_name'] or f"Hub-{token[:4]}") if session else f"Hub-{token[:4]}"
         
-        with sqlite3.connect(Config.DATABASE_URI) as conn:
-            conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
+        if not conn:
+            return [], is_admin, d_name
+        try:
             rows = conn.execute("""
                 SELECT pi.id as item_id, t.title, t.performer, pi.is_played 
                 FROM playlist_items pi
@@ -621,37 +624,52 @@ async def render_queue_info(user_id, token):
                 ORDER BY pi.id ASC
             """, (token,)).fetchall()
             return [dict(r) for r in rows], is_admin, d_name
+        except Exception as e:
+            logger.error(f"Error fetching queue items from DB: {e}")
+            return [], is_admin, d_name
 
     items, is_admin, d_name = await asyncio.to_thread(get_data)
 
+    def safe_text(val, fallback="Unknown"):
+        if not val:
+            return fallback
+        return html.escape(str(val))
+
+    safe_hub = safe_text(d_name, f"Hub-{token[:4]}")
+
     if not items:
         text = (
-            f"📭 *The queue for {d_name} is empty.*\n\n"
+            f"📭 <b>The queue for {safe_hub} is empty.</b>\n\n"
             f"Send or paste any Spotify, YouTube, or SoundCloud link to play live!"
         )
         markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0)
         return text, markup
 
-    active_items = [it for it in items if not it['is_played']]
-    played_items = [it for it in items if it['is_played']]
+    active_items = [it for it in items if not it.get('is_played')]
+    played_items = [it for it in items if it.get('is_played')]
 
-    text = f"📋 *Live Queue: {d_name}* ({len(items)} tracks)\n\n"
+    text = f"📋 <b>Live Queue: {safe_hub}</b> ({len(items)} tracks)\n\n"
 
     if active_items:
         current = active_items[0]
-        text += f"▶️ *Now Playing:*\n   *{current['title']}* — _{current['performer']}_\n\n"
+        cur_title = safe_text(current.get('title'), 'Unknown Track')
+        cur_artist = safe_text(current.get('performer'), 'Unknown Artist')
+        text += f"▶️ <b>Now Playing:</b>\n   <b>{cur_title}</b> — <i>{cur_artist}</i>\n\n"
+        
         upcoming = active_items[1:12]
         if upcoming:
-            text += "⏳ *Up Next:*\n"
+            text += "⏳ <b>Up Next:</b>\n"
             for i, it in enumerate(upcoming, 1):
-                text += f"   {i}. *{it['title']}* — _{it['performer']}_\n"
+                t_title = safe_text(it.get('title'), 'Unknown Track')
+                t_artist = safe_text(it.get('performer'), 'Unknown Artist')
+                text += f"   {i}. <b>{t_title}</b> — <i>{t_artist}</i>\n"
             if len(active_items) > 12:
-                text += f"\n_... and {len(active_items) - 12} more tracks in queue_\n"
+                text += f"\n<i>... and {len(active_items) - 12} more tracks in queue</i>\n"
     else:
-        text += "⏹ *All tracks in queue have finished playing.*\n\n"
+        text += "⏹ <b>All tracks in queue have finished playing.</b>\n\n"
 
     if played_items:
-        text += f"\n_✅ {len(played_items)} previously played track{'s' if len(played_items) > 1 else ''}_"
+        text += f"\n<i>✅ {len(played_items)} previously played track{'s' if len(played_items) > 1 else ''}</i>"
 
     markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items))
     return text, markup
@@ -668,16 +686,22 @@ async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /queue command"""
     user = update.effective_user
     if not user: return
-    token = await asyncio.to_thread(get_user_current_session, user.id)
+    token = await asyncio.to_thread(get_user_session_token, user.id)
     if not token:
         await update.message.reply_text(
-            "❌ *You are not connected to any Hub yet.*\nOpen the Web Player on your screen and scan the QR code.",
-            parse_mode=ParseMode.MARKDOWN,
+            "❌ <b>You are not connected to any Hub yet.</b>\nOpen the Web Player on your screen and scan the QR code.",
+            parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard()
         )
         return
     q_text, q_markup = await render_queue_info(user.id, token)
-    await update.message.reply_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+    try:
+        await update.message.reply_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+    except Exception as e:
+        logger.warning(f"Failed to send queue message with HTML: {e}")
+        import re
+        plain = re.sub(r'<[^>]+>', '', q_text)
+        await update.message.reply_text(plain, reply_markup=q_markup)
 
 # ==========================================
 # 💬 TEXT & NAVIGATION HANDLER
@@ -725,11 +749,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["🎛 Remote Control", "🎛 Remote"]:
-        token = await asyncio.to_thread(get_user_current_session, user.id)
+        token = await asyncio.to_thread(get_user_session_token, user.id)
         if not token:
             await update.message.reply_text("❌ You are not connected to any Hub yet. Scan the QR code on your Web Player to get started.", reply_markup=get_main_menu_keyboard())
             return
-        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
         remote_url = f"{base_url}/remote/{token}"
         remote_btn = InlineKeyboardButton("📱 Open Remote Control", web_app=WebAppInfo(url=remote_url)) if remote_url.startswith('https') else InlineKeyboardButton("📱 Open Remote Control", url=remote_url)
         await update.message.reply_text(
@@ -741,16 +765,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["📋 Queue", "📋 Playlist"] or "queue" in text.lower():
-        token = await asyncio.to_thread(get_user_current_session, user.id)
+        token = await asyncio.to_thread(get_user_session_token, user.id)
         if not token:
             await update.message.reply_text(
-                "❌ *You are not connected to any Hub yet.*\nScan the QR code on your Web Player to get started.",
-                parse_mode=ParseMode.MARKDOWN,
+                "❌ <b>You are not connected to any Hub yet.</b>\nScan the QR code on your Web Player to get started.",
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard()
             )
             return
         q_text, q_markup = await render_queue_info(user.id, token)
-        await update.message.reply_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+        try:
+            await update.message.reply_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+        except Exception as e:
+            logger.warning(f"Failed to send queue message with HTML: {e}")
+            import re
+            plain = re.sub(r'<[^>]+>', '', q_text)
+            await update.message.reply_text(plain, reply_markup=q_markup)
         return
 
     # --- Renaming Flow (Multi-layered: context.user_data + Reply-To-Message) ---
@@ -991,18 +1021,23 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("q_skip_"):
         target_token = data.replace("q_skip_", "")
         def do_skip_db():
-            import sqlite3
             internal_uid = get_user_id(user.id)
             session = get_session_info(target_token)
             is_admin = (session['admin_id'] == internal_uid) if session else False
             if not is_admin:
                 return False
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                row = conn.execute("SELECT id FROM playlist_items WHERE session_token = ? AND is_played = 0 ORDER BY id ASC LIMIT 1", (target_token,)).fetchone()
-                if row:
-                    conn.execute("UPDATE playlist_items SET is_played = 1 WHERE id = ?", (row[0],))
-                    conn.commit()
-            return True
+            conn = get_db_connection()
+            if not conn:
+                return False
+            try:
+                with conn:
+                    row = conn.execute("SELECT id FROM playlist_items WHERE session_token = ? AND is_played = 0 ORDER BY id ASC LIMIT 1", (target_token,)).fetchone()
+                    if row:
+                        conn.execute("UPDATE playlist_items SET is_played = 1 WHERE id = ?", (row[0],))
+                return True
+            except Exception as e:
+                logger.error(f"Error skipping track in DB: {e}")
+                return False
 
         allowed = await asyncio.to_thread(do_skip_db)
         if not allowed:
@@ -1017,30 +1052,45 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⏭ Skipped to next track!")
         q_text, q_markup = await render_queue_info(user.id, target_token)
         try:
-            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
-        except Exception: pass
+            await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+        except Exception:
+            import re
+            plain = re.sub(r'<[^>]+>', '', q_text)
+            try:
+                await query.edit_message_text(plain, reply_markup=q_markup)
+            except Exception: pass
 
     elif data.startswith("q_refresh_"):
         target_token = data.replace("q_refresh_", "")
         await query.answer("🔄 Queue refreshed!")
         q_text, q_markup = await render_queue_info(user.id, target_token)
         try:
-            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
-        except Exception: pass
+            await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+        except Exception:
+            import re
+            plain = re.sub(r'<[^>]+>', '', q_text)
+            try:
+                await query.edit_message_text(plain, reply_markup=q_markup)
+            except Exception: pass
 
     elif data.startswith("q_clear_"):
         target_token = data.replace("q_clear_", "")
         def do_clear_db():
-            import sqlite3
             internal_uid = get_user_id(user.id)
             session = get_session_info(target_token)
             is_admin = (session['admin_id'] == internal_uid) if session else False
             if not is_admin:
                 return False
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                conn.execute("DELETE FROM playlist_items WHERE session_token = ?", (target_token,))
-                conn.commit()
-            return True
+            conn = get_db_connection()
+            if not conn:
+                return False
+            try:
+                with conn:
+                    conn.execute("DELETE FROM playlist_items WHERE session_token = ?", (target_token,))
+                return True
+            except Exception as e:
+                logger.error(f"Error clearing queue in DB: {e}")
+                return False
 
         allowed = await asyncio.to_thread(do_clear_db)
         if not allowed:
@@ -1055,8 +1105,13 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("🗑 Queue cleared!", show_alert=True)
         q_text, q_markup = await render_queue_info(user.id, target_token)
         try:
-            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
-        except Exception: pass
+            await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+        except Exception:
+            import re
+            plain = re.sub(r'<[^>]+>', '', q_text)
+            try:
+                await query.edit_message_text(plain, reply_markup=q_markup)
+            except Exception: pass
 
     elif data == "cancel_search":
         try: await query.message.delete()

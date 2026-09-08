@@ -131,16 +131,17 @@ def get_queue_keyboard(token, is_admin=True, total_items=0):
     if row1:
         buttons.append(row1)
 
-    base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+    base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
     remote_url = f"{base_url}/remote/{token}"
     if is_admin:
-        if remote_url.startswith('https'):
+        if remote_url.startswith('https://'):
             buttons.append([InlineKeyboardButton("🎛 Open Full Remote (WebApp)", web_app=WebAppInfo(url=remote_url))])
-        else:
+        elif remote_url.startswith('http://') and not any(h in remote_url for h in ['localhost', '127.0.0.1']):
             buttons.append([InlineKeyboardButton("🎛 Open Full Remote", url=remote_url)])
     else:
         live_url = f"{base_url}/live/{token}"
-        buttons.append([InlineKeyboardButton("🎧 Open Live Player", url=live_url)])
+        if live_url.startswith('https://') or (live_url.startswith('http://') and not any(h in live_url for h in ['localhost', '127.0.0.1'])):
+            buttons.append([InlineKeyboardButton("🎧 Open Live Player", url=live_url)])
 
     return InlineKeyboardMarkup(buttons)
 

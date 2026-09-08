@@ -264,6 +264,22 @@ def get_user_current_session(telegram_id):
         logger.error(f"Get Current Session Error: {e}")
         return None
 
+def get_user_session_token(telegram_id):
+    """
+    دریافت هاب فعال کاربر با قابلیت بازیابی خودکار:
+    اگر current_session خالی باشد اما کاربر صاحب یک هاب فعال در دیتابیس باشد،
+    آن هاب را به صورت خودکار بازیابی و ست می‌کند تا خطای کاذب عدم اتصال پیش نیاید.
+    """
+    token = get_user_current_session(telegram_id)
+    if not token:
+        internal_uid = get_user_id(telegram_id)
+        if internal_uid:
+            active = get_active_sessions(internal_uid)
+            if active:
+                token = active[0]['token']
+                update_user_session(telegram_id, token)
+    return token
+
 def get_session_info(token):
     """دریافت کامل اطلاعات یک هاب (سشن)"""
     conn = get_db_connection()
