@@ -116,3 +116,71 @@ def get_search_buttons():
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🔎 Search Another Song", switch_inline_query_current_chat="")
     ]])
+
+def get_queue_keyboard(token, is_admin=True, total_items=0):
+    """
+    Interactive inline buttons for queue management directly within Telegram.
+    Includes Skip, Refresh, Clear, and Mobile Remote WebApp links.
+    """
+    buttons = []
+    row1 = []
+    if is_admin and total_items > 0:
+        row1.append(InlineKeyboardButton("⏭ Skip", callback_data=f"q_skip_{token}"))
+        row1.append(InlineKeyboardButton("🗑 Clear", callback_data=f"q_clear_{token}"))
+    row1.append(InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}"))
+    if row1:
+        buttons.append(row1)
+
+    base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
+    remote_url = f"{base_url}/remote/{token}"
+    if is_admin:
+        if remote_url.startswith('https'):
+            buttons.append([InlineKeyboardButton("🎛 Open Full Remote (WebApp)", web_app=WebAppInfo(url=remote_url))])
+        else:
+            buttons.append([InlineKeyboardButton("🎛 Open Full Remote", url=remote_url)])
+    else:
+        live_url = f"{base_url}/live/{token}"
+        buttons.append([InlineKeyboardButton("🎧 Open Live Player", url=live_url)])
+
+    return InlineKeyboardMarkup(buttons)
+
+def build_search_keyboard(results, query, page=0, page_size=4):
+    """
+    Paginated search results keyboard with Next/Previous navigation and status indicators.
+    """
+    import re
+    total_results = len(results)
+    total_pages = max(1, (total_results + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total_results)
+    page_items = results[start_idx:end_idx]
+
+    buttons = []
+    for i, song in enumerate(page_items, start=start_idx + 1):
+        vid = song.get('videoId')
+        s_title = song.get('title', 'Unknown Track')[:28]
+        raw_artist = song.get('artists', [{'name': 'Unknown'}])[0]['name'] if song.get('artists') else "Unknown"
+        s_artist = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip() or "Unknown"
+        s_artist = s_artist[:18]
+
+        btn_text = f"📥 {i}. {s_title} — {s_artist}"
+        buttons.append([InlineKeyboardButton(btn_text, callback_data=f"dl_{vid}")])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"sp_{page - 1}"))
+    nav_row.append(InlineKeyboardButton(f"📄 {page + 1} / {total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"sp_{page + 1}"))
+
+    buttons.append(nav_row)
+    buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")])
+
+    msg_text = (
+        f"🎶 *Search Results for:* _{query}_\n"
+        f"Showing tracks *{start_idx + 1}-{end_idx}* of *{total_results}*:\n"
+        f"Select a track below to play on your Hub:"
+    )
+    return msg_text, InlineKeyboardMarkup(buttons)
