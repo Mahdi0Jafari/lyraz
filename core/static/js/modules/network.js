@@ -97,9 +97,55 @@ export async function validateSession(callbacks) {
 // 📡 Real-time Sync (SSE) & NTP Logic
 // ==========================================
 
+/**
+ * ⚡️ Cristian's Algorithm NTP Clock Synchronization
+ * پینگ سبک و چندمرحله‌ای برای سنجش دقیق تاخیر رفت‌وبرگشت (RTT) و محاسبه انحراف ساعت محلی کلاینت با سرور.
+ * تاخیر متغیر اینترنت (Network Jitter) را خنثی کرده و همگام‌سازی دیوایس‌ها را به دقت استودیویی می‌رساند.
+ */
+export async function calibrateClockOffset() {
+    let bestRtt = Infinity;
+    let bestOffset = state.serverTimeOffset || 0;
+
+    for (let i = 0; i < 3; i++) {
+        const t0 = performance.now();
+        try {
+            const res = await fetch('/api/sync/time', { cache: 'no-store' });
+            if (!res.ok) continue;
+            const data = await res.json();
+            const t1 = performance.now();
+            const localAfter = Date.now() / 1000;
+            
+            const rttSec = (t1 - t0) / 1000;
+            const serverTime = data.server_time;
+            
+            // بر اساس الگوریتم کریستین: زمان سرور در لحظه رسیدن پاسخ = serverTime + (rtt / 2)
+            const estimatedOffset = serverTime + (rttSec / 2) - localAfter;
+            
+            if (rttSec < bestRtt) {
+                bestRtt = rttSec;
+                bestOffset = estimatedOffset;
+            }
+        } catch (e) {}
+    }
+
+    if (bestRtt !== Infinity) {
+        state.serverTimeOffset = bestOffset;
+        state.networkRtt = bestRtt;
+        console.log(`⏱ [NTP Cristian] Clock Synced! Best RTT: ${(bestRtt * 1000).toFixed(1)}ms | Offset: ${(bestOffset * 1000).toFixed(1)}ms`);
+    }
+}
+
+let ntpPeriodicTimer = null;
+
 export function initControlSSE(callbacks) {
     if (sseConnection) sseConnection.close();
-    // 🔥 اصلاح امنیتی: ارسال توکن در مسیر درخواست SSE
+    if (ntpPeriodicTimer) clearInterval(ntpPeriodicTimer);
+    
+    // کالیبراسیون فوری ساعت در بدو اتصال و تکرار هر ۲ دقیقه برای جبران انحراف ساعت سخت‌افزار
+    calibrateClockOffset();
+    ntpPeriodicTimer = setInterval(calibrateClockOffset, 120000);
+
+    // ارسال توکن در مسیر درخواست SSE
     sseConnection = new EventSource(`/api/events/${state.sessionToken}`);
     
     sseConnection.onmessage = (e) => {
@@ -107,22 +153,16 @@ export function initControlSSE(callbacks) {
             const data = JSON.parse(e.data);
             if (data.session_token && data.session_token !== state.sessionToken) return;
             
-            // 🔥 V4.1: تفکیک سیگنال ترک جدید از فرمان‌ها
+            // تفکیک سیگنال ترک جدید از فرمان‌ها
             if (data.type === 'new_track') {
                 callbacks.onQueueUpdate();
             }
-            // ساختار قدیمی برای سازگاری عقب‌رو
             else if (data.file_unique_id && !data.action) {
                  callbacks.onQueueUpdate();
             }
             
-            // 🔥 V4.1: NTP Sync - دریافت فرمان زمان‌بندی شده
+            // دریافت فرمان کنترل
             if (data.type === 'command') {
-                // کالیبره کردن ساعت کلاینت با سرور
-                if (data.server_now) {
-                    const localNow = Date.now() / 1000;
-                    state.serverTimeOffset = data.server_now - localNow;
-                }
                 callbacks.onCommand(data);
             }
             
