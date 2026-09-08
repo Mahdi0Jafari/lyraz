@@ -183,37 +183,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Scenario 4: Normal Start (Welcome Message)
     # ---------------------------------------------------------
     else:
-        welcome_msg = (
-            f"👋 *Welcome to Lyraz V4, {user.first_name}!*\n"
-            "Your centralized Live Audio infrastructure.\n\n"
-            "🎼 *What can I do?*\n"
-            "📥 *Download:* Paste a Spotify/YouTube link to archive tracks.\n"
-            "🔍 *Search:* Instantly find any song from the global database.\n"
-            "📡 *Live Sync:* Play music synchronously across multiple screens.\n\n"
-        )
-        
         is_admin = False
         if current_token and session:
-            d_name = session['device_name'] or "Unknown Hub"
+            d_name = session['device_name'] or "Hub"
             is_admin = (session['admin_id'] == internal_uid)
-            
-            role_text = "(Admin)" if is_admin else "(Guest)"
-            welcome_msg += f"🟢 *Status:* Currently connected to *{d_name}* {role_text}.\n\n👇 *Get started:* Use the menu below or send a music link."
+            role_text = "Admin" if is_admin else "Guest"
+            welcome_msg = (
+                f"🟢 <b>Connected to Hub: {html.escape(d_name)}</b> ({role_text})\n"
+                f"──────────────────────\n"
+                f"📡 <i>Your phone is actively paired with this Hub.</i>\n\n"
+                f"👇 <i>Paste any YouTube/Spotify link, or choose an action below:</i>"
+            )
         else:
-            base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "the website"
-            welcome_msg += f"👇 *Get started:* Open [Lyraz Web Player]({base_url}) on a screen and scan the QR code to create your first Live Hub."
+            base_url = Config.BASE_URL if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+            welcome_msg = (
+                f"👋 <b>Welcome to Lyraz Hubs, {html.escape(user.first_name)}!</b>\n"
+                f"──────────────────────\n"
+                f"🎼 <i>Centralized Live Audio & Social Playback</i>\n\n"
+                f"👇 <i>Open <a href='{base_url}'>Lyraz Web Player</a> on your TV/screen to connect, or choose an action:</i>"
+            )
 
         await update.message.reply_text(
             welcome_msg, 
-            parse_mode=ParseMode.MARKDOWN, 
-            reply_markup=get_main_menu_keyboard(),
+            parse_mode=ParseMode.HTML, 
+            reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin),
             disable_web_page_preview=True
-        )
-        
-        await update.message.reply_text(
-            "⚡️ *Quick Actions:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin)
         )
 
 # ==========================================
@@ -636,42 +630,56 @@ async def render_queue_info(user_id, token):
         return html.escape(str(val))
 
     safe_hub = safe_text(d_name, f"Hub-{token[:4]}")
+    active_items = [it for it in items if not it.get('is_played')]
+    played_items = [it for it in items if it.get('is_played')]
+    has_active = len(active_items) > 0
 
     if not items:
         text = (
-            f"📭 <b>The queue for {safe_hub} is empty.</b>\n\n"
-            f"Send or paste any Spotify, YouTube, or SoundCloud link to play live!"
+            f"📋 <b>Live Queue: {safe_hub}</b>\n"
+            f"──────────────────────\n"
+            f"📭 <i>The queue is currently empty.</i>\n\n"
+            f"💡 <i>Tip: Send any song name, Spotify, or YouTube link to start playing live!</i>"
         )
-        markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0)
+        markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0, has_active=False)
         return text, markup
 
-    active_items = [it for it in items if not it.get('is_played')]
-    played_items = [it for it in items if it.get('is_played')]
-
-    text = f"📋 <b>Live Queue: {safe_hub}</b> ({len(items)} tracks)\n\n"
+    text = f"📋 <b>Live Queue: {safe_hub}</b> ({len(items)} tracks)\n"
+    text += "──────────────────────\n"
 
     if active_items:
         current = active_items[0]
         cur_title = safe_text(current.get('title'), 'Unknown Track')
         cur_artist = safe_text(current.get('performer'), 'Unknown Artist')
-        text += f"▶️ <b>Now Playing:</b>\n   <b>{cur_title}</b> — <i>{cur_artist}</i>\n\n"
+        text += f"▶️ <b>Now Playing:</b>\n   🎵 <b>{cur_title}</b> — <i>{cur_artist}</i>\n\n"
         
-        upcoming = active_items[1:12]
+        upcoming = active_items[1:10]
         if upcoming:
             text += "⏳ <b>Up Next:</b>\n"
             for i, it in enumerate(upcoming, 1):
                 t_title = safe_text(it.get('title'), 'Unknown Track')
                 t_artist = safe_text(it.get('performer'), 'Unknown Artist')
                 text += f"   {i}. <b>{t_title}</b> — <i>{t_artist}</i>\n"
-            if len(active_items) > 12:
-                text += f"\n<i>... and {len(active_items) - 12} more tracks in queue</i>\n"
+            if len(active_items) > 10:
+                text += f"\n<i>... and {len(active_items) - 10} more in queue</i>\n"
     else:
-        text += "⏹ <b>All tracks in queue have finished playing.</b>\n\n"
+        text += "⏹ <b>Queue Playback Finished</b>\n"
+        text += "<i>All songs in the queue have finished playing.</i>\n\n"
 
     if played_items:
-        text += f"\n<i>✅ {len(played_items)} previously played track{'s' if len(played_items) > 1 else ''}</i>"
+        recent_played = played_items[-5:]
+        text += "📜 <b>Recently Played:</b>\n"
+        for i, it in enumerate(recent_played, 1):
+            p_title = safe_text(it.get('title'), 'Unknown Track')
+            p_artist = safe_text(it.get('performer'), 'Unknown Artist')
+            text += f"   ✔️ <s>{p_title}</s> — <i>{p_artist}</i>\n"
+        if len(played_items) > 5:
+            text += f"   <i>(+ {len(played_items) - 5} earlier tracks)</i>\n"
 
-    markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items))
+    if not active_items:
+        text += "\n💡 <i>Send any song or tap <b>Search Music</b> below to queue more!</i>"
+
+    markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items), has_active=has_active)
     return text, markup
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):

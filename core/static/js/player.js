@@ -361,20 +361,38 @@ function reportStatus(force = false) {
 // ==========================================
 
 function onTrackEnded() {
+    const dur = engines.active.duration;
+    const cur = engines.active.currentTime;
+    
+    // 🔥 بررسی پایان واقعی ترک: اگر طول آهنگ مشخص است و پخش هنوز به ۳ ثانیه پایانی نرسیده، قطعی استریم بوده نه پایان واقعی
+    if (dur && isFinite(dur) && dur > 10 && cur < dur - 4) {
+        console.warn(`[Playback] Premature stream disconnect at ${cur.toFixed(1)}s / ${dur.toFixed(1)}s. Auto-resuming...`);
+        const resumePos = cur;
+        engines.active.load();
+        engines.active.currentTime = resumePos;
+        engines.active.play().catch(e => console.warn("Stream auto-resume blocked:", e));
+        return;
+    }
+
     state.retryCount = 0;
     nextTrack();
 }
 
-function onAudioError() {
+function onAudioError(e) {
+    if (!engines.active.src || engines.active.src === window.location.href) {
+        return;
+    }
+    console.warn("[Playback] Audio error event:", e);
     if (state.retryCount < CONFIG.retryLimit && navigator.onLine) {
         state.retryCount++;
         setTimeout(() => {
-            const t = engines.active.currentTime;
+            const t = engines.active.currentTime || 0;
             engines.active.load();
-            engines.active.currentTime = t;
-            engines.active.play().catch(e => console.warn("Recovery play blocked", e));
-        }, 1000);
+            if (t > 0) engines.active.currentTime = t;
+            engines.active.play().catch(err => console.warn("Recovery play blocked:", err));
+        }, 1200);
     } else {
+        state.retryCount = 0;
         nextTrack();
     }
 }

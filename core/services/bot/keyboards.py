@@ -117,19 +117,29 @@ def get_search_buttons():
         InlineKeyboardButton("🔎 Search Another Song", switch_inline_query_current_chat="")
     ]])
 
-def get_queue_keyboard(token, is_admin=True, total_items=0):
+def get_queue_keyboard(token, is_admin=True, total_items=0, has_active=True):
     """
     Interactive inline buttons for queue management directly within Telegram.
-    Includes Skip, Refresh, Clear, and Mobile Remote WebApp links.
+    Intelligently displays Skip only when active tracks exist, and offers Search when queue is finished.
     """
     buttons = []
-    row1 = []
-    if is_admin and total_items > 0:
-        row1.append(InlineKeyboardButton("⏭ Skip", callback_data=f"q_skip_{token}"))
-        row1.append(InlineKeyboardButton("🗑 Clear", callback_data=f"q_clear_{token}"))
-    row1.append(InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}"))
-    if row1:
+    
+    if has_active:
+        row1 = []
+        if is_admin:
+            row1.append(InlineKeyboardButton("⏭ Skip", callback_data=f"q_skip_{token}"))
+            row1.append(InlineKeyboardButton("🗑 Clear", callback_data=f"q_clear_{token}"))
+        row1.append(InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}"))
         buttons.append(row1)
+    else:
+        # وقتی تمام آهنگ‌ها تمام شده یا صف خالی است، دکمه Skip بی‌معنی است
+        row1 = [
+            InlineKeyboardButton("🔍 Search Music", switch_inline_query_current_chat=""),
+            InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}")
+        ]
+        buttons.append(row1)
+        if is_admin and total_items > 0:
+            buttons.append([InlineKeyboardButton("🗑 Clear History", callback_data=f"q_clear_{token}")])
 
     base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
     remote_url = f"{base_url}/remote/{token}"

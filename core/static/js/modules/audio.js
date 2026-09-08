@@ -15,17 +15,28 @@ export const engines = {
  * جایجایی موتورها برای پخش بدون وقفه
  */
 export function swapEngines() {
-    engines.active.pause();
-    engines.active.currentTime = 0;
+    // ۱. پاکسازی کامل کلیه لیسنرهای موتور قبلی قبل از توقف جهت جلوگیری از فایر شدن رویدادهای کاذب ended و error
+    engines.active.ontimeupdate = null;
+    engines.active.onended = null;
+    engines.active.onerror = null;
+    engines.active.onplay = null;
+    engines.active.onpause = null;
+
+    try {
+        engines.active.pause();
+        engines.active.currentTime = 0;
+    } catch (e) {}
     
     // جابجایی رفرنس‌ها
     const temp = engines.active;
     engines.active = engines.buffer;
     engines.buffer = temp;
     
-    // پاکسازی بافر
-    engines.buffer.src = "";
-    engines.buffer.load();
+    // پاکسازی امن بافر قبلی
+    engines.buffer.removeAttribute('src');
+    try {
+        engines.buffer.load();
+    } catch (e) {}
 }
 
 /**
