@@ -601,7 +601,7 @@ class CatalogAutopilotService:
             conn.execute("""
                 UPDATE ingestion_logs 
                 SET status = 'failed', error_msg = 'Worker timeout / interrupted'
-                WHERE status = 'downloading' AND created_at < datetime('now', '-2 hours')
+                WHERE status IN ('queued', 'downloading') AND created_at < datetime('now', '-2 hours')
             """)
 
             # اگر ترکی قبلاً در جدول tracks با موفقیت ذخیره شده، بلافاصله در campaign_tracks به completed تبدیل شود تا هرگز دوباره دانلود نشود

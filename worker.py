@@ -40,8 +40,12 @@ def clean_stale_backlog():
                 if stale_periodic_ids:
                     conn.executemany("DELETE FROM task WHERE id = ?", [(tid,) for tid in stale_periodic_ids])
 
+                # ۳. پاکسازی قطعی قفل‌های باقیمانده از قبل در جدول kv تا تسک‌های دوره‌ای هرگز گیر نکنند
+                cur_locks = conn.execute("DELETE FROM kv WHERE key LIKE '%.lock.%'")
+                deleted_locks = cur_locks.rowcount
+
                 conn.commit()
-                logger.info(f"🧹 Backlog Cleanup: Removed {deleted_p12} stuck tasks and {len(stale_periodic_ids)} stale periodic tasks.")
+                logger.info(f"🧹 Backlog Cleanup: Removed {deleted_p12} stuck tasks, {len(stale_periodic_ids)} periodic, and {deleted_locks} stale locks.")
     except Exception as e:
         logger.warning(f"Warning during queue backlog cleanup: {e}")
 

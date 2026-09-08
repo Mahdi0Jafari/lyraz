@@ -1025,22 +1025,24 @@ async def _async_bulk_broadcast(target_telegram_ids, message_text):
 # ==========================================
 
 _LAST_CRAWLER_CHECK = 0
+_CRAWLER_LOCK = threading.Lock()
 
 @huey.periodic_task(crontab(minute='*/15'), priority=15, expires=600)
-@huey.lock_task('lock_crawler_schedule')
 def check_crawler_schedule():
     """
     تسک زمان‌بندی‌شده دوره‌ای (هر ۱۵ دقیقه):
     بررسی ساعت اجرای کراولر خودکار طبق ساعت تنظیم‌شده در داشبورد ادمین
-    با قفل انحصاری (lock_task) و انقضای خودکار (expires) برای جلوگیری از انباشت در صف
+    با قفل ایمن و غیرانسدادی درون‌حافظه‌ای و انقضای خودکار برای جلوگیری از انباشت در صف
     """
     global _LAST_CRAWLER_CHECK
     now_ts = time.time()
     if now_ts - _LAST_CRAWLER_CHECK < 600:
         return
-    _LAST_CRAWLER_CHECK = now_ts
+    if not _CRAWLER_LOCK.acquire(blocking=False):
+        return
 
     try:
+        _LAST_CRAWLER_CHECK = now_ts
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
             settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
@@ -1098,6 +1100,8 @@ def check_crawler_schedule():
             logger.info(f"✅ [Auto-Prewarmer] Dispatched: {res['queued']} queued, {res['skipped']} skipped.")
     except Exception as e:
         logger.error(f"Error in check_crawler_schedule: {e}", exc_info=True)
+    finally:
+        _CRAWLER_LOCK.release()
 
 
 # ==========================================
@@ -1105,23 +1109,25 @@ def check_crawler_schedule():
 # ==========================================
 
 _LAST_AUTOPILOT_TICK = 0
+_AUTOPILOT_LOCK = threading.Lock()
 
 @huey.periodic_task(crontab(minute='*/3'), priority=15, expires=120)
-@huey.lock_task('lock_autopilot_tick')
 def check_autopilot_tick():
     """
     تسک زمان‌بندی‌شده دوره‌ای (هر ۳ دقیقه):
     بررسی و اجرای اتوپایلوت مداوم گنجینه برای تزریق روان و پیوسته دیسکوگرافی خوانندگان و پلی‌لیست‌ها
-    با قفل انحصاری، انقضای ۲ دقیقه‌ای، مکانیزم ضد انباشتگی (Debounce) و پاکسازی خودکار کش‌های موقت
+    با قفل ایمن و غیرانسدادی، انقضای ۲ دقیقه‌ای، مکانیزم ضد انباشتگی (Debounce) و پاکسازی خودکار کش‌های موقت
     """
     global _LAST_AUTOPILOT_TICK
     now_ts = time.time()
     # اگر کمتر از ۱۲۰ ثانیه گذشته باشد، تسک‌های معلق انباشته شده را سریعا نادیده بگیر
     if now_ts - _LAST_AUTOPILOT_TICK < 120:
         return
-    _LAST_AUTOPILOT_TICK = now_ts
+    if not _AUTOPILOT_LOCK.acquire(blocking=False):
+        return
 
     try:
+        _LAST_AUTOPILOT_TICK = now_ts
         # ۱. پاکسازی خودکار فایل‌های واسط و موقت yt_cache قدیمی‌تر از ۱ ساعت
         yt_service.purge_stale_cache(max_age_seconds=3600)
 
@@ -1130,3 +1136,5 @@ def check_autopilot_tick():
         catalog_autopilot.autopilot_tick()
     except Exception as e:
         logger.error(f"Error in check_autopilot_tick: {e}")
+    finally:
+        _AUTOPILOT_LOCK.release()
