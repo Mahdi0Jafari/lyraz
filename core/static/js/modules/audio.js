@@ -16,11 +16,24 @@ export const engines = {
 // ==========================================
 
 let audioCtx = null;
-let gainActive = null;
-let gainBuffer = null;
-let sourceActive = null;
-let sourceBuffer = null;
 let isWebAudioInitialized = false;
+
+function initEngineGain(audio) {
+    if (audio._gainNode) return audio._gainNode;
+    if (!audioCtx) return null;
+    try {
+        const source = audioCtx.createMediaElementSource(audio);
+        const gain = audioCtx.createGain();
+        gain.gain.value = 1.0;
+        source.connect(gain);
+        gain.connect(audioCtx.destination);
+        audio._gainNode = gain;
+        return gain;
+    } catch (e) {
+        console.warn("[Web Audio API] Node creation fallback:", e);
+        return null;
+    }
+}
 
 export function getAudioContext() {
     if (!audioCtx && typeof window !== 'undefined') {
@@ -28,22 +41,10 @@ export function getAudioContext() {
         if (AudioContextClass) {
             try {
                 audioCtx = new AudioContextClass();
-                gainActive = audioCtx.createGain();
-                gainBuffer = audioCtx.createGain();
-
-                gainActive.gain.value = 1.0;
-                gainBuffer.gain.value = 1.0;
-
-                gainActive.connect(audioCtx.destination);
-                gainBuffer.connect(audioCtx.destination);
-
-                sourceActive = audioCtx.createMediaElementSource(engines.active);
-                sourceBuffer = audioCtx.createMediaElementSource(engines.buffer);
-
-                sourceActive.connect(gainActive);
-                sourceBuffer.connect(gainBuffer);
+                initEngineGain(engines.active);
+                initEngineGain(engines.buffer);
                 isWebAudioInitialized = true;
-                console.log("🎛 [Web Audio API] GainNode Crossfader Connected Successfully.");
+                console.log("🎛 [Web Audio API] Studio GainNodes Connected Successfully.");
             } catch (e) {
                 console.warn("[Web Audio API] Fallback to HTML5 audio:", e);
             }
@@ -51,6 +52,10 @@ export function getAudioContext() {
     }
     if (audioCtx && audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => {});
+    }
+    if (audioCtx && isWebAudioInitialized) {
+        if (!engines.active._gainNode) initEngineGain(engines.active);
+        if (!engines.buffer._gainNode) initEngineGain(engines.buffer);
     }
     return audioCtx;
 }
@@ -61,27 +66,46 @@ export function getAudioContext() {
  */
 export async function crossfadeEngines(duration = 0.35) {
     const ctx = getAudioContext();
-    
-    // اگر وب‌آدیو فعال باشد، شیب ولوم پیاده می‌شود
-    if (ctx && isWebAudioInitialized && gainActive && gainBuffer) {
+    const oldEngine = engines.active;
+    const newEngine = engines.buffer;
+
+    const oldGain = oldEngine._gainNode;
+    const newGain = newEngine._gainNode;
+
+    // شروع فوری پخش قطعه جدید
+    const playPromise = newEngine.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(e => console.warn("[Crossfade] Buffer play blocked:", e));
+    }
+
+    if (ctx && isWebAudioInitialized && oldGain && newGain) {
         try {
             const now = ctx.currentTime;
-            gainActive.gain.cancelScheduledValues(now);
-            gainActive.gain.setValueAtTime(gainActive.gain.value, now);
-            gainActive.gain.linearRampToValueAtTime(0.01, now + duration);
+            
+            // محو کردن نرم صدای قطعه فعلی
+            oldGain.gain.cancelScheduledValues(now);
+            oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+            oldGain.gain.linearRampToValueAtTime(0.001, now + duration);
 
-            gainBuffer.gain.cancelScheduledValues(now);
-            gainBuffer.gain.setValueAtTime(0.01, now);
-            gainBuffer.gain.linearRampToValueAtTime(1.0, now + duration);
+            // افزایش نرم صدای قطعه جدید
+            newGain.gain.cancelScheduledValues(now);
+            newGain.gain.setValueAtTime(0.001, now);
+            newGain.gain.linearRampToValueAtTime(1.0, now + duration);
 
             await new Promise(r => setTimeout(r, duration * 1000));
             
-            gainActive.gain.setValueAtTime(1.0, ctx.currentTime);
-            gainBuffer.gain.setValueAtTime(1.0, ctx.currentTime);
+            // بازنشانی سطح ولوم
+            oldGain.gain.setValueAtTime(1.0, ctx.currentTime);
+            newGain.gain.setValueAtTime(1.0, ctx.currentTime);
         } catch (e) {
             console.warn("[Crossfade] WebAudio ramp error:", e);
+            await new Promise(r => setTimeout(r, duration * 1000));
         }
+    } else {
+        // فالبک مبتنی بر تایمر بدون وب‌آدیو
+        await new Promise(r => setTimeout(r, duration * 1000));
     }
+
     swapEngines();
 }
 

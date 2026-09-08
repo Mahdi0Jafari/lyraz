@@ -153,15 +153,26 @@ def send_command():
             server_now = time.time()
             action_id = str(uuid.uuid4()) 
             
-            # مهلت اجرای هماهنگ در آینده برای فرمان‌های استارت (Scheduled Deadline: 1.2s future window)
-            # این فرصت به دیوایس‌های دارای پینگ بالا اجازه می‌دهد بافر پر کرده و دقیقاً همزمان استارت بزنند
-            scheduled_at = (server_now + 1.2) if cmd == 'play' else None
-            
             current_session = db.execute("SELECT seek_position, play_status, sync_timestamp FROM sessions WHERE token = ?", (token,)).fetchone()
             base_seek = current_session['seek_position'] if current_session else 0.0
+
+            # مهلت اجرای هماهنگ در آینده برای فرمان‌های استارت (Scheduled Deadline: 1.2s future window)
+            # این فرصت به دیوایس‌های دارای پینگ بالا اجازه می‌دهد بافر پر کرده و دقیقاً همزمان استارت بزنند
+            scheduled_at = None
+            if cmd == 'play':
+                scheduled_at = server_now + 1.2
+            elif cmd == 'toggle' and (not current_session or current_session['play_status'] != 'playing'):
+                scheduled_at = server_now + 1.2
             
             if cmd in ['play', 'pause', 'toggle', 'seek']:
-                new_status = 'playing' if cmd == 'play' else ('paused' if cmd == 'pause' else None)
+                if cmd == 'play':
+                    new_status = 'playing'
+                elif cmd == 'pause':
+                    new_status = 'paused'
+                elif cmd == 'toggle':
+                    new_status = 'paused' if (current_session and current_session['play_status'] == 'playing') else 'playing'
+                else:
+                    new_status = None
                 
                 if new_status:
                     db.execute("UPDATE sessions SET play_status = ?, sync_timestamp = ? WHERE token = ?", (new_status, server_now, token))
