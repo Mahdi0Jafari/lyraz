@@ -126,7 +126,7 @@
     }
     </script>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet"/>
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet"/>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -162,9 +162,9 @@
             darkMode: "class",
             theme: {
                 extend: {
-                    colors: { primary: "#0df233", dark: "#050505", surface: "#121212" },
+                    colors: { primary: "#1db954", dark: "#0c0d0e", surface: "#18191b" },
                     fontFamily: { 
-                        sans: ["Inter", "sans-serif"], 
+                        sans: ["'Plus Jakarta Sans'", "Inter", "sans-serif"], 
                         display: ["Space Grotesk", "sans-serif"],
                         vazir: ["Vazirmatn", "sans-serif"]
                     },
@@ -183,15 +183,25 @@
         }
     </script>
     <style>
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 24px); }
-        .pt-safe { padding-top: env(safe-area-inset-top, 24px); }
+        .pb-safe { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 20px)); }
+        .pt-safe { padding-top: calc(0.5rem + env(safe-area-inset-top, 20px)); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .will-change-transform { will-change: transform; }
-        .glass-panel { background: rgba(18, 18, 18, 0.6); backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px); }
+        .glass-panel { background: rgba(18, 18, 18, 0.65); backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px); }
     </style>
 </head>
 <body ondblclick="toggleFullScreen()" class="bg-dark text-white h-[100dvh] w-full overflow-hidden relative font-sans flex items-center justify-center select-none">
+
+    <!-- 🔊 Floating Audio Unlock Banner (for Mobile Browser Autoplay Policies) -->
+    <div id="audio-unlock-banner" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary/25 backdrop-blur-xl border border-primary/40 text-white px-5 py-2.5 rounded-full shadow-[0_10px_35px_rgba(29,185,84,0.35)] flex items-center gap-2.5 cursor-pointer animate-pulse-slow hidden transition-all" onclick="unlockAudio()">
+        <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+        </span>
+        <i class="ri-volume-up-fill text-primary text-base"></i>
+        <span class="text-xs font-bold tracking-wide">Tap anywhere to enable sound</span>
+    </div>
 
     <script>
         window.INJECTED_TOKEN = "{{ token|default('', true) }}";
@@ -215,6 +225,13 @@
             <i class="ri-qr-scan-2-line text-primary text-2xl"></i>
             <p class="text-sm lg:text-base font-medium">Scan to add music via <b>Telegram</b></p>
         </div>
+        
+        <!-- Mobile Direct Connect Button -->
+        <a id="mobile-tg-link" href="https://t.me/LyrazBot" target="_blank" class="mt-4 sm:hidden flex items-center gap-2 bg-gradient-to-r from-primary to-emerald-500 text-black font-extrabold px-6 py-3 rounded-full shadow-xl active:scale-95 transition text-sm">
+            <i class="ri-telegram-fill text-lg"></i>
+            <span>Connect via Telegram</span>
+        </a>
+
         <a href="/landing" class="mt-6 text-xs text-gray-400 hover:text-white flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-4 py-1.5 rounded-full border border-white/5 transition-all">
             <i class="ri-sparkling-fill text-primary text-sm"></i>
             <span class="font-medium tracking-wide">Explore Lyraz &bull; Architecture &amp; Features</span>
@@ -225,123 +242,171 @@
     <main id="main-player" class="relative z-10 
                  w-full h-full lg:w-[96vw] lg:h-[94dvh] xl:max-w-[1600px] 
                  lg:rounded-[2.5rem] 
-                 lg:glass-panel flex flex-col lg:flex-row 
+                 lg:glass-panel flex flex-col 
                  overflow-hidden transition-all duration-700 lg:shadow-2xl lg:border lg:border-white/10
                  {% if session and session.status == 'active' %}opacity-100 scale-100{% else %}opacity-0 scale-95{% endif %}">
-        <section class="w-full flex-1 lg:flex-none lg:w-[360px] xl:w-[420px] 
-                        p-5 sm:p-8 lg:p-10
-                        flex flex-col justify-center items-center relative z-30
-                        border-b border-transparent lg:border-r lg:border-white/5 bg-transparent lg:bg-black/20 pt-safe">
+
+        <!-- Top Bar Status & Controls (Mobile & Desktop) -->
+        <header class="w-full px-5 py-3 lg:px-8 lg:py-3.5 flex items-center justify-between border-b border-white/5 bg-black/40 lg:bg-transparent backdrop-blur-xl lg:backdrop-blur-none shrink-0 z-40">
+            <div class="flex items-center gap-2.5">
+                <span class="relative flex h-2.5 w-2.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+                </span>
+                <span id="hub-display-name" class="font-bold text-xs sm:text-sm tracking-wider uppercase truncate max-w-[140px] sm:max-w-[200px] text-gray-200 font-mono">
+                    {{ session.device_name if session and session.device_name else 'Lyraz Hub' }}
+                </span>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div id="device-count-badge" class="flex items-center gap-1.5 text-xs text-primary font-mono bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20" title="Connected devices">
+                    <i class="ri-devices-line text-xs"></i>
+                    <span id="device-count-val">1</span>
+                    <span class="hidden sm:inline text-[10px] text-gray-400">devices</span>
+                </div>
+
+                <button onclick="toggleMobileQueue()" class="xl:hidden flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-gray-200 px-3 py-1 rounded-full border border-white/10 active:scale-95 transition" title="View Queue">
+                    <i class="ri-play-list-2-line text-primary"></i>
+                    <span class="text-[11px] font-mono" id="mobile-queue-count">0</span>
+                </button>
+
+                <button onclick="toggleFullScreen()" class="p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition active:scale-95" title="Toggle Fullscreen">
+                    <i class="ri-fullscreen-line text-base sm:text-lg"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Body: Split into Player Columns and Responsive Queue -->
+        <div class="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 relative">
             
-            <div class="relative 
-                        w-[65vw] max-w-[280px] sm:w-[75vw] sm:max-w-[320px] lg:w-full lg:max-w-[360px] aspect-square 
-                        rounded-[1.8rem] sm:rounded-[2rem] lg:rounded-[2.5rem] 
-                        overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] 
-                        mb-4 sm:mb-6 lg:mb-8 border border-white/10 group">
+            <!-- Column 1: Album Artwork & Metadata -->
+            <section class="w-full flex-1 lg:flex-none lg:w-[380px] xl:w-[420px] 
+                            p-4 sm:p-6 lg:p-10
+                            flex flex-col justify-center items-center relative z-30
+                            border-b border-transparent lg:border-r lg:border-white/5 bg-transparent lg:bg-black/20 shrink-0">
                 
-                <img id="cover-art" class="w-full h-full object-cover transition-transform duration-[3s] ease-in-out group-hover:scale-105" 
-                     src="/cover/default" 
-                     alt="Album Art"
-                     onerror="this.onerror=null; this.src='/cover/default';">
-                
-                     <div id="admin-badge" class="absolute top-3 left-3 sm:top-4 sm:left-4 bg-black/60 backdrop-blur-xl px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-bold border border-white/10 hidden shadow-xl flex items-center gap-2 z-20 transition-opacity duration-500">
-                        <span class="text-primary animate-pulse shadow-[0_0_10px_#0df233] rounded-full">●</span> 
+                <div class="relative 
+                            w-[min(58vw,34vh)] sm:w-[min(52vw,38vh)] lg:w-full lg:max-w-[360px] aspect-square 
+                            rounded-2xl sm:rounded-3xl lg:rounded-[2.2rem] 
+                            overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)] 
+                            mb-3 sm:mb-5 lg:mb-8 border border-white/10 group">
+                    
+                    <img id="cover-art" class="w-full h-full object-cover transition-transform duration-[3s] ease-in-out group-hover:scale-105" 
+                         src="/cover/default" 
+                         alt="Album Art"
+                         onerror="this.onerror=null; this.src='/cover/default';">
+                    
+                    <div id="admin-badge" class="absolute top-3 left-3 sm:top-4 sm:left-4 bg-black/60 backdrop-blur-xl px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-bold border border-white/10 hidden shadow-xl flex items-center gap-2 z-20 transition-opacity duration-500">
+                        <span class="text-primary animate-pulse shadow-[0_0_10px_#1db954] rounded-full">●</span> 
                         <span id="admin-name" class="truncate max-w-[120px] font-mono tracking-wide text-gray-200 uppercase">
                             HUB
                         </span>
                     </div>
-            </div>
-
-            <div class="w-full text-center space-y-1 sm:space-y-2 px-2">
-                <h2 id="track-title" class="text-2xl sm:text-3xl lg:text-4xl font-display font-bold truncate leading-tight tracking-tight drop-shadow-lg">Ready to Play</h2>
-                <p id="track-artist" class="text-base sm:text-lg lg:text-xl text-gray-400 truncate font-medium">Waiting for tracks...</p>
-                <p id="track-adder" class="text-[11px] sm:text-xs font-mono text-gray-500 mt-2 sm:mt-3 hidden items-center justify-center gap-1.5 bg-white/5 inline-flex px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg">
-                    <i class="ri-user-smile-line text-primary"></i> Added by <span id="added-by-name" class="text-gray-300 font-bold"></span>
-                </p>
-            </div>
-        </section>
-
-        <section class="w-full lg:flex-1 shrink-0 flex flex-col 
-                        px-5 sm:px-8 lg:px-12 
-                        pb-safe lg:py-10 
-                        z-30 relative min-w-0">
-            
-            <div class="w-full h-full flex flex-col justify-end lg:justify-between max-w-5xl mx-auto">
-                
-                <div id="lyrics-panel" class="hidden lg:flex flex-1 w-full min-h-[200px]
-                                            flex-col items-center 
-                                            overflow-y-auto no-scrollbar lyrics-mask text-center 
-                                            transition-all duration-300 font-vazir mb-8">
-                     <div class="h-full flex items-center justify-center p-4 w-full">
-                        <p class="text-white/30 text-3xl xl:text-5xl font-bold tracking-wide dir-auto leading-relaxed">Lyrics will appear here</p>
-                     </div>
                 </div>
 
-                <div class="w-full flex flex-col gap-6 lg:gap-8 mb-6 lg:mb-0">
+                <div class="w-full text-center space-y-1 sm:space-y-1.5 px-2">
+                    <h2 id="track-title" class="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-display font-bold truncate leading-tight tracking-tight text-white drop-shadow-md">Ready to Play</h2>
+                    <p id="track-artist" class="text-sm sm:text-base lg:text-lg text-gray-400 truncate font-medium">Waiting for tracks...</p>
                     
-                    <div class="w-full group relative">
-                        <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1"
-                               class="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer touch-manipulation">
-                        
-                        <div class="relative h-2.5 lg:h-3 bg-white/10 rounded-full overflow-hidden pointer-events-none transition-all duration-300 group-hover:h-3 lg:group-hover:h-4">
-                            <div id="progress-fill" class="absolute h-full bg-primary rounded-full transition-all duration-100 w-0"></div>
-                            <div id="thumb" class="absolute h-full w-2.5 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        </div>
+                    <!-- Mobile Synchronized Lyrics Snippet Preview -->
+                    <div id="mobile-lyric-preview" class="lg:hidden text-primary text-xs font-medium font-vazir h-5 truncate transition-all duration-300"></div>
 
-                        <div class="flex justify-between text-xs lg:text-sm font-mono text-gray-400 mt-3 font-bold pointer-events-none px-1">
-                            <span id="curr-time">0:00</span>
-                            <span id="total-time">--:--</span>
-                        </div>
+                    <p id="track-adder" class="text-[11px] sm:text-xs font-mono text-gray-500 mt-1 hidden items-center justify-center gap-1.5 bg-white/5 inline-flex px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg">
+                        <i class="ri-user-smile-line text-primary"></i> Added by <span id="added-by-name" class="text-gray-300 font-bold"></span>
+                    </p>
+                </div>
+            </section>
+
+            <!-- Column 2: Lyrics (Desktop) & Playback Controls -->
+            <section class="w-full lg:flex-1 shrink-0 flex flex-col 
+                            px-5 sm:px-8 lg:px-12 
+                            pb-safe lg:py-10 
+                            z-30 relative min-w-0 justify-between">
+                
+                <div class="w-full h-full flex flex-col justify-end lg:justify-between max-w-5xl mx-auto">
+                    
+                    <div id="lyrics-panel" class="hidden lg:flex flex-1 w-full min-h-[200px]
+                                                flex-col items-center 
+                                                overflow-y-auto no-scrollbar lyrics-mask text-center 
+                                                transition-all duration-300 font-vazir mb-8">
+                         <div class="h-full flex items-center justify-center p-4 w-full">
+                            <p class="text-white/30 text-3xl xl:text-5xl font-bold tracking-wide dir-auto leading-relaxed">Lyrics will appear here</p>
+                         </div>
                     </div>
 
-                    <div class="flex items-center justify-between lg:justify-center gap-2 lg:gap-14 w-full">
+                    <div class="w-full flex flex-col gap-4 sm:gap-6 lg:gap-8 mb-4 sm:mb-6 lg:mb-0">
                         
-                        <button id="btn-shuffle" class="text-gray-400 hover:text-white transition-all rounded-full p-3 flex items-center justify-center active:scale-90" onclick="toggleShuffle()">
-                            <i class="ri-shuffle-line text-2xl lg:text-3xl"></i>
-                        </button>
-                        
-                        <div class="flex items-center gap-6 lg:gap-10">
-                            <button class="text-white hover:text-primary transition-all rounded-full p-2 flex items-center justify-center active:scale-90" onclick="prevTrack()">
-                                <i class="ri-skip-back-fill text-4xl lg:text-5xl"></i>
+                        <div class="w-full group relative">
+                            <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1"
+                                   class="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer touch-manipulation">
+                            
+                            <div class="relative h-2 sm:h-2.5 lg:h-3 bg-white/10 rounded-full overflow-hidden pointer-events-none transition-all duration-300 group-hover:h-3 lg:group-hover:h-4">
+                                <div id="progress-fill" class="absolute h-full bg-primary rounded-full transition-all duration-100 w-0"></div>
+                                <div id="thumb" class="absolute h-full w-2.5 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            </div>
+
+                            <div class="flex justify-between text-xs lg:text-sm font-mono text-gray-400 mt-2.5 font-bold pointer-events-none px-1">
+                                <span id="curr-time">0:00</span>
+                                <span id="total-time">--:--</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between lg:justify-center gap-2 lg:gap-14 w-full">
+                            
+                            <button id="btn-shuffle" class="text-gray-400 hover:text-white transition-all rounded-full p-2.5 sm:p-3 flex items-center justify-center active:scale-90" onclick="toggleShuffle()" title="Shuffle">
+                                <i class="ri-shuffle-line text-xl sm:text-2xl lg:text-3xl"></i>
                             </button>
                             
-                            <button id="play-btn" class="bg-primary text-black rounded-full 
-                                           size-20 lg:size-24
-                                           hover:scale-105 active:scale-95 shadow-[0_0_40px_rgba(13,242,51,0.3)] 
-                                           flex items-center justify-center transition-all shrink-0" onclick="playPause()">
-                                <i id="icon-play" class="ri-play-fill text-4xl lg:text-[44px] ml-1.5"></i>
-                                <i id="icon-pause" class="ri-pause-fill text-4xl lg:text-[44px] hidden"></i>
-                            </button>
+                            <div class="flex items-center gap-4 sm:gap-6 lg:gap-10">
+                                <button class="text-white hover:text-primary transition-all rounded-full p-2 flex items-center justify-center active:scale-90" onclick="prevTrack()" title="Previous">
+                                    <i class="ri-skip-back-fill text-3xl sm:text-4xl lg:text-5xl"></i>
+                                </button>
+                                
+                                <button id="play-btn" class="bg-primary text-black rounded-full 
+                                               size-16 sm:size-20 lg:size-24
+                                               hover:scale-105 active:scale-95 shadow-[0_0_35px_rgba(29,185,84,0.35)] 
+                                               flex items-center justify-center transition-all shrink-0" onclick="playPause()" title="Play / Pause">
+                                    <i id="icon-play" class="ri-play-fill text-3xl sm:text-4xl lg:text-[44px] ml-1"></i>
+                                    <i id="icon-pause" class="ri-pause-fill text-3xl sm:text-4xl lg:text-[44px] hidden"></i>
+                                </button>
+                                
+                                <button class="text-white hover:text-primary transition-all rounded-full p-2 flex items-center justify-center active:scale-90" onclick="nextTrack()" title="Next">
+                                    <i class="ri-skip-forward-fill text-3xl sm:text-4xl lg:text-5xl"></i>
+                                </button>
+                            </div>
                             
-                            <button class="text-white hover:text-primary transition-all rounded-full p-2 flex items-center justify-center active:scale-90" onclick="nextTrack()">
-                                <i class="ri-skip-forward-fill text-4xl lg:text-5xl"></i>
+                            <button id="btn-repeat" class="text-gray-400 hover:text-white transition-all rounded-full p-2.5 sm:p-3 flex items-center justify-center active:scale-90" onclick="toggleRepeat()" title="Repeat">
+                                <i class="ri-repeat-2-line text-xl sm:text-2xl lg:text-3xl"></i>
+                                <i class="ri-repeat-one-line text-xl sm:text-2xl lg:text-3xl hidden"></i>
                             </button>
                         </div>
-                        
-                        <button id="btn-repeat" class="text-gray-400 hover:text-white transition-all rounded-full p-3 flex items-center justify-center active:scale-90" onclick="toggleRepeat()">
-                            <i class="ri-repeat-2-line text-2xl lg:text-3xl"></i>
-                            <i class="ri-repeat-one-line text-2xl lg:text-3xl hidden"></i>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Column 3: Queue Sidebar on Desktop / Drawer on Mobile -->
+            <aside id="queue-drawer" class="fixed inset-y-0 right-0 z-50 w-full sm:w-[380px] xl:static xl:w-[340px] 2xl:w-[400px] bg-black/90 xl:bg-black/40 backdrop-blur-2xl xl:backdrop-blur-md flex flex-col border-l border-white/10 xl:border-white/5 transition-transform duration-300 xl:translate-x-0 translate-x-full shrink-0 shadow-2xl xl:shadow-none">
+                <div class="p-4 sm:p-6 border-b border-white/5 sticky top-0 z-40 flex justify-between items-center bg-black/40 xl:bg-transparent backdrop-blur-md xl:backdrop-blur-none">
+                    <h2 class="font-bold text-lg sm:text-xl flex items-center gap-2 text-white font-display tracking-wide">
+                        <i class="ri-play-list-2-fill text-primary text-lg sm:text-xl"></i> Queue
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="copyHubDownloadLinks()" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 hover:text-black text-[11px] font-bold transition flex items-center gap-1 border border-white/5 shadow-sm" title="Copy all download links to clipboard">
+                            <i class="ri-file-copy-line text-xs"></i> <span>Copy Links</span>
+                        </button>
+                        <span id="track-count" class="text-xs bg-white/10 px-2.5 py-1 rounded-md text-white font-mono border border-white/10">0</span>
+                        <button onclick="toggleMobileQueue()" class="xl:hidden p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition" title="Close Queue">
+                            <i class="ri-close-line text-xl"></i>
                         </button>
                     </div>
                 </div>
-            </div>
-        </section>
+                <div id="playlist-container" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2.5 custom-scroll"></div>
+            </aside>
 
-        <aside class="hidden xl:flex w-[340px] 2xl:w-[400px] bg-black/40 flex-col border-l border-white/5 backdrop-blur-md shrink-0">
-            <div class="p-6 border-b border-white/5 sticky top-0 z-40 flex justify-between items-center bg-transparent">
-                <h2 class="font-bold text-xl flex items-center gap-2 text-white font-display tracking-wide">
-                    <i class="ri-play-list-2-fill text-primary text-xl"></i> Queue
-                </h2>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="copyHubDownloadLinks()" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-gray-300 hover:text-black text-[11px] font-bold transition flex items-center gap-1 border border-white/5 shadow-sm" title="Copy all download links to clipboard">
-                        <i class="ri-file-copy-line text-xs"></i> <span>Copy Links</span>
-                    </button>
-                    <span id="track-count" class="text-xs bg-white/10 px-2.5 py-1 rounded-md text-white font-mono border border-white/10">0</span>
-                </div>
-            </div>
-            <div id="playlist-container" class="flex-1 overflow-y-auto p-6 space-y-3 custom-scroll"></div>
-        </aside>
+            <!-- Mobile Queue Backdrop -->
+            <div id="queue-backdrop" onclick="toggleMobileQueue()" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity duration-300 opacity-0 pointer-events-none xl:hidden"></div>
 
+        </div>
     </main>
 
     <div id="corner-qr" class="fixed bottom-10 right-10 z-[100] items-end gap-5 transition-all duration-700 hidden max-xl:!hidden xl:flex origin-bottom-right opacity-0 translate-y-10 {% if session and session.status == 'active' %}xl:!flex xl:!opacity-100 xl:!translate-y-0 max-xl:!hidden{% endif %}">
@@ -403,6 +468,30 @@
                 document.exitFullscreen();
             }
         }
+
+        function toggleMobileQueue() {
+            const drawer = document.getElementById('queue-drawer');
+            const backdrop = document.getElementById('queue-backdrop');
+            if (!drawer || !backdrop) return;
+            const isClosed = drawer.classList.contains('translate-x-full');
+            if (isClosed) {
+                drawer.classList.remove('translate-x-full');
+                backdrop.classList.remove('opacity-0', 'pointer-events-none');
+            } else {
+                drawer.classList.add('translate-x-full');
+                backdrop.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+        window.toggleMobileQueue = toggleMobileQueue;
+
+        function unlockAudio() {
+            if (window.engines?.active) {
+                window.engines.active.play().then(() => {
+                    document.getElementById('audio-unlock-banner')?.classList.add('hidden');
+                }).catch(() => {});
+            }
+        }
+        window.unlockAudio = unlockAudio;
 
         function copyHubDownloadLinks() {
             const token = window.INJECTED_TOKEN;
