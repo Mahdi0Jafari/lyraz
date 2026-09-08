@@ -117,7 +117,7 @@ async function syncTracks(autoStart = false) {
     }
 }
 
-function loadTrack(index, autoPlay = true, startPos = 0) {
+async function loadTrack(index, autoPlay = true, startPos = 0) {
     if (!state.tracks[index]) return;
     
     const isSameTrack = state.currentIndex === index && engines.active.src.includes(state.tracks[index].file_unique_id);
@@ -138,8 +138,8 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
     if(window.fetchLyrics) window.fetchLyrics(track.file_unique_id);
 
     if (!isSameTrack) {
-        if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 3) {
-            crossfadeEngines(0.35);
+        if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 2) {
+            await crossfadeEngines(0.35);
             setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { 
                 state.isPlaying = p; 
                 UI.updatePlayBtn(p);
@@ -160,7 +160,7 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
         engines.active.currentTime = startPos;
     }
 
-    if (autoPlay) {
+    if (autoPlay && (!engines.active.src.includes(track.file_unique_id) || engines.active.paused)) {
         const playPromise = engines.active.play();
         if (playPromise !== undefined) {
             playPromise.then(() => {
@@ -170,6 +170,9 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
                 if(!state.isSyncing) reportStatus(true); 
             }).catch(e => console.warn("Auto-play prevented by browser:", e));
         }
+    } else if (state.isPlaying) {
+        preloadNextTrack();
+        if(!state.isSyncing) reportStatus(true);
     }
 }
 
