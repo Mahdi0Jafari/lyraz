@@ -18,11 +18,15 @@ from .database import (
     get_track_by_youtube_id, get_user_role, check_user_quota_status,
     register_referral, get_user_referral_stats
 )
-from .keyboards import get_main_menu_keyboard, get_smart_buttons, get_onboarding_keyboard
+from .keyboards import (
+    get_main_menu_keyboard, get_smart_buttons, get_onboarding_keyboard,
+    get_queue_keyboard, build_search_keyboard
+)
 from .logic import (
     process_track_and_queue, 
     ensure_track_and_process, 
-    activate_session_and_notify
+    activate_session_and_notify,
+    notify_web_container
 )
 
 logger = logging.getLogger(__name__)
@@ -659,33 +663,94 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+async def render_queue_info(user_id, token):
+    """Fetches queue tracks and builds formatted markdown message and interactive inline controls."""
+    def get_data():
+        import sqlite3
+        internal_uid = get_user_id(user_id)
+        session = get_session_info(token)
+        is_admin = (session['admin_id'] == internal_uid) if session else False
+        d_name = session['device_name'] or f"Hub-{token[:4]}" if session else "Hub"
+        
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT pi.id as item_id, t.title, t.performer, pi.is_played 
+                FROM playlist_items pi
+                JOIN tracks t ON pi.track_id = t.id
+                WHERE pi.session_token = ?
+                ORDER BY pi.id ASC
+            """, (token,)).fetchall()
+            return [dict(r) for r in rows], is_admin, d_name
+
+    items, is_admin, d_name = await asyncio.to_thread(get_data)
+
+    if not items:
+        text = (
+            f"📭 *The queue for {d_name} is empty.*\n\n"
+            f"Send or paste any Spotify, YouTube, or SoundCloud link to play live!"
+        )
+        markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0)
+        return text, markup
+
+    active_items = [it for it in items if not it['is_played']]
+    played_items = [it for it in items if it['is_played']]
+
+    text = f"📋 *Live Queue: {d_name}* ({len(items)} tracks)\n\n"
+
+    if active_items:
+        current = active_items[0]
+        text += f"▶️ *Now Playing:*\n   *{current['title']}* — _{current['performer']}_\n\n"
+        upcoming = active_items[1:12]
+        if upcoming:
+            text += "⏳ *Up Next:*\n"
+            for i, it in enumerate(upcoming, 1):
+                text += f"   {i}. *{it['title']}* — _{it['performer']}_\n"
+            if len(active_items) > 12:
+                text += f"\n_... and {len(active_items) - 12} more tracks in queue_\n"
+    else:
+        text += "⏹ *All tracks in queue have finished playing.*\n\n"
+
+    if played_items:
+        text += f"\n_✅ {len(played_items)} previously played track{'s' if len(played_items) > 1 else ''}_"
+
+    markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items))
+    return text, markup
+
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Restores the persistent bottom reply keyboard immediately"""
+    await update.message.reply_text(
+        "👇 *Main Navigation Menu:*\nUse the buttons below to control your Hub, search, or download music:",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=get_main_menu_keyboard()
+    )
+
+async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /queue command"""
+    user = update.effective_user
+    if not user: return
+    token = await asyncio.to_thread(get_user_current_session, user.id)
+    if not token:
+        await update.message.reply_text(
+            "❌ *You are not connected to any Hub yet.*\nOpen the Web Player on your screen and scan the QR code.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+    q_text, q_markup = await render_queue_info(user.id, token)
+    await update.message.reply_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+
     if text in ["📋 Queue", "📋 Playlist"]:
         token = await asyncio.to_thread(get_user_current_session, user.id)
         if not token:
-            await update.message.reply_text("❌ You are not connected to any Hub yet.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text(
+                "❌ *You are not connected to any Hub yet.*\nScan the QR code on your Web Player to get started.",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_menu_keyboard()
+            )
             return
-        def get_queue_items():
-            import sqlite3
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                conn.row_factory = sqlite3.Row
-                return conn.execute("""
-                    SELECT t.title, t.performer, pi.is_played 
-                    FROM playlist_items pi
-                    JOIN tracks t ON pi.track_id = t.id
-                    WHERE pi.session_token = ?
-                    ORDER BY pi.id ASC
-                """, (token,)).fetchall()
-        items = await asyncio.to_thread(get_queue_items)
-        if not items:
-            await update.message.reply_text("📭 The queue for this Hub is currently empty. Send a song or playlist link to start playing!", reply_markup=get_main_menu_keyboard())
-            return
-        queue_text = "📋 *Current Hub Queue:*\n\n"
-        for i, item in enumerate(items[:20], 1):
-            status = "▶️ Playing" if not item['is_played'] and i == 1 else ("✅ Played" if item['is_played'] else "⏳ Queued")
-            queue_text += f"{i}. *{item['title']}* - _{item['performer']}_\n   └ {status}\n"
-        if len(items) > 20:
-            queue_text += f"\n_... and {len(items)-20} more tracks in queue_"
-        await update.message.reply_text(queue_text, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_keyboard())
+        q_text, q_markup = await render_queue_info(user.id, token)
+        await update.message.reply_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
         return
 
     # --- Renaming Flow (Multi-layered: context.user_data + Reply-To-Message) ---
@@ -705,9 +770,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
             live_url = f"{base_url}/live/{token}"
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Web Player", url=live_url)]])
+            
+            # 🔥 Fix: Always restore the persistent reply keyboard after ForceReply completion
             await update.message.reply_text(
                 f"✅ Hub successfully renamed to: *{text}*",
                 parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_menu_keyboard()
+            )
+            await update.message.reply_text(
+                "⚡️ Hub links:",
                 reply_markup=reply_markup
             )
             return
@@ -725,7 +796,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_soundcloud_link(update, context, text)
         return
 
-    # --- Interactive Search Results (NO Blind Auto-Downloading!) ---
+    # --- Interactive Search Results with Pagination (Reddit UX Best Practice) ---
     status_msg = await update.message.reply_text(f"🔎 Searching for *{text}*...", parse_mode=ParseMode.MARKDOWN)
     try:
         results = await asyncio.to_thread(yt_service.search, text)
@@ -733,26 +804,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.edit_text("❌ No matching songs found. Try a different keyword.")
             return
 
-        buttons = []
-        for i, song in enumerate(results[:4], 1):
-            vid = song.get('videoId')
-            s_title = song.get('title', 'Unknown Track')[:30]
-            raw_artist = song.get('artists', [{'name': 'Unknown'}])[0]['name'] if song.get('artists') else "Unknown"
-            s_artist = re.sub(r'\s*-\s*Topic$', '', raw_artist, flags=re.IGNORECASE).strip() or "Unknown"
-            s_artist = s_artist[:20]
+        # Store in user session cache for pagination
+        context.user_data['search_cache'] = {
+            'query': text,
+            'results': results
+        }
 
-            cached = get_track_by_youtube_id(vid)
-            prefix = "⚡ " if cached else "📥 "
-            btn_text = f"{prefix}{i}. {s_title} — {s_artist}"
-            buttons.append([InlineKeyboardButton(btn_text, callback_data=f"dl_{vid}")])
-
-        buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_search")])
-
+        msg_text, markup = build_search_keyboard(results, text, page=0, page_size=4)
         await status_msg.edit_text(
-            f"🎶 *Search Results for:* _{text}_\n"
-            f"Select a track below to play on your Hub:",
+            msg_text,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=markup
         )
     except Exception as e:
         logger.error(f"Text Search Error: {e}")
@@ -902,6 +964,99 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Callback dl_ error: {e}")
             await query.edit_message_text("❌ An error occurred while queuing the track.")
+
+    elif data == "noop":
+        await query.answer()
+
+    elif data.startswith("sp_"):
+        try:
+            target_page = int(data.replace("sp_", ""))
+            search_cache = context.user_data.get('search_cache')
+            if not search_cache or not search_cache.get('results'):
+                await query.answer("⚠️ Search expired. Please type a new search.", show_alert=True)
+                return
+
+            msg_text, markup = build_search_keyboard(
+                search_cache['results'], 
+                search_cache['query'], 
+                page=target_page, 
+                page_size=4
+            )
+            await query.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=markup)
+            await query.answer()
+        except Exception as e:
+            logger.error(f"Search pagination callback error: {e}")
+            await query.answer()
+
+    elif data.startswith("q_skip_"):
+        target_token = data.replace("q_skip_", "")
+        def do_skip_db():
+            import sqlite3
+            internal_uid = get_user_id(user.id)
+            session = get_session_info(target_token)
+            is_admin = (session['admin_id'] == internal_uid) if session else False
+            if not is_admin:
+                return False
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                row = conn.execute("SELECT id FROM playlist_items WHERE session_token = ? AND is_played = 0 ORDER BY id ASC LIMIT 1", (target_token,)).fetchone()
+                if row:
+                    conn.execute("UPDATE playlist_items SET is_played = 1 WHERE id = ?", (row[0],))
+                    conn.commit()
+            return True
+
+        allowed = await asyncio.to_thread(do_skip_db)
+        if not allowed:
+            await query.answer("⛔️ Only Hub Admin can skip tracks.", show_alert=True)
+            return
+
+        await notify_web_container({
+            'type': 'command',
+            'action': 'next',
+            'session_token': target_token
+        })
+        await query.answer("⏭ Skipped to next track!")
+        q_text, q_markup = await render_queue_info(user.id, target_token)
+        try:
+            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+        except Exception: pass
+
+    elif data.startswith("q_refresh_"):
+        target_token = data.replace("q_refresh_", "")
+        await query.answer("🔄 Queue refreshed!")
+        q_text, q_markup = await render_queue_info(user.id, target_token)
+        try:
+            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+        except Exception: pass
+
+    elif data.startswith("q_clear_"):
+        target_token = data.replace("q_clear_", "")
+        def do_clear_db():
+            import sqlite3
+            internal_uid = get_user_id(user.id)
+            session = get_session_info(target_token)
+            is_admin = (session['admin_id'] == internal_uid) if session else False
+            if not is_admin:
+                return False
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("DELETE FROM playlist_items WHERE session_token = ?", (target_token,))
+                conn.commit()
+            return True
+
+        allowed = await asyncio.to_thread(do_clear_db)
+        if not allowed:
+            await query.answer("⛔️ Only Hub Admin can clear the queue.", show_alert=True)
+            return
+
+        await notify_web_container({
+            'type': 'command',
+            'action': 'clear_queue',
+            'session_token': target_token
+        })
+        await query.answer("🗑 Queue cleared!", show_alert=True)
+        q_text, q_markup = await render_queue_info(user.id, target_token)
+        try:
+            await query.edit_message_text(q_text, parse_mode=ParseMode.MARKDOWN, reply_markup=q_markup)
+        except Exception: pass
 
     elif data == "cancel_search":
         try: await query.message.delete()

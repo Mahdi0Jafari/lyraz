@@ -41,7 +41,7 @@ class YouTubeService:
 
     def search(self, query):
         try:
-            res = self.yt.search(query, filter="songs", limit=10)
+            res = self.yt.search(query, filter="songs", limit=16)
             if res:
                 return res
         except Exception as e:
