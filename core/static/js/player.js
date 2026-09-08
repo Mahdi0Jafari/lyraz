@@ -311,6 +311,9 @@ function executeCommand(cmd) {
             const idx = state.tracks.findIndex(t => t.file_unique_id === cmd.payload);
             if(idx !== -1) loadTrack(idx);
             break;
+        case 'remove':
+            syncTracks(false);
+            break;
     }
     
     setTimeout(() => { state.isSyncing = false; }, 500);

@@ -127,7 +127,7 @@
             <!-- Album Artwork -->
             <div class="w-full flex justify-center pt-2">
                 <div class="w-56 h-56 max-w-[65vw] max-h-[65vw] aspect-square bg-surface rounded-3xl shadow-[0_15px_40px_rgba(0,0,0,0.8)] overflow-hidden relative border border-white/10 group">
-                    <img id="current-cover" src="/cover/default" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="Cover">
+                    <img id="current-cover" src="/cover/default" onerror="this.src='/cover/default'" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="Cover">
                 </div>
             </div>
 
@@ -141,9 +141,11 @@
             <div class="w-full max-w-sm space-y-1 px-2 mt-2">
                 <div class="relative h-6 flex items-center">
                     <input type="range" id="seek-slider" min="0" max="100" value="0" class="w-full z-10" 
+                           onpointerdown="isDraggingSlider = true"
+                           ontouchstart="isDraggingSlider = true"
                            oninput="visualSeek(this.value)"
                            onchange="commitSeek(this.value)"> 
-                    <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none transition-all" style="width: 0%"></div>
+                    <div id="seek-fill" class="absolute h-1 bg-primary rounded-full pointer-events-none" style="width: 0%"></div>
                 </div>
                 <div class="flex justify-between text-[11px] font-mono text-gray-500 px-1">
                     <span id="current-time-label">0:00</span>
@@ -201,7 +203,7 @@
                 <div class="relative flex-1">
                     <span class="material-symbols-rounded absolute left-3 top-2.5 text-gray-500 text-sm">search</span>
                     <input type="text" id="queue-search" placeholder="Search in playlist..." oninput="filterQueue(this.value)" 
-                           class="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-primary transition">
+                           class="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-base sm:text-xs text-white placeholder-gray-500 focus:outline-none focus:border-primary transition">
                 </div>
                 <span id="queue-count-label" class="text-xs font-mono font-semibold text-gray-400 whitespace-nowrap bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5">0 TRACKS</span>
             </div>
@@ -216,7 +218,7 @@
             <!-- Sticky Mini Player at Bottom of Queue -->
             <div onclick="switchView('player')" class="absolute bottom-3 left-3 right-3 p-2.5 rounded-2xl bg-surface/95 backdrop-blur-xl border border-white/15 shadow-2xl flex items-center justify-between cursor-pointer hover:bg-surface transition z-40 tap-effect">
                 <div class="flex items-center gap-3 min-w-0">
-                    <img id="mini-cover" src="/cover/default" class="w-11 h-11 rounded-xl object-cover bg-black shrink-0 border border-white/10">
+                    <img id="mini-cover" src="/cover/default" onerror="this.src='/cover/default'" class="w-11 h-11 rounded-xl object-cover bg-black shrink-0 border border-white/10">
                     <div class="min-w-0">
                         <div id="mini-title" class="text-xs font-bold truncate text-white">Select Track</div>
                         <div id="mini-artist" class="text-[11px] text-gray-400 truncate">--</div>
@@ -338,8 +340,19 @@
             setTimeout(() => { isDraggingSlider = false; }, 300);
         }
 
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         function formatTime(seconds) {
             if (!seconds || isNaN(seconds)) return "0:00";
+            seconds = Math.max(0, seconds);
             const m = Math.floor(seconds / 60);
             const s = Math.floor(seconds % 60);
             return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -427,7 +440,7 @@
                         ${isActive ? '' : (idx + 1)}
                     </div>
                     <div class="relative w-11 h-11 shrink-0 rounded-xl overflow-hidden bg-black border border-white/10">
-                        <img src="/cover/${track.file_unique_id}" class="w-full h-full object-cover ${isPlayed ? 'grayscale' : ''}" loading="lazy">
+                        <img src="/cover/${track.file_unique_id}" onerror="this.src='/cover/default'" class="w-full h-full object-cover ${isPlayed ? 'grayscale' : ''}" loading="lazy">
                         ${isActive ? `
                             <div class="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center gap-0.5">
                                 <div class="eq-bar"></div>
@@ -437,9 +450,9 @@
                         ` : ''}
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                        <h4 class="font-bold truncate text-xs ${isActive ? 'text-primary' : 'text-gray-100'}">${track.title}</h4>
+                        <h4 class="font-bold truncate text-xs ${isActive ? 'text-primary' : 'text-gray-100'}">${escapeHtml(track.title)}</h4>
                         <div class="flex items-center gap-2">
-                            <p class="text-[11px] text-gray-400 truncate">${track.performer}</p>
+                            <p class="text-[11px] text-gray-400 truncate">${escapeHtml(track.performer)}</p>
                             ${track.duration ? `<span class="text-[10px] text-gray-600 font-mono">• ${formatTime(track.duration)}</span>` : ''}
                         </div>
                     </div>
@@ -473,7 +486,7 @@
             });
         }
 
-        // بدون تخریب و رندر مجدد کل DOM برای جلوگیری از پرش اسکرول کاربر
+        // تغییر هوشمند و بدون تخریب کل DOM برای حفظ اسکرول کاربر
         function updateNowPlayingUI(track, reRenderList = true) {
             if (!track) return;
             const changed = currentTrackId !== track.file_unique_id;
@@ -498,9 +511,30 @@
                 document.getElementById('current-time-label').innerText = "0:00";
             }
 
-            // فقط اگر ترک عوض شده بود ظاهر آیتم‌های لیست تغییر کند نه اینکه کل لیست بازسازی شود
+            // تغییر هوشمند کلاس‌های اکتیو بدون رفرش کل لیست برای حفظ اسکرول کاربر
             if (changed && reRenderList) {
-                renderList(tracksData);
+                const oldEl = document.querySelector('.active-track');
+                const newEl = document.getElementById(`remote-item-${track.file_unique_id}`);
+                
+                if (oldEl && newEl) {
+                    oldEl.classList.remove('active-track', 'bg-primary/10', 'border-primary/40');
+                    oldEl.classList.add('bg-white/[0.04]', 'border-white/5');
+                    const oldEq = oldEl.querySelector('.eq-bar')?.parentElement;
+                    if (oldEq) oldEq.remove();
+
+                    newEl.classList.add('active-track', 'bg-primary/10', 'border-primary/40');
+                    newEl.classList.remove('bg-white/[0.04]', 'border-white/5', 'opacity-50');
+                    const imgBox = newEl.querySelector('.relative');
+                    if (imgBox && !newEl.querySelector('.eq-bar')) {
+                        imgBox.insertAdjacentHTML('beforeend', `
+                            <div class="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center gap-0.5">
+                                <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+                            </div>
+                        `);
+                    }
+                } else {
+                    renderList(tracksData);
+                }
             }
         }
 
@@ -601,11 +635,27 @@
         }
 
         async function deleteTrack(dbId, el) {
-            if (!confirm("Remove this track from queue?")) return;
-            el.style.opacity = '0';
-            el.style.transform = 'translateX(50px)';
-            setTimeout(() => el.remove(), 250);
-            await sendCommand('remove', dbId);
+            const doDelete = async () => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateX(50px)';
+                setTimeout(() => el.remove(), 250);
+                
+                tracksData = tracksData.filter(t => t.item_id !== dbId);
+                document.getElementById('queue-badge').innerText = tracksData.length;
+                document.getElementById('queue-count-label').innerText = `${tracksData.length} TRACKS`;
+                
+                await sendCommand('remove', dbId);
+            };
+
+            if (tg && typeof tg.showConfirm === 'function') {
+                tg.showConfirm("Remove this track from queue?", (confirmed) => {
+                    if (confirmed) doDelete();
+                });
+            } else {
+                if (confirm("Remove this track from queue?")) {
+                    doDelete();
+                }
+            }
         }
 
         // ==========================================
@@ -700,16 +750,44 @@
             };
         }
 
+        async function initLiveState() {
+            try {
+                const res = await fetch(`/api/stream/state/${SESSION_TOKEN}`);
+                if (!res.ok) return;
+                const live = await res.json();
+                if (live && live.status === 'active' && live.file_unique_id) {
+                    isPlaying = !!live.is_playing;
+                    updatePlayBtn();
+                    
+                    const track = tracksData.find(t => t.file_unique_id === live.file_unique_id);
+                    if (track) {
+                        updateNowPlayingUI(track, false);
+                    }
+                    
+                    if (live.seek_position !== undefined && currentDuration > 0) {
+                        lastReportedSec = live.seek_position;
+                        lastReportLocalTime = Date.now();
+                        const percent = Math.min(100, (live.seek_position / currentDuration) * 100);
+                        document.getElementById('seek-slider').value = percent;
+                        document.getElementById('seek-fill').style.width = percent + '%';
+                        document.getElementById('current-time-label').innerText = formatTime(live.seek_position);
+                    }
+                }
+            } catch(e) {
+                console.error("Live state init error:", e);
+            }
+        }
+
         // 🛡 بازیابی اتصال در صورت قفل شدن صفحه یا جابجایی تب تلگرام (Mobile Lifecycle)
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 console.log("📱 Mobile screen wake-up: re-syncing...");
-                loadQueue();
+                loadQueue().then(initLiveState);
                 initSSE();
             }
         });
         window.addEventListener('pageshow', () => {
-            loadQueue();
+            loadQueue().then(initLiveState);
             initSSE();
         });
 
@@ -740,7 +818,7 @@
 
         // Boot
         calibrateWithNTP();
-        loadQueue();
+        loadQueue().then(initLiveState);
         initSSE();
         setInterval(loadQueue, 15000);
 
