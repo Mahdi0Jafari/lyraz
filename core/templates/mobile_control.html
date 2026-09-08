@@ -290,6 +290,21 @@
         // --- NTP-Inspired Clock Offset & Timing ---
         let serverTimeOffset = 0; // ثانیه‌های تفاوت ساعت محلی گوشی با سرور
 
+        async function calibrateWithNTP() {
+            try {
+                const t0 = performance.now();
+                const res = await fetch('/api/sync/time', { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const t1 = performance.now();
+                    const rttSec = (t1 - t0) / 1000;
+                    const localAfter = Date.now() / 1000;
+                    serverTimeOffset = data.server_time + (rttSec / 2) - localAfter;
+                    console.log(`⏱ [Remote NTP] Offset calibrated: ${(serverTimeOffset * 1000).toFixed(1)}ms`);
+                }
+            } catch(e) {}
+        }
+
         function calibrateServerClock(serverNow) {
             if (!serverNow) return;
             const localNow = Date.now() / 1000;
@@ -724,6 +739,7 @@
         }
 
         // Boot
+        calibrateWithNTP();
         loadQueue();
         initSSE();
         setInterval(loadQueue, 15000);
