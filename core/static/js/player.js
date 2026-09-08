@@ -3,7 +3,10 @@
  * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
 import { state, CONFIG } from './modules/state.js';
-import { engines, swapEngines, setupAudioListeners } from './modules/audio.js';
+import { 
+    engines, swapEngines, setupAudioListeners, 
+    crossfadeEngines, getBufferedAhead, getAudioContext 
+} from './modules/audio.js';
 import * as UI from './modules/ui.js';
 import * as Network from './modules/network.js';
 
@@ -136,7 +139,7 @@ function loadTrack(index, autoPlay = true, startPos = 0) {
 
     if (!isSameTrack) {
         if (engines.buffer.src.includes(track.file_unique_id) && engines.buffer.readyState >= 3) {
-            swapEngines();
+            crossfadeEngines(0.35);
             setupAudioListeners(onTimeUpdate, onTrackEnded, onAudioError, (p) => { 
                 state.isPlaying = p; 
                 UI.updatePlayBtn(p);
@@ -248,6 +251,21 @@ function processRemoteCommand(cmd) {
         pendingSyncCommand = cmd;
     }
 
+    // ⚡️ مهلت زمان‌بندی پویا (Scheduled Playback Deadline):
+    // اگر سرور مهلت زمانی مشخص کرده باشد، استارت دقیقاً در آن میلی‌ثانیه برای تمام کلاینت‌ها زده می‌شود
+    if (cmd.action === 'play' && cmd.scheduled_at) {
+        const estimatedServerNow = (Date.now() / 1000) + (state.serverTimeOffset || 0);
+        const waitMs = (cmd.scheduled_at - estimatedServerNow) * 1000;
+        
+        if (waitMs > 15 && waitMs < 2500) {
+            console.log(`⏱ [Scheduled Deadline] Syncing play trigger in ${waitMs.toFixed(0)}ms across all devices`);
+            setTimeout(() => {
+                executeCommand(cmd);
+            }, waitMs);
+            return;
+        }
+    }
+
     executeCommand(cmd);
 }
 
@@ -295,23 +313,34 @@ function executeCommand(cmd) {
     setTimeout(() => { state.isSyncing = false; }, 500);
 }
 
-// 🔥 قلب تپنده سینک دقیق (Precision Time Correction)
+// 🔥 قلب تپنده سینک دقیق استودیویی (True NTP + Sub-pitch Drift Correction)
+let driftTimer = null;
+
 function applyPreciseSync(cmdData) {
     if (!cmdData || !cmdData.server_now || cmdData.base_seek === undefined) return;
     
     const localNow = Date.now() / 1000;
-    // محاسبه زمان گذشته از لحظه صدور فرمان در سرور تا این لحظه (که آهنگ روی این مرورگر شروع به پخش کرده)
-    const timePassedSinceCommand = localNow - cmdData.server_now + state.serverTimeOffset;
+    // محاسبه زمان گذشته از لحظه صدور فرمان با ساعت کالیبره‌شده NTP
+    const timePassedSinceCommand = localNow - cmdData.server_now + (state.serverTimeOffset || 0);
     
-    // اگر زمان گذشته منطقی بود (بیشتر از صفر و کمتر از 10 ثانیه)
-    if (timePassedSinceCommand > 0 && timePassedSinceCommand < 10) {
-        // زمان ایده‌آلی که آهنگ الان باید در آن باشد: (زمان ذخیره شده در دیتابیس + زمان سپری شده)
+    if (timePassedSinceCommand >= 0 && timePassedSinceCommand < 15) {
         const idealTime = cmdData.base_seek + timePassedSinceCommand;
-        
-        // اگر اختلاف مرورگر با زمان ایده‌آل بیشتر از 0.2 ثانیه بود، آن را اصلاح کن (پرش نامرئی)
-        if (Math.abs(engines.active.currentTime - idealTime) > 0.2) {
-            console.log(`⏱ PTP Correcting: Current ${engines.active.currentTime.toFixed(2)}s -> Target ${idealTime.toFixed(2)}s`);
+        const diff = idealTime - engines.active.currentTime;
+        const absDiff = Math.abs(diff);
+
+        // ۱. اختلاف اندک (بین ۳۰ تا ۱۵۰ میلی‌ثانیه): تنظیم نامحسوس سرعت به جای پرش ناگهانی (مشابه Spotify Jam)
+        if (absDiff > 0.03 && absDiff <= 0.15) {
+            if (driftTimer) clearTimeout(driftTimer);
+            engines.active.playbackRate = diff > 0 ? 1.025 : 0.975;
+            driftTimer = setTimeout(() => {
+                try { engines.active.playbackRate = 1.0; } catch(e) {}
+            }, 1200);
+        }
+        // ۲. اختلاف بزرگ‌تر (بیشتر از ۱۵۰ میلی‌ثانیه): پرش زمانی دقیق
+        else if (absDiff > 0.15) {
+            console.log(`⏱ [NTP PTP Sync] Realigning head: Current ${engines.active.currentTime.toFixed(2)}s -> Target ${idealTime.toFixed(2)}s`);
             engines.active.currentTime = idealTime;
+            try { engines.active.playbackRate = 1.0; } catch(e) {}
         }
     }
 }
