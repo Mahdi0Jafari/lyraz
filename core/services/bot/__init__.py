@@ -17,7 +17,7 @@ from core.models import init_db
 from .handlers import (
     start, list_devices, handle_callbacks, handle_text, 
     handle_audio, inline_music_search, youtube_dl, handle_my_chat_member,
-    sync_vault_cmd, show_menu, handle_queue_cmd
+    sync_vault_cmd, show_menu, handle_queue_cmd, vault_repair_cmd
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,8 @@ def run_bot_service():
             app.add_handler(CommandHandler("devices", list_devices))
             app.add_handler(CommandHandler("dl", youtube_dl))
             app.add_handler(CommandHandler("sync", sync_vault_cmd))
+            app.add_handler(CommandHandler("repair", vault_repair_cmd))
+            app.add_handler(CommandHandler("vault_status", vault_repair_cmd))
             
             app.add_handler(InlineQueryHandler(inline_music_search))
             app.add_handler(CallbackQueryHandler(handle_callbacks))
