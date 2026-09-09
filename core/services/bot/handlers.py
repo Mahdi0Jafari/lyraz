@@ -1198,3 +1198,43 @@ async def sync_vault_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📦 Total verified tracks indexed: *{count}*",
         parse_mode=ParseMode.MARKDOWN
     )
+
+async def vault_repair_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to check vault repair progress and trigger background healing"""
+    user = update.effective_user
+    if user and user.id != Config.ADMIN_TELEGRAM_ID:
+        await update.message.reply_text("⛔️ Access restricted to administrator.")
+        return
+
+    from scripts.vault_repair import get_status_summary, scan_mismatches
+
+    args = context.args or []
+    if args and args[0].lower() in ['start', 'run', 'scan']:
+        await update.message.reply_text("🔍 Scanning database and queuing repair jobs...")
+        new_count = await asyncio.to_thread(scan_mismatches)
+        await update.message.reply_text(f"🚀 Started repair process! {new_count} total suspicious tracks indexed.\nUse /repair or /vault_status to monitor progress.")
+        return
+
+    s = await asyncio.to_thread(get_status_summary)
+    if s['total'] == 0:
+        await asyncio.to_thread(scan_mismatches)
+        s = await asyncio.to_thread(get_status_summary)
+
+    filled = max(0, min(10, int(s['percent'] / 10)))
+    bar = "█" * filled + "░" * (10 - filled)
+
+    msg = (
+        f"🛠 *گزارش وضعیت بازسازی مخزن (Vault Repair)*\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📦 *کل قطعات نیازمند اصلاح:* `{s['total']}`\n"
+        f"✅ *اصلاح و تکمیل شده:* `{s['completed']}` ({s['percent']}%)\n"
+        f"⏳ *در صف یا در حال پردازش:* `{s['in_progress']}`\n"
+        f"❌ *ناموفق:* `{s['failed']}`\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📊 *پیشرفت:* `[{bar}]` *{s['percent']}%*\n\n"
+        f"💡 _این تسک‌ها با اولویت پایین (Priority 5) در پس‌زمینه اجرا می‌شوند و دانلودهای کاربران زنده همیشه اولویت بالاتر دارند._\n\n"
+        f"دستورات:\n"
+        f"• `/repair` یا `/vault_status` - مشاهده درصد پیشرفت زنده\n"
+        f"• `/repair start` - اسکن مجدد و شارژ صف"
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
