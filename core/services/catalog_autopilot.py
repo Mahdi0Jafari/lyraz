@@ -1,8 +1,11 @@
 # core/services/catalog_autopilot.py
 
 import time
+import re
+import random
 import logging
 import sqlite3
+import threading
 from core.config import Config
 from core.models import get_db
 from core.services.spotify_extractor import spotify_extractor, API_BASE
@@ -213,7 +216,7 @@ class CatalogAutopilotService:
                 pending = ad.get('real_pending') or 0
                 
                 # اگر هیچ ترکی در صف انتظار نمانده باشد، کمپین تکمیل است و فوراً از بافر خارج می‌شود
-                if pending == 0 and comp > 0:
+                if pending == 0:
                     conn.execute("UPDATE artist_campaigns SET status = 'completed', completed_tracks = ?, total_tracks = ? WHERE id = ?", (comp, total, ad['id']))
                     conn.commit()
                     continue
@@ -274,12 +277,12 @@ class CatalogAutopilotService:
 
             exact_queued = conn.execute("SELECT COUNT(*) FROM ingestion_logs WHERE status IN ('queued', 'downloading')").fetchone()[0]
 
-            # پر کردن تضمینی بافر در صورتی که اسلاتی خالی شده باشد و اتوپایلوت فعال باشد
+            # پر کردن تضمینی بافر در صورتی که اسلاتی خالی شده باشد و اتوپایلوت فعال باشد (به صورت پس‌زمینه غیرانسدادی)
             settings = conn.execute("SELECT autopilot_enabled FROM settings WHERE id = 1").fetchone()
             if settings and settings[0] and (len(pipeline_artists) < 10 or len(pipeline_playlists) < 6):
                 try:
                     from core.tasks import check_autopilot_tick
-                    check_autopilot_tick()
+                    threading.Thread(target=check_autopilot_tick, daemon=True).start()
                 except Exception:
                     pass
 
@@ -431,30 +434,55 @@ class CatalogAutopilotService:
 
     # فهرست جامع و گلچین سوپراستارهای موسیقی ایران (پاپ، رپ، سنتی، تلفیقی، راک و کلاسیک)
     PERSIAN_SUPERSTAR_ROSTER = [
-        "Alireza Ghorbani", "Reza Bahram", "Alireza Talischi", "Masoud Sadeghloo", 
-        "Mehdi Ahmadvand", "Salar Aghili", "Ali Zand Vakili", "Macan Band", 
-        "Hoorosh Band", "Garsha Rezaei", "Saman Jalili", "Hamid Hiraad", 
-        "Sohrab MJ", "Alireza JJ", "Mazyar Fallahi", "Shohreh", "Leila Forouhar", 
-        "Shahram Shabpareh", "Shahram Solati", "Andy", "Kamran Hooman", "Mansour", 
-        "Bijan Mortazavi", "Hassan Shamaizadeh", "Kaveh Yaghmaei", "Kasra Zahedi", 
-        "Naser Zeinali", "Sohrab Pakzad", "Ashvan", "Sogand", "Donya", "Talkdown", 
-        "Vinak", "021kid", "Mohammad Motamedi", "Shahram Nazeri", "Kayhan Kalhor", 
-        "Hossein Alizadeh", "Pouya", "Omid", "Benyamin Bahadori", "Ali Lohrasbi", 
-        "Sina Shabankhani", "Sina Derakhshande", "Mohammad Alizadeh", "Hamed Homayoun",
-        "Evan Band", "Puzzle Band", "Rastak", "Sina Sarlak", "Amirabbas Golab",
-        "Meysam Ebrahimi", "Yousef Zamani", "Majid Kharatha", "Ali Abdolmaleki",
-        "Ramin Bibak", "Amin Rostami", "Emad Talebzadeh", "Hamid Askari", "Behnam Safavi",
-        "Morteza Ashrafi", "Pouya Bayati", "Ali Ashabi", "Shahab Mozaffari", "Mehdi Jahani",
-        "Ashkan Khatibi", "Sina Parsian", "Danial", "Shayan Yo", "Dorcci", "021G", "Madgal",
-        "Nooshafarin", "Susan Roshan", "Afshin", "Pyruz", "Shahyad", "Siavash Sahneh",
-        "Farshid Amin", "Shahram Kashani", "Davood Behboodi", "Mehdi Moghaddam", "Mehdi Asadi",
-        "Shahab Ramezan", "Mohammad Esfahani", "Alireza Eftekhari", "Abdolhossein Mokhtabad",
-        "Parviz Meshkatian", "Jalal Zolfonun", "Kamyar", "Reza Yazdani", "Hessamoddin Seraj",
-        "Nima Masiha", "Ghasem Afshar"
+        # سوپراستارهای کلاسیک و پاپ ماندگار
+        "Ebi", "Dariush", "Hayedeh", "Mahasti", "Homeyra", "Googoosh", "Moein", 
+        "Siavash Ghomayshi", "Shadmehr Aghili", "Sattar", "Habib", "Viguen", "Aref", 
+        "Faramarz Aslani", "Shohreh", "Leila Forouhar", "Shahram Shabpareh", "Shahram Solati", 
+        "Andy", "Kouros", "Kamran Hooman", "Mansour", "Bijan Mortazavi", "Hassan Shamaizadeh", 
+        "Farhad Mehrad", "Fereydoun Farrokhzad", "Mohammad Nouri", "Touraj Shabankhani", 
+        "Nooshafarin", "Susan Roshan", "Afshin", "Pyruz", "Shahyad", "Siavash Sahneh", 
+        "Farshid Amin", "Shahram Kashani", "Davood Behboodi", "Sandy", "Martik", "Kamyar",
+        "Farzin", "Pouya", "Omid", "Hooshmand Aghili", "Kourosh Yaghmaei",
+        
+        # سوپراستارهای سنتی و اصیل ایرانی
+        "Mohammad Reza Shajarian", "Homayoun Shajarian", "Alireza Ghorbani", "Salar Aghili", 
+        "Kayhan Kalhor", "Hossein Alizadeh", "Shahram Nazeri", "Mohammad Motamedi", 
+        "Parviz Meshkatian", "Jalal Zolfonun", "Hessamoddin Seraj", "Alireza Eftekhari", 
+        "Abdolhossein Mokhtabad", "Sina Sarlak", "Ali Zand Vakili", "Hojat Ashrafzadeh",
+        
+        # پاپ مدرن و معاصر
+        "Mohsen Chavoshi", "Mohsen Yeganeh", "Behnam Bani", "Babak Jahanbakhsh", 
+        "Reza Bahram", "Alireza Talischi", "Masoud Sadeghloo", "Mehdi Ahmadvand", 
+        "Macan Band", "Hoorosh Band", "Garsha Rezaei", "Saman Jalili", "Hamid Hiraad", 
+        "Mazyar Fallahi", "Benyamin Bahadori", "Ali Lohrasbi", "Sina Shabankhani", 
+        "Sina Derakhshande", "Mohammad Alizadeh", "Hamed Homayoun", "Evan Band", 
+        "Puzzle Band", "Amirabbas Golab", "Meysam Ebrahimi", "Yousef Zamani", 
+        "Majid Kharatha", "Ali Abdolmaleki", "Ramin Bibak", "Amin Rostami", 
+        "Emad Talebzadeh", "Hamid Askari", "Behnam Safavi", "Morteza Ashrafi", 
+        "Pouya Bayati", "Ali Ashabi", "Shahab Mozaffari", "Mehdi Jahani", 
+        "Shahab Ramezan", "Mohammad Esfahani", "Nima Masiha", "Ghasem Afshar",
+        "Kasra Zahedi", "Naser Zeinali", "Sohrab Pakzad", "Ashvan", "Farzad Farrokh",
+        "Moein Z", "Ali Yasini", "Majid Razavi", "Ehsan Khajehamiri", "Fereydoun Asraei",
+        "Roozbeh Bemani", "Roozbeh Nematollahi", "Mehdi Yarahi", "Sirvan Khosravi", 
+        "Xaniar Khosravi", "Shervin Hajipour", "Aron Afshar", "Morteza Pashaei",
+        
+        # رپ و هیپ‌هاپ فارسی
+        "Yas", "Hichkas", "Reza Pishro", "Shayea", "Bahram", "Shahin Najafi", 
+        "Sohrab MJ", "Alireza JJ", "Sijal", "Behzad Leito", "Sepehr Khalse", "Zedbazi",
+        "Erfan", "Gdaal", "Poobon", "Koorosh", "Sami Beigi", "Sogand", "Donya", 
+        "Talkdown", "Vinak", "021kid", "021G", "Dorcci", "Madgal", "Danial", 
+        "Shayan Yo", "Amir Tataloo", "Sasy", "Barobax", "TM Bax", "Rez", "Sadegh",
+        "Chvrsi", "Hiphopologist", "KCatchy", "Young Sudden", "Taham",
+        
+        # تلفیقی، راک و آلترناتیو
+        "Chaartaar", "Pallett", "Bomrani", "Damahi", "Dang Show", "Rastak", 
+        "Kaveh Yaghmaei", "Kaveh Afagh", "Reza Yazdani", "Ashkan Khatibi", 
+        "Sina Parsian", "O-Hum", "The Ways", "Rana Farhan", "Rana Mansour", 
+        "Satin", "Anita", "Baran", "Farhad Darya", "Ahmad Zahir", "Fardin Faryad"
     ]
 
     def _discover_top_spotify_artists_dynamically(self, existing_sp_ids, existing_names, limit_needed=5):
-        """کشف کاملاً پویا و هدفمند برترین خوانندگان ایرانی با اولویت فهرست سوپراستارها و فیلتر دقیق هویت ایرانی"""
+        """کشف کاملاً پویا و هدفمند برترین خوانندگان ایرانی با اولویت فهرست سوپراستارها، گراف گنجینه و سرچ زنده"""
         # واکشی بلک‌لیست دیسکاوری‌های ناموفق قبلی
         failed_sp_ids = set()
         try:
@@ -479,7 +507,7 @@ class CatalogAutopilotService:
             if len(candidates) >= limit_needed:
                 break
             norm_name = art_name.lower().strip()
-            if norm_name in existing_names or any(norm_name in ex for ex in existing_names):
+            if norm_name in existing_names or any(norm_name == ex or (len(norm_name) > 4 and norm_name in ex) for ex in existing_names):
                 continue
 
             try:
@@ -505,19 +533,69 @@ class CatalogAutopilotService:
             except Exception as e:
                 logger.warning(f"Error querying superstar '{art_name}': {e}")
 
-        # اولویت ۲: در صورت نیاز به هنرمندان بیشتر، جستجوی ژانرهای اختصاصی پاپ و رپ فارسی با فیلتر ناموزون
+        # اولویت ۲: استخراج خودکار خوانندگان همکار و مکمل از قطعات موجود در آرشیو
+        if len(candidates) < limit_needed:
+            try:
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    top_performers = conn.execute("""
+                        SELECT performer, COUNT(*) as cnt 
+                        FROM ingestion_logs 
+                        WHERE status = 'completed' AND performer IS NOT NULL AND performer != ''
+                        GROUP BY performer 
+                        HAVING cnt >= 2 
+                        ORDER BY cnt DESC 
+                        LIMIT 150
+                    """).fetchall()
+                    for row in top_performers:
+                        if len(candidates) >= limit_needed:
+                            break
+                        raw_perf = row[0]
+                        # تفکیک اسامی خوانندگان همکار
+                        parts = [p.strip() for p in re.split(r'[,&،]|feat\.?|ft\.?', raw_perf, flags=re.IGNORECASE) if p.strip()]
+                        for p_name in parts:
+                            if len(candidates) >= limit_needed:
+                                break
+                            p_norm = p_name.lower().strip()
+                            if len(p_norm) < 3 or p_norm in existing_names or any(p_norm == ex or (len(p_norm) > 4 and p_norm in ex) for ex in existing_names):
+                                continue
+                            try:
+                                data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": f'artist:"{p_name}"', "type": "artist", "limit": 1})
+                                items = data.get("artists", {}).get("items", [])
+                                if not items:
+                                    data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": p_name, "type": "artist", "limit": 1})
+                                    items = data.get("artists", {}).get("items", [])
+                                if items:
+                                    a = items[0]
+                                    a_id = a.get("id")
+                                    if not a_id or a_id in existing_sp_ids or a_id in failed_sp_ids or a_id in candidates:
+                                        continue
+                                    f_cnt = (a.get("followers") or {}).get("total", 0)
+                                    if f_cnt >= 1000:
+                                        candidates[a_id] = a
+                                        logger.info(f"✨ [Autopilot Vault Graph] Discovered collaborator artist: {a.get('name')} (Spotify ID: {a_id})")
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.warning(f"Error in vault graph artist discovery: {e}")
+
+        # اولویت ۳: جستجوی پویا بر اساس کلیدواژه‌های فارسی فعال در اسپاتیفای با فیلتر دقیق هویت
         if len(candidates) < limit_needed:
             blacklisted_words = [
                 "choir", "orchestra", "media", "various artists", "american", 
                 "audiobook", "podcast", "karaoke", "instrumental", "soundtrack",
-                "tribute", "compilation", "sound effects", "white noise", "beethoven", "mozart", "bach"
+                "tribute", "compilation", "sound effects", "white noise", "beethoven", 
+                "mozart", "bach", "sonata", "symphony", "philharmonic", "relaxing", "sleep"
             ]
-            genre_queries = ['genre:"persian pop"', 'genre:"persian hip hop"', 'genre:"classic persian pop"']
-            for gq in genre_queries:
+            search_keywords = [
+                'persian', 'iranian', 'ahang farsi', 'farsi pop', 'rap farsi', 
+                'persian music', 'sonati irani', 'ahang jadid', 'persian hip hop', 
+                'taraneh farsi', 'farsi rap', 'iranians'
+            ]
+            for sk in search_keywords:
                 if len(candidates) >= limit_needed:
                     break
                 try:
-                    data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": gq, "type": "artist", "limit": 20})
+                    data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": sk, "type": "artist", "limit": 20})
                     for a in data.get("artists", {}).get("items", []):
                         if not a or not a.get("id"):
                             continue
@@ -528,29 +606,35 @@ class CatalogAutopilotService:
                         if any(w in a_name for w in blacklisted_words):
                             continue
                         followers = (a.get("followers") or {}).get("total", 0)
-                        if followers >= 3000:
+                        if followers >= 2000:
                             candidates[a_id] = a
+                            logger.info(f"✨ [Autopilot Dynamic Search] Discovered active Persian artist: {a.get('name')} ({followers:,} followers)")
                             if len(candidates) >= limit_needed:
                                 break
                 except Exception as e:
-                    logger.warning(f"Error querying genre '{gq}': {e}")
+                    logger.warning(f"Error querying keyword '{sk}': {e}")
 
         return list(candidates.values())[:limit_needed]
 
     def _discover_top_spotify_playlists_dynamically(self, existing_sources, limit_needed=6):
         """کشف کاملاً پویا و خودکار برترین پلی‌لیست‌های ترند از اسپاتیفای با اولویت لیست‌های ایرانی"""
         queries = [
+            "persian rap", "radio javan", "shad irani", "persian pop 2026", "tehran nights",
+            "ahang bandari", "sonati irani", "persian trap", "remix farsi", "ahang aroosi",
+            "nostalgia farsi", "persian rock", "persian lofi", "ahang ghadimi",
             "Top Hits Persian", "Persian Pop", "Radio Javan Hits", "Persian Rap", 
             "Golchin Shad", "Persian Dance Party", "Sonati Irani", "Persian Acoustic", 
-            "Ahang Ghadimi", "Persian Hip Hop", "New Music Farsi", "Iran Top 50", 
-            "Nostalgia Farsi", "Persian Remix", "Persian Chill", "Top 100 Iran"
+            "New Music Farsi", "Iran Top 50", "Persian Remix", "Persian Chill", "Top 100 Iran",
+            "Persian Party", "Ahang Shad", "Ahang Ghamgin", "Kordi Shad", "Torki Shad",
+            "Persian Folk", "Bahar Farsi", "Persian Alternative", "Persian Indie"
         ]
+        random.shuffle(queries)
         candidates = {}
         for q in queries:
             if len(candidates) >= limit_needed:
                 break
             try:
-                data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": q, "type": "playlist", "limit": 10})
+                data = spotify_extractor.api_get(f"{API_BASE}/search", params={"q": q, "type": "playlist", "limit": 15})
                 for p in data.get("playlists", {}).get("items", []):
                     if p and p.get("id") and p["id"] not in candidates:
                         pl_title = p.get("name") or "playlist"
@@ -757,12 +841,14 @@ class CatalogAutopilotService:
                     total_tracks = (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id)
                 WHERE status = 'processing'
                   AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status IN ('queued', 'downloading')) = 0
-                  AND (SELECT COUNT(*) FROM campaign_tracks WHERE campaign_id = artist_campaigns.id AND status = 'completed') > 0
             """)
             conn.commit()
 
             active_artists_count = conn.execute("""
-                SELECT COUNT(*) FROM artist_campaigns WHERE status = 'processing'
+                SELECT COUNT(DISTINCT ac.id) 
+                FROM artist_campaigns ac
+                JOIN campaign_tracks ct ON ct.campaign_id = ac.id
+                WHERE ac.status = 'processing' AND ct.status IN ('queued', 'downloading')
             """).fetchone()[0]
 
             TARGET_ACTIVE_ARTISTS = 10
@@ -804,16 +890,21 @@ class CatalogAutopilotService:
             if needed_playlists > 0:
                 existing_sources = set(r[0] for r in conn.execute("""
                     SELECT DISTINCT source FROM ingestion_logs 
-                    WHERE source LIKE 'pl:%' AND (status IN ('queued', 'downloading') OR created_at > datetime('now', '-3 days'))
+                    WHERE source LIKE 'pl:%' AND (status IN ('queued', 'downloading') OR created_at > datetime('now', '-24 hours'))
                 """).fetchall())
-                top_playlists = self._discover_top_spotify_playlists_dynamically(existing_sources, limit_needed=needed_playlists)
+                top_playlists = self._discover_top_spotify_playlists_dynamically(existing_sources, limit_needed=needed_playlists * 2)
+                launched_count = 0
                 for c_pl in top_playlists:
+                    if launched_count >= needed_playlists:
+                        break
                     pl_name = c_pl.get("name") or "Playlist"
                     logger.info(f"🎧 [Autopilot Active Pool: 6 Playlists] Launching {pl_name} to maintain 6 active pool...")
                     try:
-                        self.launch_playlist_ingestion(c_pl["id"])
+                        res = self.launch_playlist_ingestion(c_pl["id"])
                         source_label = f"pl:{pl_name[:15]}"
                         existing_sources.add(source_label)
+                        if res.get("queued", 0) > 0:
+                            launched_count += 1
                     except Exception as e:
                         logger.error(f"Error launching dynamic playlist {pl_name}: {e}")
 

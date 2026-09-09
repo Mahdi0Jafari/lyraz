@@ -1107,7 +1107,7 @@ def check_crawler_schedule():
 _LAST_AUTOPILOT_TICK = 0
 _AUTOPILOT_LOCK = threading.Lock()
 
-@huey.periodic_task(crontab(minute='*/3'), priority=15, expires=120)
+@huey.periodic_task(crontab(minute='*/3'), priority=5, expires=180)
 def check_autopilot_tick():
     """
     تسک زمان‌بندی‌شده دوره‌ای (هر ۳ دقیقه):

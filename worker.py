@@ -19,11 +19,7 @@ def clean_stale_backlog():
         queue_file = os.path.join('instance', 'queue.db')
         if os.path.exists(queue_file):
             with sqlite3.connect(queue_file) as conn:
-                # ۱. حذف تسک‌های با اولویت مرگبار قدیمی
-                cur = conn.execute("DELETE FROM task WHERE priority >= 12")
-                deleted_p12 = cur.rowcount
-
-                # ۲. حذف تسک‌های انباشته‌شده دوره‌ای (Periodic backlog tasks)
+                # ۱. حذف تسک‌های انباشته‌شده دوره‌ای (Periodic backlog tasks)
                 cursor = conn.cursor()
                 cursor.execute("SELECT id, data FROM task")
                 rows = cursor.fetchall()
@@ -40,12 +36,12 @@ def clean_stale_backlog():
                 if stale_periodic_ids:
                     conn.executemany("DELETE FROM task WHERE id = ?", [(tid,) for tid in stale_periodic_ids])
 
-                # ۳. پاکسازی قطعی قفل‌های باقیمانده از قبل در جدول kv تا تسک‌های دوره‌ای هرگز گیر نکنند
+                # ۲. پاکسازی قطعی قفل‌های باقیمانده از قبل در جدول kv تا تسک‌های دوره‌ای هرگز گیر نکنند
                 cur_locks = conn.execute("DELETE FROM kv WHERE key LIKE '%.lock.%'")
                 deleted_locks = cur_locks.rowcount
 
                 conn.commit()
-                logger.info(f"🧹 Backlog Cleanup: Removed {deleted_p12} stuck tasks, {len(stale_periodic_ids)} periodic, and {deleted_locks} stale locks.")
+                logger.info(f"🧹 Backlog Cleanup: Removed {len(stale_periodic_ids)} periodic tasks and {deleted_locks} stale locks.")
     except Exception as e:
         logger.warning(f"Warning during queue backlog cleanup: {e}")
 
