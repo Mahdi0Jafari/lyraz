@@ -41,15 +41,19 @@ async function fetchLyrics(uniqueId) {
 }
 
 function parseLRC(lrcText) {
+    if (!lrcText) {
+        lyricsData = [];
+        return;
+    }
+
     const regex = /^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/;
     
-    lyricsData = lrcText.split('\n').map(line => {
+    const parsed = lrcText.split('\n').map(line => {
         const match = line.match(regex);
         if (!match) return null;
         
         const min = parseInt(match[1]);
         const sec = parseInt(match[2]);
-        // هندل کردن میلی‌ثانیه ۲ رقمی یا ۳ رقمی برای دقت بالا
         const ms = match[3].length === 3 ? parseInt(match[3]) : parseInt(match[3]) * 10;
         
         const time = min * 60 + sec + (ms / 1000);
@@ -57,6 +61,25 @@ function parseLRC(lrcText) {
         
         return { time, text };
     }).filter(item => item && item.text); 
+
+    if (parsed.length > 0) {
+        lyricsData = parsed;
+        return;
+    }
+
+    // 🔥 پشتیبانی از متن لیریک بدون برچسب زمان (Plain / Genius Lyrics)
+    // خطوط اضافی را پاکسازی کرده و زمان را به نرمی در طول آهنگ توزیع می‌کند
+    const cleanLines = lrcText.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0 && !l.startsWith('1 Contributor') && !l.endsWith('Contributors') && !l.endsWith('Lyrics'));
+
+    const currentDuration = (window.engines?.active?.duration) || (window.audio?.duration) || 180;
+    const stepTime = currentDuration / Math.max(1, cleanLines.length);
+
+    lyricsData = cleanLines.map((text, idx) => ({
+        time: idx * stepTime,
+        text: text
+    }));
 }
 
 function renderLyricsUI() {

@@ -120,14 +120,10 @@ class CatalogCrawlerService:
                 artist = item.get('artist')
                 vid = item.get('videoId')
                 
-                # اگر ویدیو آیدی مستقیم نداشتیم (مثلاً از اسپاتیفای آمده بود)، در یوتیوب سرچ می‌کنیم
+                # اگر ویدیو آیدی مستقیم نداشتیم (مثلاً از اسپاتیفای آمده بود)، از تطابق هوشمند استفاده می‌کنیم
                 if not vid:
                     query = item.get('search_query') or f"{artist} {title}"
-                    yt_res = self.yt.search(query)
-                    if yt_res:
-                        vid = yt_res[0].get('videoId')
-                        if not item.get('duration') and yt_res[0].get('duration_seconds'):
-                            item['duration'] = yt_res[0].get('duration_seconds')
+                    vid = self.yt.find_best_match(query, title=title, artist=artist, duration=item.get('duration'))
                 
                 if not vid:
                     logger.warning(f"Could not resolve video ID for {title} - {artist}")

@@ -82,6 +82,145 @@ class YouTubeService:
 
         return []
 
+    @staticmethod
+    def clean_match_str(s):
+        if not s: return ''
+        s = str(s).lower()
+        s = re.sub(r'\(.*?\)|\[.*?\]', '', s)
+        s = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', ' ', s)
+        return ' '.join(s.split())
+
+    @classmethod
+    def score_match(cls, target_title, target_artist, target_dur, cand_title, cand_artist, cand_dur):
+        t_clean = cls.clean_match_str(target_title)
+        c_clean = cls.clean_match_str(cand_title)
+        if not t_clean or not c_clean:
+            return 0
+
+        score = 0
+        t_words = [w for w in t_clean.split() if len(w) > 1]
+        c_words = [w for w in c_clean.split() if len(w) > 1]
+
+        # 1. تطابق عنوان ترک (Title Match)
+        if t_clean == c_clean:
+            score += 65
+        elif t_clean in c_clean:
+            score += 45
+        elif any(tw in c_words for tw in t_words):
+            matching_words = sum(1 for tw in t_words if tw in c_words)
+            score += int(40 * (matching_words / len(t_words)))
+        else:
+            return -100  # اگر عنوان به کلی بی‌ربط بود، رد صلاحیت قطعی
+
+        # 2. تطابق خواننده (Artist Match)
+        if target_artist:
+            art_clean = cls.clean_match_str(target_artist)
+            art_words = [w for w in art_clean.split() if len(w) > 2]
+            cand_art_full = f"{cand_title} {cand_artist or ''}".lower()
+            if art_words:
+                matches = sum(1 for aw in art_words if aw in cand_art_full)
+                if matches > 0:
+                    score += int(40 * (matches / len(art_words)))
+                else:
+                    score -= 60  # اگر نام هیچ‌یک از خواننده‌ها نبود
+
+        # 3. تطابق مدت زمان (Duration Match)
+        if target_dur and cand_dur:
+            diff = abs(target_dur - cand_dur)
+            if diff <= 3:
+                score += 40
+            elif diff <= 8:
+                score += 25
+            elif diff <= 16:
+                score += 10
+            elif diff > 35:
+                score -= 50
+
+        # 4. جریمه محتوای نامربوط (Reaction / Remix / Slowed / Covers)
+        for kw in ['reaction', 'remix', 'slowed', 'reverb', '1 hour', 'karaoke', 'bass boosted']:
+            if kw in cand_title.lower() and (not target_title or kw not in target_title.lower()):
+                score -= 70
+
+        return score
+
+    def find_best_match(self, query, title=None, artist=None, duration=None):
+        """
+        یافتن هوشمند دقیق‌ترین موزیک با امتیازدهی چندبعدی (عنوان + خواننده + مدت زمان).
+        از دانلود شدن ترک‌های اشتباه به جای ترک واقعی جلوگیری می‌کند.
+        """
+        search_query = query or f"{artist or ''} {title or ''}".strip()
+        candidates = []
+
+        # ۱. ابتدا جستجو در پایگاه قطعات رسمی YTMusic
+        try:
+            res = self.yt.search(search_query, filter="songs", limit=12)
+            if res:
+                for r in res:
+                    c_title = r.get('title', '')
+                    c_arts = ', '.join([a.get('name', '') for a in r.get('artists', [])])
+                    c_dur = r.get('duration_seconds') or 0
+                    if not c_dur and r.get('duration'):
+                        try:
+                            parts = r['duration'].split(':')
+                            c_dur = int(parts[0]) * 60 + int(parts[1])
+                        except Exception:
+                            c_dur = 0
+                    vid = r.get('videoId')
+                    if vid:
+                        s = self.score_match(title or query, artist, duration, c_title, c_arts, c_dur)
+                        candidates.append((s, vid, c_title, c_arts, c_dur, 'ytmusic'))
+        except Exception as e:
+            logger.debug(f"YTMusic search error in find_best_match: {e}")
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        # اگر تطابق با امتیاز بالای ۸۰ در قطعات رسمی پیدا شد
+        if candidates and candidates[0][0] >= 80:
+            logger.info(f"🎯 Exact YTMusic Match (Score: {candidates[0][0]}): {candidates[0][2]} [{candidates[0][1]}]")
+            return candidates[0][1]
+
+        # ۲. جستجوی ویدیوی رسمی در یوتیوب عمومی (Official Music Videos) با yt-dlp
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'extract_flat': True,
+                'quiet': True,
+                'skip_download': True,
+                'no_warnings': True,
+                'socket_timeout': 5,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios', 'mweb', 'web'],
+                    },
+                    'youtubepot-bgutilhttp': {
+                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                    }
+                }
+            }
+            if os.path.exists(Config.YT_COOKIES_PATH):
+                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch6:{search_query}", download=False)
+                for e in info.get('entries', []):
+                    vid = e.get('id')
+                    c_title = e.get('title', '')
+                    c_arts = e.get('uploader', '')
+                    c_dur = int(e.get('duration') or 0)
+                    if vid:
+                        s = self.score_match(title or query, artist, duration, c_title, c_arts, c_dur)
+                        candidates.append((s, vid, c_title, c_arts, c_dur, 'youtube'))
+        except Exception as yt_err:
+            logger.debug(f"yt-dlp fallback search error in find_best_match: {yt_err}")
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        if candidates and candidates[0][0] > 0:
+            logger.info(f"🎯 Best Matched Track (Score: {candidates[0][0]} from {candidates[0][5]}): {candidates[0][2]} [{candidates[0][1]}]")
+            return candidates[0][1]
+
+        # ۳. در صورت عدم پیدا شدن کاندیدا، به نخستین نتیجه سرچ تکیه کن
+        if candidates:
+            return candidates[0][1]
+        return None
+
     def get_video_info(self, video_id):
         """
         دریافت مستقیم و دقیق مشخصات ویدیو/موزیک با استراتژی چندمرحله‌ای (oEmbed -> YTMusic -> yt_dlp)

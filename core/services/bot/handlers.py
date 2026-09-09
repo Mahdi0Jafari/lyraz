@@ -399,12 +399,11 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         from telegram.constants import ChatAction
         try: await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         except Exception: pass
-        results = await asyncio.to_thread(yt_service.search, sp_data['search_query'])
-        if not results:
-            await status_msg.edit_text("❌ Could not find a match for this specific track.")
+        vid = await asyncio.to_thread(yt_service.find_best_match, sp_data['search_query'], title, artist, duration)
+        if not vid:
+            await status_msg.edit_text("❌ Could not find an authentic match for this specific track.")
             return
 
-        vid = results[0]['videoId']
         await dispatch_to_huey(update, context, vid, title, artist, status_msg, cover_url=cover_url, duration=duration)
 
     # --- Case 2: Playlist or Album (V4.5 Batch Process) ---

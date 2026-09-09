@@ -345,13 +345,9 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
         release_date = (trk.get('album') or {}).get('release_date') or trk.get('release_date') or ''
         spotify_url = trk.get('spotify_url') or ''
 
-        # ۱. سرچ هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID
+        # ۱. تطابق هوشمند یوتیوب موزیک برای پیدا کردن Audio Video ID با اعتبارسنجی عنوان، خواننده و طول آهنگ
         query = f"{artist} {title}"
-        yt_res = crawler_service.yt.search(query)
-        if not yt_res:
-            continue
-            
-        vid = yt_res[0].get('videoId')
+        vid = yt_service.find_best_match(query, title=title, artist=artist, duration=duration_sec)
         if not vid:
             continue
 
@@ -439,7 +435,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
 
         # ۲. واکشی متادیتای غنی با اولویت کاور ارسالی (از اسپاتیفای) یا کاور یوتیوب
         yt_thumb = cover_url or (f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg" if video_id else None)
-        rich_metadata = metadata_service.get_full_metadata(artist, title, duration=duration, thumbnail_url=yt_thumb)
+        rich_metadata = metadata_service.get_full_metadata(artist, title, duration=duration, thumbnail_url=yt_thumb, video_id=video_id)
         
         if not final_title:
             final_title = rich_metadata.get('title') or title or 'Unknown Track'
@@ -835,15 +831,14 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             try:
                 vid = track_info.get('videoId') or track_info.get('video_id')
                 if not vid:
-                    results = await asyncio.to_thread(yt_service.search, search_query)
-                    if not results:
+                    vid = await asyncio.to_thread(yt_service.find_best_match, search_query, title, artist, track_duration)
+                    if not vid:
                         async with state_lock:
                             failed_count += 1
                             processed_count += 1
                         ready_to_deliver[idx] = None
                         delivery_signal.set()
                         return False
-                    vid = results[0].get('videoId')
 
                 def check_cache():
                     with sqlite3.connect(Config.DATABASE_URI) as conn:
