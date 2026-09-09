@@ -58,7 +58,7 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['mweb', 'web'],
+                        'player_client': ['android', 'ios', 'mweb', 'web'],
                     },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
@@ -126,7 +126,7 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['mweb', 'web'],
+                        'player_client': ['android', 'ios', 'mweb', 'web'],
                     },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
@@ -275,7 +275,7 @@ class YouTubeService:
                 'http_chunk_size': 10485760,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['mweb', 'web'],
+                        'player_client': ['android', 'ios', 'mweb', 'web'],
                     },
                     'youtubepot-bgutilhttp': {
                         'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']

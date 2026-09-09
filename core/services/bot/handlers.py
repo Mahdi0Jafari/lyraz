@@ -3,6 +3,8 @@
 import asyncio
 import uuid
 import re
+import html
+import urllib.parse
 import logging
 from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import ContextTypes
@@ -206,8 +208,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             welcome_msg, 
             parse_mode=ParseMode.HTML, 
-            reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin),
+            reply_markup=get_main_menu_keyboard(),
             disable_web_page_preview=True
+        )
+        await update.message.reply_text(
+            "⚡️ <b>Quick Actions:</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_onboarding_keyboard(current_token, is_admin=is_admin)
         )
 
 # ==========================================
@@ -550,7 +557,6 @@ async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
     کارت معرفی و سیستم دعوت دوستان (Viral Referral Dashboard).
     نمایش لینک اختصاصی، آمار دعوت‌ها و دکمه اشتراک‌گذاری مستقیم در چت‌های تلگرام.
     """
-    import urllib.parse
     user = update.effective_user
     if not user: return
     
@@ -598,8 +604,6 @@ async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def render_queue_info(user_id, token):
     """Fetches queue tracks and builds bulletproof formatted HTML message and interactive inline controls."""
-    import html
-
     def get_data():
         internal_uid = get_user_id(user_id)
         session = get_session_info(token)
@@ -707,7 +711,6 @@ async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
     except Exception as e:
         logger.warning(f"Failed to send queue message with HTML: {e}")
-        import re
         plain = re.sub(r'<[^>]+>', '', q_text)
         await update.message.reply_text(plain, reply_markup=q_markup)
 
@@ -772,7 +775,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if text in ["📋 Queue", "📋 Playlist"] or "queue" in text.lower():
+    if text in ["📋 Queue", "📋 Playlist", "/queue"] or text.lower().strip() == "queue":
         token = await asyncio.to_thread(get_user_session_token, user.id)
         if not token:
             await update.message.reply_text(
@@ -786,7 +789,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
         except Exception as e:
             logger.warning(f"Failed to send queue message with HTML: {e}")
-            import re
             plain = re.sub(r'<[^>]+>', '', q_text)
             await update.message.reply_text(plain, reply_markup=q_markup)
         return
@@ -1062,7 +1064,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
         except Exception:
-            import re
             plain = re.sub(r'<[^>]+>', '', q_text)
             try:
                 await query.edit_message_text(plain, reply_markup=q_markup)
@@ -1075,7 +1076,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
         except Exception:
-            import re
             plain = re.sub(r'<[^>]+>', '', q_text)
             try:
                 await query.edit_message_text(plain, reply_markup=q_markup)
@@ -1115,7 +1115,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
         except Exception:
-            import re
             plain = re.sub(r'<[^>]+>', '', q_text)
             try:
                 await query.edit_message_text(plain, reply_markup=q_markup)
