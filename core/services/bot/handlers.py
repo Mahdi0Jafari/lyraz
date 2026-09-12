@@ -516,15 +516,8 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         return c_token, c_track, u_role
 
     current_token, cached, role = await asyncio.to_thread(fetch_dispatch_meta)
-    
-    # 1. Check Cache Hit
-    if cached:
-        try: await status_msg.delete()
-        except: pass
-        await ensure_track_and_process(update, context, video_id=vid, title=title, artist=artist)
-        return
 
-    # 2. Dynamic Smart Priority System & Unified Quality
+    # Dynamic Smart Priority System & Unified Quality
     # محاسبه اولویت صف بر اساس وفاداری، دعوت‌ها و نقش کاربر
     from core.services.bot.database import get_user_referral_stats
     ref_count, _, _ = await asyncio.to_thread(get_user_referral_stats, user.id)
@@ -539,7 +532,10 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         user_prio = 40
         prio_label = "Standard Queue"
 
-    await status_msg.edit_text(f"⏳ *{title}* added to queue ({prio_label})...", parse_mode=ParseMode.MARKDOWN)
+    try:
+        await status_msg.edit_text(f"⏳ *{title}* added to queue ({prio_label})...", parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        pass
     
     download_and_process_track(
         video_id=vid, title=title, artist=artist, 
@@ -1215,6 +1211,24 @@ async def vault_repair_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🚀 Started repair process! {new_count} total suspicious tracks indexed.\nUse /repair or /vault_status to monitor progress.")
         return
 
+    elif args and args[0].lower() in ['lyrics', 'lrc']:
+        await update.message.reply_text("🎵 Starting background lyrics backfill from LRCLIB...")
+        from scripts.backfill_lyrics import backfill
+        asyncio.create_task(asyncio.to_thread(backfill, limit=500, delay=0.2))
+        await update.message.reply_text("🚀 Lyrics backfill task dispatched to background! Missing songs will get synchronized lyrics for the web player.")
+        return
+
+    elif args and args[0].lower() in ['purge_recent', 'clean_recent']:
+        def purge_recent_tracks():
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                cur = conn.execute("DELETE FROM tracks WHERE datetime(created_at) >= datetime('now', '-1 day')")
+                deleted = cur.rowcount
+                conn.commit()
+                return deleted
+        deleted_count = await asyncio.to_thread(purge_recent_tracks)
+        await update.message.reply_text(f"🧹 Successfully cleared {deleted_count} recently cached tracks from database.\nThey will be re-downloaded with authentic covers and ID3v2.3 lyrics on next user request!")
+        return
+
     s = await asyncio.to_thread(get_status_summary)
     if s['total'] == 0:
         await asyncio.to_thread(scan_mismatches)
@@ -1235,6 +1249,8 @@ async def vault_repair_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💡 _این تسک‌ها با اولویت پایین (Priority 5) در پس‌زمینه اجرا می‌شوند و دانلودهای کاربران زنده همیشه اولویت بالاتر دارند._\n\n"
         f"دستورات:\n"
         f"• `/repair` یا `/vault_status` - مشاهده درصد پیشرفت زنده\n"
-        f"• `/repair start` - اسکن مجدد و شارژ صف"
+        f"• `/repair start` - اسکن مجدد و شارژ صف اصلاح\n"
+        f"• `/repair lyrics` - استخراج و کش دسته‌جمعی لیریک از LRCLIB\n"
+        f"• `/repair purge_recent` - پاک‌سازی کش آهنگ‌های ۲۴ ساعت گذشته جهت دانلود تازه و بی‌نقص"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
