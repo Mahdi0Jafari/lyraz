@@ -352,16 +352,15 @@ class YouTubeService:
                 from core.services.metadata import remove_lrc_timestamps
                 plain_lyrics = remove_lrc_timestamps(lrc_lyrics)
 
-                # فریم USLT با استاندارد ID3v2.3 (متن کاملاً تمیز بدون تایم‌استمپ برای بخش لیریک در Samsung Music)
-                if plain_lyrics:
-                    audio.tags.setall('USLT', [
-                        USLT(
-                            encoding=1,  # UTF-16 ضروری برای پلیرهای اندروید و سامسونگ
-                            lang=u'eng',
-                            desc=u'',    # در صورت پر بودن desc، سامسونگ لیریک را نمایش نمی‌دهد
-                            text=plain_lyrics
-                        )
-                    ])
+                # فریم USLT با فرمت خام (LRC با تایم‌استمپ) همانند نسخه قبلی برای سازگاری با تلگرام و سایر پلیرها
+                audio.tags.setall('USLT', [
+                    USLT(
+                        encoding=3,  # UTF-8 برای پشتیبانی کامل از فارسی
+                        lang=u'eng',
+                        desc=u'Lyrics',
+                        text=lrc_lyrics
+                    )
+                ])
 
                 # فریم همگام‌سازی زمانی فشرده SYLT با واحد قطعی میلی‌ثانیه (format=2)
                 sylt_entries = self.parse_lrc_to_sylt(lrc_lyrics)
