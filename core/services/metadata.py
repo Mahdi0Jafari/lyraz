@@ -327,7 +327,7 @@ class MetadataOrchestrator:
                 best_match = cand
 
         if best_match and highest_score >= 3.0:
-            logger.info(f"✨ Matched LRCLIB Lyrics for '{raw_title}' (Score: {highest_score:.2f}, Synced: {bool(best_match.get('syncedLyrics'))})")
+            logger.info(f"✨ Matched LRCLIB Lyrics for '{title}' (Score: {highest_score:.2f}, Synced: {bool(best_match.get('syncedLyrics'))})")
             return best_match.get('syncedLyrics') or best_match.get('plainLyrics')
 
         # مرحله ۴: فال‌بک رسمی به استخراج لیریک از دیسکریپشن یوتیوب
