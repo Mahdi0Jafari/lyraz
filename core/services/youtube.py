@@ -349,9 +349,6 @@ class YouTubeService:
             # ۳. تزریق متن لیریک (همگام‌سازی دوگانه USLT و SYLT برای سامسونگ و پلیرهای آفلاین)
             if metadata.get('lyrics'):
                 lrc_lyrics = metadata['lyrics']
-                from core.services.metadata import remove_lrc_timestamps
-                plain_lyrics = remove_lrc_timestamps(lrc_lyrics)
-
                 # فریم USLT با فرمت خام (LRC با تایم‌استمپ) همانند نسخه قبلی برای سازگاری با تلگرام و سایر پلیرها
                 audio.tags.setall('USLT', [
                     USLT(
@@ -361,20 +358,6 @@ class YouTubeService:
                         text=lrc_lyrics
                     )
                 ])
-
-                # فریم همگام‌سازی زمانی فشرده SYLT با واحد قطعی میلی‌ثانیه (format=2)
-                sylt_entries = self.parse_lrc_to_sylt(lrc_lyrics)
-                if sylt_entries:
-                    audio.tags.setall('SYLT', [
-                        SYLT(
-                            encoding=1,
-                            lang=u'eng',
-                            format=2,  # ۲ = میلی‌ثانیه در استاندارد رسمی ID3v2.3
-                            type=1,    # ۱ = Lyrics
-                            desc=u'',
-                            text=sylt_entries
-                        )
-                    ])
 
             # ذخیره با استاندارد قطعی ID3v2.3 (حیاتی برای Samsung Music)
             audio.save(v2_version=3)
