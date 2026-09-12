@@ -88,10 +88,15 @@ def init_db():
                 spotify_id TEXT UNIQUE,
                 bitrate INTEGER DEFAULT 192,
                 storage_message_id INTEGER DEFAULT NULL,
+                is_tagged INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
             try:
                 c.execute('ALTER TABLE tracks ADD COLUMN storage_message_id INTEGER DEFAULT NULL;')
+            except Exception:
+                pass
+            try:
+                c.execute('ALTER TABLE tracks ADD COLUMN is_tagged INTEGER DEFAULT 0;')
             except Exception:
                 pass
 

@@ -106,6 +106,15 @@ class CatalogCrawlerService:
         """
         from core.tasks import download_and_process_track
         
+        if not tracks:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("""
+                    INSERT INTO ingestion_logs (title, performer, youtube_id, source, status, error_msg, completed_at)
+                    VALUES ('Crawler Run', 'System', 'system', ?, 'failed', 'No tracks found from source', CURRENT_TIMESTAMP)
+                """, (source_label,))
+                conn.commit()
+            return {'queued': 0, 'skipped': 0, 'total_scanned': 0}
+        
         queued_count = 0
         skipped_count = 0
         

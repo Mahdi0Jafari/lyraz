@@ -106,6 +106,116 @@ def generate_progress_bar(current, total, length=12):
     bar = '█' * filled_length + '░' * (length - filled_length)
     return f"`[{bar}]` {int(percent * 100)}%"
 
+async def upgrade_track_metadata_if_needed(local_bot, track_dict, title, artist, duration=None, cover_url=None):
+    """
+    بررسی و ارتقای درجا متادیتا برای قطعات قدیمی کش‌شده در چنل تلگرام.
+    اگر is_tagged=1 باشد، بلافاصله همان ترک را برمی‌گرداند (ارسال آنی ۰.۱ ثانیه‌ای).
+    اگر is_tagged=0 باشد:
+    1. فایل صوتی را در عرض ۱ ثانیه از تلگرام دانلود می‌کند.
+    2. لیریک و کاور کامل را با استاندارد ID3v2.3 (USLT + SYLT) به آن تزریق می‌کند.
+    3. فایل ارتقایافته را به چنل آرشیو ارسال، پیام قدیمی را حذف، و tracks را با is_tagged=1 آپدیت می‌کند.
+    """
+    if not track_dict or track_dict.get('is_tagged'):
+        return track_dict
+
+    tid = track_dict.get('id')
+    old_file_id = track_dict.get('file_id')
+    old_storage_msg = track_dict.get('storage_message_id')
+    yt_id = track_dict.get('youtube_id')
+    
+    # واکشی لیریک از دیتابیس یا سرویس متادیتا
+    cached_lyrics = None
+    if track_dict.get('file_unique_id'):
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                l_row = conn.execute("SELECT lyrics FROM lyrics_cache WHERE file_unique_id=?", (track_dict['file_unique_id'],)).fetchone()
+                if l_row:
+                    cached_lyrics = l_row[0]
+        except Exception:
+            pass
+
+    yt_thumb = cover_url or (f"https://i.ytimg.com/vi/{yt_id}/maxresdefault.jpg" if yt_id else None)
+    rich_meta = metadata_service.get_full_metadata(
+        artist or track_dict.get('performer'),
+        title or track_dict.get('title'),
+        duration=duration or track_dict.get('duration'),
+        thumbnail_url=yt_thumb,
+        video_id=yt_id
+    )
+
+    if cached_lyrics and not rich_meta.get('lyrics'):
+        rich_meta['lyrics'] = cached_lyrics
+
+    # اگر لیریک به هیچ وجه پیدا نشد، فقط علامت‌گذاری کن تا دوباره چک نشود
+    if not rich_meta.get('lyrics') and not rich_meta.get('cover_bytes'):
+        try:
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("UPDATE tracks SET is_tagged = 1 WHERE id = ?", (tid,))
+                conn.commit()
+        except Exception:
+            pass
+        track_dict['is_tagged'] = 1
+        return track_dict
+
+    temp_path = os.path.join(yt_service.download_dir, f"retag_{yt_id or track_dict.get('file_unique_id')}.mp3")
+    try:
+        tg_file = await local_bot.get_file(old_file_id)
+        await tg_file.download_to_drive(custom_path=temp_path)
+
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 1000:
+            yt_service.apply_metadata_to_file(temp_path, rich_meta)
+
+            # آپلود فایل جدید به چنل آرشیو با کاور و لیریک کامل
+            new_audio, new_storage_msg_id = await upload_to_telegram(
+                local_bot, temp_path,
+                rich_meta.get('title') or title,
+                rich_meta.get('artist') or artist,
+                yt_id or 'retagged',
+                cover_bytes=rich_meta.get('cover_bytes')
+            )
+
+            if new_audio:
+                # حذف پیام قدیمی از چنل آرشیو برای تمیز ماندن چنل
+                if old_storage_msg and Config.STORAGE_CHANNEL_ID:
+                    try:
+                        await local_bot.delete_message(chat_id=Config.STORAGE_CHANNEL_ID, message_id=old_storage_msg)
+                    except Exception:
+                        pass
+
+                # ذخیره در دیتابیس و تنظیم is_tagged=1
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    conn.execute("""
+                        UPDATE tracks 
+                        SET file_id = ?, file_unique_id = ?, storage_message_id = ?, is_tagged = 1
+                        WHERE id = ?
+                    """, (new_audio.file_id, new_audio.file_unique_id, new_storage_msg_id, tid))
+                    if rich_meta.get('lyrics'):
+                        conn.execute("""
+                            INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at)
+                            VALUES (?, ?, ?, ?)
+                        """, (new_audio.file_unique_id, rich_meta['lyrics'], "lrclib", int(time.time())))
+                    conn.commit()
+
+                # به‌روزرسانی دیکشنری ترک
+                upgraded_track = dict(track_dict)
+                upgraded_track['file_id'] = new_audio.file_id
+                upgraded_track['file_unique_id'] = new_audio.file_unique_id
+                upgraded_track['storage_message_id'] = new_storage_msg_id
+                upgraded_track['is_tagged'] = 1
+                logger.info(f"✨ Successfully auto-upgraded metadata & lyrics for: {title}")
+                return upgraded_track
+
+    except Exception as retag_err:
+        logger.warning(f"Metadata auto-upgrade error for '{title}': {retag_err}")
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+    return track_dict
+
 async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_caption, reply_markup=None):
     """ارسال فایل صوتی با قابلیت خودترمیمی در صورت تغییر توکن ربات و فال‌بک امن کپشن"""
     file_id = track_row['file_id']
@@ -470,6 +580,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 cached_track = None
             else:
                 logger.info(f"⚡️ Vault Hit for '{final_title}' ({video_id})! Skipping YouTube download.")
+                cached_track = await upgrade_track_metadata_if_needed(local_bot, cached_track, final_title, final_artist, duration=duration, cover_url=cover_url)
                 track_meta = cached_track
                 path = None
         
@@ -558,8 +669,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             }
 
             sql = """
-                INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id, is_tagged)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(youtube_id) DO UPDATE SET 
                     file_unique_id=excluded.file_unique_id,
                     file_id=excluded.file_id,
@@ -569,7 +680,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     file_size=excluded.file_size,
                     thumb_id=excluded.thumb_id,
                     bitrate=excluded.bitrate,
-                    storage_message_id=excluded.storage_message_id
+                    storage_message_id=excluded.storage_message_id,
+                    is_tagged=1
             """
             bot_db_exec(sql, (
                 track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
@@ -830,6 +942,24 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             await update_progress_safe(title)
             try:
                 vid = track_info.get('videoId') or track_info.get('video_id')
+                
+                # Fast DB cache lookup by title and artist to avoid YouTube Search API calls
+                if not vid:
+                    def check_db_by_name():
+                        with sqlite3.connect(Config.DATABASE_URI) as conn:
+                            conn.row_factory = sqlite3.Row
+                            cur = conn.execute("SELECT * FROM tracks WHERE title = ? AND performer = ? LIMIT 1", (title, artist))
+                            res = cur.fetchone()
+                            if res: return dict(res)
+                            cur = conn.execute("SELECT * FROM tracks WHERE title LIKE ? AND performer LIKE ? LIMIT 1", (f"{title}%", f"{artist}%"))
+                            res = cur.fetchone()
+                            if res: return dict(res)
+                            return None
+                    
+                    cached_by_name = await asyncio.to_thread(check_db_by_name)
+                    if cached_by_name:
+                        vid = cached_by_name['youtube_id']
+
                 if not vid:
                     vid = await asyncio.to_thread(yt_service.find_best_match, search_query, title, artist, track_duration)
                     if not vid:
@@ -849,6 +979,12 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 cached = await asyncio.to_thread(check_cache)
 
                 if cached:
+                    # ارتقای درجا به ID3v2.3 با لیریک سینک‌شده در صورت قدیمی بودن فایل
+                    cached = await upgrade_track_metadata_if_needed(
+                        local_bot, dict(cached), title, artist,
+                        duration=track_duration, cover_url=cover_url
+                    )
+
                     d_name = "Hub"
                     reply_markup = None
 
