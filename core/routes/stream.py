@@ -468,27 +468,45 @@ def get_lyrics(unique_id):
     """
     db = get_db()
     
-    # 1. Check Database Cache
+    # ۱. بررسی کش محلی دیتابیس
     try:
         cached = db.execute("SELECT lyrics FROM lyrics_cache WHERE file_unique_id=?", (unique_id,)).fetchone()
-        if cached:
+        if cached and cached['lyrics']:
             return jsonify({"status": "found", "lyrics": cached['lyrics'], "source": "local_cache"})
-    except: pass
+    except Exception:
+        pass
 
-    # 2. Fetch from Central Metadata Service
+    # ۲. شناسایی ترک در صورتی که شناسه youtube_id یا id عددی باشد
     track = resolve_track(unique_id)
-    if not track: return jsonify({"status": "error"}), 404
+    if not track:
+        return jsonify({"status": "error"}), 404
 
-    # استفاده از متد قدرتمندِ fetch_lyrics که خودش اسامی را پاکسازی و بهینه‌سازی می‌کند
-    lyrics = metadata_service.fetch_lyrics(track['performer'], track['title'], track['duration'])
+    target_fid = track['file_unique_id'] or unique_id
+
+    # بررسی مجدد با file_unique_id قطعی
+    if target_fid != unique_id:
+        try:
+            cached = db.execute("SELECT lyrics FROM lyrics_cache WHERE file_unique_id=?", (target_fid,)).fetchone()
+            if cached and cached['lyrics']:
+                return jsonify({"status": "found", "lyrics": cached['lyrics'], "source": "local_cache"})
+        except Exception:
+            pass
+
+    # ۳. استخراج لیریک با موتور ارتقایافته LRCLIB
+    lyrics = metadata_service.fetch_lyrics(
+        artist=track['performer'],
+        title=track['title'],
+        duration=track['duration'],
+        video_id=track['youtube_id']
+    )
 
     if lyrics:
-        # ذخیره در کش برای دفعات بعد
         try:
             db.execute("INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at) VALUES (?, ?, ?, ?)",
-                       (track['file_unique_id'] or unique_id, lyrics, "lrclib", int(time.time())))
+                       (target_fid, lyrics, "lrclib", int(time.time())))
             db.commit()
-        except: pass
+        except Exception:
+            pass
         return jsonify({"status": "found", "lyrics": lyrics})
 
     return jsonify({"status": "not_found"})

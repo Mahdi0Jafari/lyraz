@@ -2,7 +2,7 @@ Flask
 python-dotenv
 python-telegram-bot
 urllib3
-yt-dlp[default]
+yt-dlp[default]>=2026.8.19
 ytmusicapi
 gunicorn
 gevent

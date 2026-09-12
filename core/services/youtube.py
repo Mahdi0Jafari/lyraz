@@ -13,7 +13,7 @@ from core.config import Config
 
 # ایمپورت‌های مربوط به Mutagen برای تزریق متادیتا در سطح باینری
 from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, APIC, USLT, TIT2, TPE1, error
+from mutagen.id3 import ID3, APIC, USLT, SYLT, TIT2, TPE1, error
 
 logger = logging.getLogger(__name__)
 
@@ -290,10 +290,31 @@ class YouTubeService:
 
         return {'title': 'YouTube Track', 'artist': 'Unknown Artist', 'videoId': video_id}
 
+    @staticmethod
+    def parse_lrc_to_sylt(lrc_text):
+        """تبدیل متن استاندارد LRC به تاپل‌های میلی‌ثانیه‌ای فریم SYLT برای پلیرهای سامسونگ و اندروید"""
+        if not lrc_text:
+            return []
+        regex = re.compile(r'^\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)$')
+        sylt_entries = []
+        for line in lrc_text.split('\n'):
+            line_str = line.strip()
+            m = regex.match(line_str)
+            if m:
+                mins = int(m.group(1))
+                secs = int(m.group(2))
+                ms_str = m.group(3) or '0'
+                ms = int(ms_str) if len(ms_str) == 3 else int(ms_str) * 10
+                timestamp_ms = (mins * 60 + secs) * 1000 + ms
+                text = m.group(4).strip()
+                if text:
+                    sylt_entries.append((text, timestamp_ms))
+        return sylt_entries
+
     def apply_metadata_to_file(self, file_path, metadata):
         """
-        تزریق کاور، لیریک و مشخصات دقیق به هدر فایل MP3 با استفاده از ID3v2.
-        این کار باعث می‌شود فایل در تمامی پلیرهای آفلاین هویت کامل داشته باشد.
+        تزریق کاور، لیریک سینک‌شده (USLT + SYLT) و مشخصات دقیق بر اساس استاندارد ID3v2.3.
+        سازگار کامل با Samsung Music، پلیرهای اندروید، iOS و وب‌پلیر.
         """
         if not metadata:
             return
@@ -305,39 +326,57 @@ class YouTubeService:
             try:
                 audio.add_tags()
             except error:
-                pass  # تگ از قبل وجود دارد (توسط ffmpeg ساخته شده)
+                pass  # تگ از قبل وجود دارد
 
-            # ۱. اصلاح نام آهنگ و خواننده
+            # ۱. اصلاح نام آهنگ و خواننده با انکودینگ استاندارد ID3v2.3 (UTF-16 با BOM)
             if metadata.get('title'):
-                audio.tags.add(TIT2(encoding=3, text=metadata['title']))
+                audio.tags.setall('TIT2', [TIT2(encoding=1, text=metadata['title'])])
             if metadata.get('artist'):
-                audio.tags.add(TPE1(encoding=3, text=metadata['artist']))
+                audio.tags.setall('TPE1', [TPE1(encoding=1, text=metadata['artist'])])
 
             # ۲. تزریق کاور با کیفیت (APIC)
             if metadata.get('cover_bytes'):
-                audio.tags.add(
+                audio.tags.setall('APIC', [
                     APIC(
-                        encoding=3,  # UTF-8
+                        encoding=0,
                         mime='image/jpeg',
-                        type=3,  # نوع 3 یعنی کاور جلوی آلبوم (Front Cover)
+                        type=3,  # Front Cover
                         desc=u'Cover',
                         data=metadata['cover_bytes']
                     )
-                )
+                ])
 
-            # ۳. تزریق متن لیریک (USLT)
+            # ۳. تزریق متن لیریک (همگام‌سازی دوگانه USLT و SYLT برای سامسونگ و پلیرهای آفلاین)
             if metadata.get('lyrics'):
-                audio.tags.add(
-                    USLT(
-                        encoding=3,  # UTF-8 برای پشتیبانی کامل از فارسی
-                        lang=u'eng', # زبان (تثبیت‌شده روی eng یا und برای سازگاری بهتر)
-                        desc=u'Lyrics',
-                        text=metadata['lyrics']
-                    )
-                )
+                lrc_lyrics = metadata['lyrics']
 
-            audio.save()
-            logger.info(f"[+] Metadata stitched successfully: {os.path.basename(file_path)}")
+                # فریم USLT با استاندارد ID3v2.3 (Samsung Music تایم‌استمپ‌های [mm:ss.xx] را مستقیماً از این فریم می‌خواند)
+                audio.tags.setall('USLT', [
+                    USLT(
+                        encoding=1,  # UTF-16 ضروری برای پلیرهای اندروید و سامسونگ
+                        lang=u'eng',
+                        desc=u'',    # در صورت پر بودن desc، سامسونگ لیریک را نمایش نمی‌دهد
+                        text=lrc_lyrics
+                    )
+                ])
+
+                # فریم همگام‌سازی زمانی فشرده SYLT
+                sylt_entries = self.parse_lrc_to_sylt(lrc_lyrics)
+                if sylt_entries:
+                    audio.tags.setall('SYLT', [
+                        SYLT(
+                            encoding=1,
+                            lang=u'eng',
+                            format=1,  # میلی‌ثانیه
+                            type=1,    # Lyrics
+                            desc=u'',
+                            text=sylt_entries
+                        )
+                    ])
+
+            # ذخیره با استاندارد قطعی ID3v2.3 (حیاتی برای Samsung Music)
+            audio.save(v2_version=3)
+            logger.info(f"[+] Metadata stitched successfully (ID3v2.3): {os.path.basename(file_path)}")
             
         except Exception as e:
             logger.error(f"[-] Mutagen Stitching Error: {e}")
