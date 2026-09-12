@@ -64,8 +64,8 @@ class MetadataOrchestrator:
 
     def _optimize_cover(self, image_bytes):
         """
-        پردازش تصویر: تغییر اندازه به 600x600 و تبدیل به Baseline JPEG.
-        این کار باعث می‌شود حجم هدر MP3 پایین بماند و روی تمام پلیرها سریع لود شود.
+        پردازش تصویر: برش مربعی متمرکز، تغییر اندازه به 600x600 و تبدیل به Baseline JPEG.
+        این کار باعث می‌شود هدر MP3 سبک بماند و روی تمام پلیرها سریع و بدون دفرمه شدن لود شود.
         """
         try:
             img = Image.open(io.BytesIO(image_bytes))
@@ -73,16 +73,42 @@ class MetadataOrchestrator:
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
+            # برش مربعی متمرکز (Center-Crop 1:1) برای جلوگیری از کشیده شدن تصاویر مستطیلی
+            width, height = img.size
+            if width != height:
+                min_dim = min(width, height)
+                left = (width - min_dim) // 2
+                top = (height - min_dim) // 2
+                img = img.crop((left, top, left + min_dim, top + min_dim))
+            
             # تغییر سایز استاندارد کاور آلبوم
             img = img.resize((600, 600), Image.Resampling.LANCZOS)
             
             output = io.BytesIO()
-            # ذخیره بدون حالت progressive تا در پلیر ماشین و تلویزیون‌های قدیمی خوانده شود
             img.save(output, format='JPEG', quality=85, optimize=True, progressive=False)
             return output.getvalue()
         except Exception as e:
             logger.error(f"Image Optimization Error: {e}")
             return None
+
+    def resolve_youtube_thumbnail(self, video_id):
+        """
+        یافتن قطعی بالاترین کیفیت کاور یوتیوب با بررسی اولویت:
+        ۱. maxresdefault.jpg (در صورت عدم بازگرداندن 404)
+        ۲. فال‌بک تضمینی به hqdefault.jpg
+        """
+        if not video_id:
+            return None
+        
+        maxres_url = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+        try:
+            head_res = self.session.head(maxres_url, timeout=3)
+            if head_res.status_code == 200 and int(head_res.headers.get('content-length', 0)) > 2000:
+                return maxres_url
+        except Exception:
+            pass
+
+        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
     def fetch_itunes_data(self, artist, title):
         """
@@ -301,7 +327,7 @@ class MetadataOrchestrator:
                 best_match = cand
 
         if best_match and highest_score >= 3.0:
-            logger.info(f"✨ Matched LRCLIB Lyrics for '{title}' (Score: {highest_score:.2f}, Synced: {bool(best_match.get('syncedLyrics'))})")
+            logger.info(f"✨ Matched LRCLIB Lyrics for '{raw_title}' (Score: {highest_score:.2f}, Synced: {bool(best_match.get('syncedLyrics'))})")
             return best_match.get('syncedLyrics') or best_match.get('plainLyrics')
 
         # مرحله ۴: فال‌بک رسمی به استخراج لیریک از دیسکریپشن یوتیوب
@@ -327,28 +353,55 @@ class MetadataOrchestrator:
             'lyrics': None
         }
 
-        # ۱. استخراج دیتای مرجع از آیتونز (تنها در صورت تطابق قطعی نام و خواننده)
-        itunes_data = self.fetch_itunes_data(cleaned_artist, cleaned_title)
-        if itunes_data:
-            metadata['title'] = itunes_data['title']
-            metadata['artist'] = itunes_data['artist']
-            metadata['cover_bytes'] = itunes_data['cover_bytes']
-
-        # ۲. در صورتی که آهنگ در آیتونز نبود، کاور باکیفیت ویدیوی اصلی را لود کن
-        if not metadata['cover_bytes'] and thumbnail_url:
+        # ۱. اولویت قطعی با کاور مستقیم (مانند کاور رسمی ۶۴۰×۶۴۰ اسپاتیفای)
+        if thumbnail_url:
             try:
                 img_res = self.session.get(thumbnail_url, timeout=5)
-                if img_res.status_code == 200:
+                if img_res.status_code == 200 and len(img_res.content) > 1000:
                     metadata['cover_bytes'] = self._optimize_cover(img_res.content)
             except Exception as e:
-                logger.warning(f"Thumbnail Cover Error: {e}")
+                logger.warning(f"Direct Cover Error: {e}")
 
-        # ۳. استخراج لیریک با اعتبارسنجی دقیق و فال‌بک دیسکریپشن یوتیوب
+        # ۲. در صورتی که کاور مستقیم نبود یا خطا داد، از کاور یوتیوب با بالاترین کیفیت استفاده کن
+        if not metadata['cover_bytes'] and video_id:
+            yt_thumb = self.resolve_youtube_thumbnail(video_id)
+            if yt_thumb:
+                try:
+                    img_res = self.session.get(yt_thumb, timeout=5)
+                    if img_res.status_code == 200 and len(img_res.content) > 1000:
+                        metadata['cover_bytes'] = self._optimize_cover(img_res.content)
+                except Exception as e:
+                    logger.warning(f"YouTube Cover Error: {e}")
+
+        # ۳. در صورتی که هنوز کاور نداریم یا خواننده ناشناس است، به آیتونز مراجعه کن
+        if not metadata['cover_bytes'] or cleaned_artist in ['Unknown Artist', 'Unknown']:
+            itunes_data = self.fetch_itunes_data(cleaned_artist, cleaned_title)
+            if itunes_data:
+                if not metadata['cover_bytes']:
+                    metadata['cover_bytes'] = itunes_data.get('cover_bytes')
+                if cleaned_artist in ['Unknown Artist', 'Unknown'] and itunes_data.get('artist'):
+                    metadata['artist'] = itunes_data['artist']
+                if cleaned_title in ['Unknown Track', 'YouTube Track'] and itunes_data.get('title'):
+                    metadata['title'] = itunes_data['title']
+
+        # ۴. استخراج لیریک با اعتبارسنجی دقیق و فال‌بک دیسکریپشن یوتیوب
         lyrics = self.fetch_lyrics(metadata['artist'], metadata['title'], duration, video_id=video_id)
         if lyrics:
             metadata['lyrics'] = lyrics
 
         return metadata
+
+
+def remove_lrc_timestamps(lrc_text):
+    """حذف تایم‌استمپ‌های [mm:ss.xx] برای تولید متن تمیز بدون برچسب زمان ویژه فریم USLT در Samsung Music و پلیرهای آفلاین"""
+    if not lrc_text:
+        return ""
+    lines = []
+    for line in lrc_text.splitlines():
+        cleaned = re.sub(r'\[\d{1,2}:\d{2}(?:\.\d+)?\]', '', line).strip()
+        lines.append(cleaned)
+    return '\n'.join(lines).strip()
+
 
 # ایجاد یک سینگلتون (Singleton) برای استفاده در کل برنامه
 metadata_service = MetadataOrchestrator()

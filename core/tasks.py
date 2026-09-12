@@ -68,7 +68,22 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
                     f"👤 Artist: {artist}\n"
                     f"💽 Title: {title}"
                 )
-                thumb = io.BytesIO(cover_bytes) if cover_bytes else None
+                thumb = None
+                if cover_bytes:
+                    try:
+                        from PIL import Image
+                        im = Image.open(io.BytesIO(cover_bytes))
+                        if im.mode != 'RGB':
+                            im = im.convert('RGB')
+                        im.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                        thumb_io = io.BytesIO()
+                        im.save(thumb_io, format='JPEG', quality=85)
+                        thumb_io.name = 'thumbnail.jpg'
+                        thumb_io.seek(0)
+                        thumb = thumb_io
+                    except Exception as thumb_err:
+                        logger.warning(f"Telegram thumbnail creation error: {thumb_err}")
+
                 sent_msg = await local_bot.send_audio(
                     chat_id=Config.STORAGE_CHANNEL_ID,
                     audio=f,
@@ -580,7 +595,17 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 cached_track = None
             else:
                 logger.info(f"⚡️ Vault Hit for '{final_title}' ({video_id})! Skipping YouTube download.")
-                cached_track = await upgrade_track_metadata_if_needed(local_bot, cached_track, final_title, final_artist, duration=duration, cover_url=cover_url)
+                # اطمینان از وجود لیریک در lyrics_cache برای وب‌پلیر بدون بلاک کردن جریان
+                if cached_track.get('file_unique_id') and rich_metadata.get('lyrics'):
+                    try:
+                        with sqlite3.connect(Config.DATABASE_URI) as conn:
+                            conn.execute(
+                                "INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at) VALUES (?, ?, ?, ?)",
+                                (cached_track['file_unique_id'], rich_metadata['lyrics'], "lrclib", int(time.time()))
+                            )
+                            conn.commit()
+                    except Exception:
+                        pass
                 track_meta = cached_track
                 path = None
         
@@ -669,8 +694,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             }
 
             sql = """
-                INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id, is_tagged)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                INSERT INTO tracks (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, bitrate, storage_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(youtube_id) DO UPDATE SET 
                     file_unique_id=excluded.file_unique_id,
                     file_id=excluded.file_id,
@@ -680,8 +705,7 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                     file_size=excluded.file_size,
                     thumb_id=excluded.thumb_id,
                     bitrate=excluded.bitrate,
-                    storage_message_id=excluded.storage_message_id,
-                    is_tagged=1
+                    storage_message_id=excluded.storage_message_id
             """
             bot_db_exec(sql, (
                 track_meta['file_unique_id'], track_meta['file_id'], track_meta['title'], 
@@ -979,11 +1003,24 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 cached = await asyncio.to_thread(check_cache)
 
                 if cached:
-                    # ارتقای درجا به ID3v2.3 با لیریک سینک‌شده در صورت قدیمی بودن فایل
-                    cached = await upgrade_track_metadata_if_needed(
-                        local_bot, dict(cached), title, artist,
-                        duration=track_duration, cover_url=cover_url
-                    )
+                    cached = dict(cached)
+                    # همگام‌سازی ناهمگام لیریک برای وب‌پلیر بدون بلاک کردن یا رایت روی کاور اختصاصی
+                    if cached.get('file_unique_id'):
+                        def backfill_batch_lyrics():
+                            try:
+                                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                                    exists = conn.execute("SELECT 1 FROM lyrics_cache WHERE file_unique_id=?", (cached['file_unique_id'],)).fetchone()
+                                    if not exists:
+                                        lyr = metadata_service.fetch_lyrics(artist, title, duration=track_duration)
+                                        if lyr:
+                                            conn.execute(
+                                                "INSERT OR REPLACE INTO lyrics_cache (file_unique_id, lyrics, source, updated_at) VALUES (?, ?, ?, ?)",
+                                                (cached['file_unique_id'], lyr, "lrclib", int(time.time()))
+                                            )
+                                            conn.commit()
+                            except Exception:
+                                pass
+                        asyncio.create_task(asyncio.to_thread(backfill_batch_lyrics))
 
                     d_name = "Hub"
                     reply_markup = None
