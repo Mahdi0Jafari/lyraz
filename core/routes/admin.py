@@ -376,6 +376,12 @@ def optimize_db_api():
     result = admin_analytics.optimize_database()
     return jsonify(result)
 
+@admin_bp.route('/api/admin/system/test-cookies', methods=['POST'])
+def test_cookies_api():
+    if not is_admin(): return jsonify({'status': 'error'}), 403
+    result = admin_analytics.verify_youtube_cookies_live(force=True)
+    return jsonify({'status': 'success', 'data': result})
+
 @admin_bp.route('/api/admin/system/backup-db', methods=['GET'])
 def backup_database_api():
     if not is_admin(): return jsonify({'status': 'error'}), 403

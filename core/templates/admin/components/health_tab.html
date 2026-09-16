@@ -95,18 +95,26 @@
 
         <!-- 4. YouTube Engine & Cookies Status Card -->
         <div class="glass-panel p-5 rounded-2xl relative overflow-hidden group">
-            <div class="absolute -right-6 -top-6 size-24 {% if system_health.cookies.status == 'valid' %}bg-primary/10{% else %}bg-red-500/10{% endif %} rounded-full blur-2xl transition-all duration-500"></div>
+            <div id="cookie-card-glow" class="absolute -right-6 -top-6 size-24 {% if system_health.cookies.status == 'valid' %}bg-primary/10{% else %}bg-red-500/10{% endif %} rounded-full blur-2xl transition-all duration-500"></div>
             <div class="flex items-center justify-between mb-3">
-                <div class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center {% if system_health.cookies.status == 'valid' %}text-primary{% else %}text-red-400{% endif %} shadow-inner">
+                <div id="cookie-card-icon" class="size-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center {% if system_health.cookies.status == 'valid' %}text-primary{% else %}text-red-400{% endif %} shadow-inner">
                     <span class="material-symbols-outlined text-[24px]">key</span>
                 </div>
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold {% if system_health.cookies.status == 'valid' %}bg-primary/20 text-primary border border-primary/30{% elif system_health.cookies.status == 'partial' %}bg-yellow-500/20 text-yellow-400 border border-yellow-500/30{% else %}bg-red-500/20 text-red-400 border border-red-500/30{% endif %}">
-                    <span class="size-1.5 rounded-full {% if system_health.cookies.status == 'valid' %}bg-primary animate-pulse{% else %}bg-red-400{% endif %}"></span>
-                    {{ system_health.cookies.label }}
-                </span>
+                <div class="flex items-center gap-2">
+                    <button onclick="testYouTubeAuth()" id="btn-test-auth" title="Re-test live connection with YouTube" class="size-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 flex items-center justify-center transition-all">
+                        <span class="material-symbols-outlined text-[16px]" id="btn-test-auth-icon">refresh</span>
+                    </button>
+                    <span id="cookie-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold {% if system_health.cookies.status == 'valid' %}bg-primary/20 text-primary border border-primary/30{% elif system_health.cookies.status == 'partial' %}bg-yellow-500/20 text-yellow-400 border border-yellow-500/30{% else %}bg-red-500/20 text-red-400 border border-red-500/30{% endif %}">
+                        <span id="cookie-status-dot" class="size-1.5 rounded-full {% if system_health.cookies.status == 'valid' %}bg-primary animate-pulse{% else %}bg-red-400{% endif %}"></span>
+                        <span id="cookie-status-label">{{ system_health.cookies.label }}</span>
+                    </span>
+                </div>
             </div>
-            <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold mb-1">YouTube Auth State</p>
-            <p class="text-xs text-gray-300 leading-snug line-clamp-2" title="{{ system_health.cookies.details }}">
+            <div class="flex items-center justify-between mb-1">
+                <p class="text-[11px] text-gray-500 uppercase tracking-widest font-bold">YouTube Auth State</p>
+                <span id="cookie-last-checked" class="text-[10px] font-mono text-gray-500">{% if system_health.cookies.last_checked %}{{ system_health.cookies.last_checked }}{% endif %}</span>
+            </div>
+            <p id="cookie-status-details" class="text-xs text-gray-300 leading-snug line-clamp-2" title="{{ system_health.cookies.details }}">
                 {{ system_health.cookies.details }}
             </p>
         </div>

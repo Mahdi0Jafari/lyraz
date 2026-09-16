@@ -1,6 +1,8 @@
 # core/services/admin_service.py
 
 import os
+import time
+from datetime import datetime
 import shutil
 import logging
 from collections import deque
@@ -18,6 +20,7 @@ class AdminAnalyticsService:
         # بررسی اسکیما در اینجا (زمان Import) انجام نمی‌شود تا خطای Application Context نگیریم.
         # فقط یک فلگ برای بهینه‌سازی سرعت تعریف می‌کنیم.
         self._schema_checked = False
+        self._cookie_cache = {"last_mtime": 0, "last_check": 0, "data": None}
 
     def _ensure_schema(self):
         """
@@ -397,43 +400,8 @@ class AdminAnalyticsService:
             db_size_bytes += os.path.getsize(wal_path)
         db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
 
-        # ۴. وضعیت اعتبار فایل کوکی یوتیوب
-        cookie_path = Config.YT_COOKIES_PATH
-        cookie_info = {
-            "exists": False,
-            "status": "missing",
-            "label": "Missing / No Cookie",
-            "color": "red",
-            "details": "cookies.txt not found. YouTube may block datacenter requests."
-        }
-        if os.path.exists(cookie_path):
-            try:
-                with open(cookie_path, 'r', encoding='utf-8', errors='ignore') as cf:
-                    content = cf.read()
-                cookie_info["exists"] = True
-                has_sid = "SID\t" in content or "\tSID" in content or "SID" in content
-                has_hsid = "HSID" in content
-                has_ssid = "SSID" in content
-                has_login = "LOGIN_INFO" in content
-
-                if has_sid and has_hsid and has_ssid:
-                    cookie_info["status"] = "valid"
-                    cookie_info["label"] = "Authenticated (Full Session)"
-                    cookie_info["color"] = "emerald"
-                    cookie_info["details"] = "Full Google authentication tags present (SID, HSID, SSID)."
-                elif has_login or "PSID" in content:
-                    cookie_info["status"] = "partial"
-                    cookie_info["label"] = "Partial (Temporary)"
-                    cookie_info["color"] = "yellow"
-                    cookie_info["details"] = "Temporary cookies detected. May require periodic refresh."
-                else:
-                    cookie_info["status"] = "unauthenticated"
-                    cookie_info["label"] = "Anonymous / Expired"
-                    cookie_info["color"] = "red"
-                    cookie_info["details"] = "No authentication tags detected in cookies.txt."
-            except Exception as e:
-                logger.error(f"Error checking cookies file: {e}")
-                cookie_info["details"] = str(e)
+        # ۴. وضعیت اعتبار زنده فایل کوکی یوتیوب
+        cookie_info = self.verify_youtube_cookies_live(force=False)
 
         return {
             "disk": {
@@ -536,6 +504,103 @@ class AdminAnalyticsService:
             "top_tracks": top_tracks,
             "top_artists": top_artists
         }
+
+    def verify_youtube_cookies_live(self, force=False):
+        """
+        بررسی واقعی و زنده اعتبار کوکی یوتیوب با ارسال تست سریع به موتور استخراج یوتیوب.
+        نتیجه تا ۱۰ دقیقه کش می‌شود مگر اینکه فایل تغییر کند یا force=True باشد.
+        """
+        cookie_path = Config.YT_COOKIES_PATH
+        
+        if not os.path.exists(cookie_path) or os.path.getsize(cookie_path) < 50:
+            return {
+                "exists": False,
+                "status": "missing",
+                "label": "Missing / No Cookie",
+                "color": "red",
+                "details": "cookies.txt not found. YouTube may block datacenter requests.",
+                "last_checked": datetime.now().strftime("%H:%M:%S")
+            }
+
+        mtime = os.path.getmtime(cookie_path)
+        now = time.time()
+        
+        # اگر کش معتبر بود و اجبار به چک مجدد نشده بود
+        if not force and self._cookie_cache["data"] is not None:
+            if self._cookie_cache["last_mtime"] == mtime and (now - self._cookie_cache["last_check"]) < 600:
+                return self._cookie_cache["data"]
+
+        # اجرای تست زنده با yt-dlp
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'cookies': cookie_path,
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'extract_flat': False,
+                'socket_timeout': 6,
+                'retries': 1,
+                'extractor_args': {
+                    'youtubepot-bgutilhttp': {
+                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://127.0.0.1:4416']
+                    }
+                }
+            }
+            t0 = time.time()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info('https://www.youtube.com/watch?v=dQw4w9WgXcQ', download=False)
+                latency = round(time.time() - t0, 2)
+                fmts = len(info.get('formats', []))
+                
+                result = {
+                    "exists": True,
+                    "status": "valid",
+                    "label": "Verified & Active (Live)",
+                    "color": "emerald",
+                    "details": f"Google session verified live ({fmts} streams, {latency}s latency).",
+                    "latency": f"{latency}s",
+                    "last_checked": datetime.now().strftime("%H:%M:%S")
+                }
+        except Exception as e:
+            err_str = str(e)
+            if "bot" in err_str.lower() or "login_required" in err_str.lower():
+                result = {
+                    "exists": True,
+                    "status": "blocked",
+                    "label": "Blocked / Bot Check",
+                    "color": "red",
+                    "details": "Google flagged session: 'Sign in to confirm you’re not a bot'. Please re-export cookies.",
+                    "error": err_str,
+                    "last_checked": datetime.now().strftime("%H:%M:%S")
+                }
+            elif "403" in err_str:
+                result = {
+                    "exists": True,
+                    "status": "blocked",
+                    "label": "403 Forbidden / Expired",
+                    "color": "red",
+                    "details": "HTTP 403 Forbidden: Session expired or revoked by Google.",
+                    "error": err_str,
+                    "last_checked": datetime.now().strftime("%H:%M:%S")
+                }
+            else:
+                result = {
+                    "exists": True,
+                    "status": "partial",
+                    "label": "Warning / Check Failed",
+                    "color": "yellow",
+                    "details": f"Verification error: {err_str[:90]}",
+                    "error": err_str,
+                    "last_checked": datetime.now().strftime("%H:%M:%S")
+                }
+
+        self._cookie_cache = {
+            "last_mtime": mtime,
+            "last_check": now,
+            "data": result
+        }
+        return result
 
 # سینگلتون برای استفاده در سراسر پروژه
 admin_analytics = AdminAnalyticsService()
