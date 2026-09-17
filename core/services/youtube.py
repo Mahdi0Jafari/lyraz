@@ -58,13 +58,15 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'mweb', 'web'],
+                        'player_client': ['tv_downgraded', 'web_embedded', 'mweb', 'web', 'android', 'ios'],
                     },
                     'youtubepot-bgutilhttp': {
-                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                        'base_url': ['http://Lyraz_pot:4416']
                     }
                 }
             }
+            if getattr(Config, 'YOUTUBE_PROXY', None):
+                ydl_opts['proxy'] = Config.YOUTUBE_PROXY
             if os.path.exists(Config.YT_COOKIES_PATH):
                 ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -189,13 +191,15 @@ class YouTubeService:
                 'socket_timeout': 5,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'mweb', 'web'],
+                        'player_client': ['tv_downgraded', 'web_embedded', 'mweb', 'web', 'android', 'ios'],
                     },
                     'youtubepot-bgutilhttp': {
-                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                        'base_url': ['http://Lyraz_pot:4416']
                     }
                 }
             }
+            if getattr(Config, 'YOUTUBE_PROXY', None):
+                ydl_opts['proxy'] = Config.YOUTUBE_PROXY
             if os.path.exists(Config.YT_COOKIES_PATH):
                 ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -399,24 +403,24 @@ class YouTubeService:
         if source_url and ('soundcloud.com' in source_url or video_id.startswith('sc_')):
             sources = [source_url]
             if search_query:
-                sources.append(f"scsearch1:{search_query}")
-                sources.append(f"ytsearch1:{search_query}")
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch3:{search_query}")
         elif video_id.startswith('sc_'):
             sources = []
             if search_query:
-                sources.append(f"scsearch1:{search_query}")
-                sources.append(f"ytsearch1:{search_query}")
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch3:{search_query}")
         else:
             sources = [f"https://www.youtube.com/watch?v={video_id}"]
             if search_query:
                 # اولویت با ساندکلاد برای فال‌بک چون در دیتاسنترها بلاک یوتیوب و 403 ندارد
-                sources.append(f"scsearch1:{search_query}")
-                sources.append(f"ytsearch1:{search_query}")
+                sources.append(f"scsearch3:{search_query}")
+                sources.append(f"ytsearch3:{search_query}")
                 # اگر چند خواننده بود، فال‌بک با خواننده اول هم اضافه شود
                 if ',' in clean_art:
                     first_art = clean_art.split(',')[0].strip()
                     if first_art:
-                        sources.append(f"scsearch1:{first_art} {raw_title}")
+                        sources.append(f"scsearch3:{first_art} {raw_title}")
 
         logger.info(f"[*] Starting Multi-Source Download for [{video_id}] | Expected Dur: {expected_dur}s | Quality: {target_quality}kbps")
 
@@ -438,10 +442,10 @@ class YouTubeService:
                 'http_chunk_size': 10485760,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'mweb', 'web'],
+                        'player_client': ['tv_downgraded', 'web_embedded', 'mweb', 'web', 'android', 'ios'],
                     },
                     'youtubepot-bgutilhttp': {
-                        'base_url': ['http://Lyraz_pot:4416', 'http://pot:4416', 'http://172.17.0.1:4416', 'http://127.0.0.1:4416']
+                        'base_url': ['http://Lyraz_pot:4416']
                     }
                 },
                 'postprocessors': [
@@ -457,6 +461,9 @@ class YouTubeService:
                     'ExtractAudio': ['-threads', '1', '-vn']
                 }
             }
+
+            if getattr(Config, 'YOUTUBE_PROXY', None):
+                ydl_opts['proxy'] = Config.YOUTUBE_PROXY
 
             if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
                 ydl_opts['ffmpeg_location'] = self.ffmpeg_path

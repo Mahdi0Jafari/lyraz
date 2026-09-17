@@ -40,6 +40,9 @@ class Config:
     # آدرس عمومی سرور (برای لینک‌های پلیر و وب‌هوک)
     BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:5000').rstrip('/')
     
+    # پروکسی اختیاری برای دور زدن مسدودیت‌های دیتاسنتر یوتیوب (مثل http://user:pass@host:port)
+    YOUTUBE_PROXY = os.getenv('YOUTUBE_PROXY', None)
+    
     # --- 4. زیرساخت و فایل‌سیستم (Infrastructure) ---
     # مسیر پایه پوشه instance (محل دیتابیس، لاگ‌ها و فایل‌های موقت)
     INSTANCE_PATH = os.path.join(os.getcwd(), 'instance')
