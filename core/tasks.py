@@ -256,6 +256,17 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
             if d_val > 0: audio_duration = d_val
         except (ValueError, TypeError): pass
 
+    # فال‌بک هوشمند در صورت صفر بودن مدت در دیتابیس قدیمی: محاسبه دقیق از روی حجم و بیت‌ریت
+    if not audio_duration and track_row:
+        try:
+            f_size = track_row.get('file_size') if isinstance(track_row, dict) else (track_row['file_size'] if 'file_size' in track_row.keys() else None)
+            b_rate = track_row.get('bitrate') if isinstance(track_row, dict) else (track_row['bitrate'] if 'bitrate' in track_row.keys() else None)
+            if f_size and int(f_size) > 200000:
+                calc_br = int(b_rate) if b_rate and int(b_rate) > 0 else 320
+                audio_duration = max(10, int((int(f_size) - 100000) * 8 / (calc_br * 1000)))
+        except Exception:
+            pass
+
     try:
         try:
             return await local_bot.send_audio(
