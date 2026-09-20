@@ -6,6 +6,7 @@ import time
 import shutil
 import asyncio
 import logging
+import subprocess
 import requests
 import yt_dlp
 from ytmusicapi import YTMusic
@@ -370,6 +371,50 @@ class YouTubeService:
         except Exception as e:
             logger.error(f"[-] Mutagen Stitching Error: {e}")
 
+    @staticmethod
+    def strip_leading_silence(file_path):
+        """
+        تشخیص و برش سکوت طولانی ابتدای فایل (بیش از ۲.۵ ثانیه) ناشی از ریپ‌های غیراستاندارد ساندکلاد یا یوتیوب.
+        با حفظ ۰.۲ ثانیه سکوت طبیعی قبل از اولین نت موسیقی برای جلوگیری از برش صدا.
+        """
+        try:
+            if not file_path or not os.path.exists(file_path):
+                return file_path
+
+            detect_cmd = [
+                'ffmpeg', '-i', file_path,
+                '-af', 'silencedetect=noise=-45dB:d=2.0',
+                '-f', 'null', '-'
+            ]
+            proc = subprocess.run(detect_cmd, capture_output=True, text=True, timeout=20)
+            silence_end = None
+            for line in proc.stderr.splitlines():
+                if 'silence_end:' in line:
+                    parts = line.split('silence_end:')
+                    if len(parts) > 1:
+                        val = parts[1].split('|')[0].strip()
+                        try:
+                            silence_end = float(val)
+                            break
+                        except ValueError:
+                            pass
+
+            if silence_end and silence_end > 2.5:
+                cut_point = max(0.0, silence_end - 0.2)
+                trimmed_tmp = file_path + '.trimmed.mp3'
+                trim_cmd = [
+                    'ffmpeg', '-y', '-ss', f"{cut_point:.2f}",
+                    '-i', file_path,
+                    '-c:a', 'libmp3lame', '-b:a', '320k',
+                    trimmed_tmp
+                ]
+                subprocess.run(trim_cmd, capture_output=True, timeout=40, check=True)
+                if os.path.exists(trimmed_tmp) and os.path.getsize(trimmed_tmp) > 10000:
+                    os.replace(trimmed_tmp, file_path)
+                    logger.info(f"✂️ Successfully stripped {cut_point:.2f}s leading dead silence from {os.path.basename(file_path)}")
+        except Exception as e:
+            logger.debug(f"Silence stripping non-fatal warning: {e}")
+        return file_path
 
     async def download(self, video_id, quality=None, metadata=None):
         target_quality = str(quality) if quality else str(Config.AUDIO_QUALITY)
@@ -482,6 +527,9 @@ class YouTubeService:
 
                 info = await asyncio.to_thread(run_dl)
                 if info and os.path.exists(final_path):
+                    # ✂️ حذف سکوت‌های زائد ابتدای فایل (Smart Silence Stripper)
+                    self.strip_leading_silence(final_path)
+
                     # 🛡 اعتبارسنجی مدت‌زمان فایل دانلودشده برای سورس‌های فال‌بک (Fallback Integrity Guard)
                     is_direct_source = ('watch?v=' in source or 'soundcloud.com/' in source) and not ('search' in source)
                     if not is_direct_source and expected_dur and expected_dur > 30:

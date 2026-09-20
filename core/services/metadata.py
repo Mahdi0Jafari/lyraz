@@ -349,6 +349,7 @@ class MetadataOrchestrator:
         metadata = {
             'title': cleaned_title,
             'artist': cleaned_artist,
+            'duration': duration,
             'cover_bytes': None,
             'lyrics': None
         }

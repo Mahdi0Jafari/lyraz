@@ -49,7 +49,7 @@ def notify_web_bridge(data_dict):
     except Exception as e:
         logger.error(f"Bridge notification failed: {e}")
 
-async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None, retries=5):
+async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cover_bytes=None, duration=None, retries=5):
     """آپلود فایل دانلود شده به کانال آرشیو تلگرام و دریافت File ID به همراه تامنیل و شناسه پیام کانال با مکانیزم ضد FloodWait"""
     if not Config.STORAGE_CHANNEL_ID:
         raise Exception("STORAGE_CHANNEL_ID is not set in env vars.")
@@ -57,6 +57,19 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
     if not file_path or not os.path.exists(file_path):
         logger.error(f"Cannot upload to Telegram: file '{file_path}' does not exist.")
         return None, None
+
+    # استخراج قطعی مدت زمان فایل از روی تگ‌های صوتی در صورت عدم ارسال
+    upload_duration = None
+    if duration:
+        try: upload_duration = int(float(duration))
+        except (ValueError, TypeError): pass
+    if not upload_duration and file_path and os.path.exists(file_path):
+        try:
+            from mutagen.mp3 import MP3
+            audio_info = MP3(file_path)
+            upload_duration = int(audio_info.info.length)
+        except Exception:
+            pass
 
     for attempt in range(retries):
         try:
@@ -89,6 +102,7 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
                     audio=f,
                     title=title,
                     performer=artist,
+                    duration=upload_duration,
                     caption=caption,
                     thumbnail=thumb,
                     read_timeout=300,
@@ -234,11 +248,21 @@ async def upgrade_track_metadata_if_needed(local_bot, track_dict, title, artist,
 async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_caption, reply_markup=None):
     """ارسال فایل صوتی با قابلیت خودترمیمی در صورت تغییر توکن ربات و فال‌بک امن کپشن"""
     file_id = track_row['file_id']
+    raw_dur = track_row.get('duration') if isinstance(track_row, dict) else (track_row['duration'] if 'duration' in track_row.keys() else None)
+    audio_duration = None
+    if raw_dur:
+        try:
+            d_val = int(raw_dur)
+            if d_val > 0: audio_duration = d_val
+        except (ValueError, TypeError): pass
+
     try:
         try:
             return await local_bot.send_audio(
                 chat_id=chat_id, audio=file_id, caption=user_caption,
-                title=title, performer=artist, parse_mode=ParseMode.MARKDOWN,
+                title=title, performer=artist,
+                duration=audio_duration,
+                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
         except Exception as md_err:
@@ -247,7 +271,9 @@ async def deliver_audio_safe(local_bot, chat_id, track_row, title, artist, user_
                 clean_caption = user_caption.replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
                 return await local_bot.send_audio(
                     chat_id=chat_id, audio=file_id, caption=clean_caption,
-                    title=title, performer=artist, parse_mode=None,
+                    title=title, performer=artist,
+                    duration=audio_duration,
+                    parse_mode=None,
                     reply_markup=reply_markup
                 )
             raise md_err
@@ -570,6 +596,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
         # تضمین تطابق متادیتا برای تزریق به Mutagen با نام‌های قطعی
         rich_metadata['title'] = final_title
         rich_metadata['artist'] = final_artist
+        if duration and not rich_metadata.get('duration'):
+            rich_metadata['duration'] = duration
 
         # ۲.۵. ⚡️ بررسی وجود ترک در مخزن (Cache Vault)
         cached_track = None
@@ -661,7 +689,18 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 logger.error(f"Size guard compression error: {sz_err}")
 
             # ۴. آپلود به کانال آرشیو خاموش (Storage) با تزریق تامنیل و دریافت شناسه پیام
-            tg_audio, storage_msg_id = await upload_to_telegram(local_bot, path, final_title, final_artist, video_id, cover_bytes=rich_metadata.get('cover_bytes'))
+            file_duration = 0
+            try:
+                audio_check = MP3(path)
+                file_duration = int(audio_check.info.length)
+            except Exception:
+                file_duration = duration or rich_metadata.get('duration') or 0
+
+            tg_audio, storage_msg_id = await upload_to_telegram(
+                local_bot, path, final_title, final_artist, video_id,
+                cover_bytes=rich_metadata.get('cover_bytes'),
+                duration=file_duration
+            )
             if not tg_audio:
                 if log_id:
                     try:
@@ -687,7 +726,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 'file_unique_id': tg_audio.file_unique_id,
                 'file_id': tg_audio.file_id,
                 'title': final_title, 'performer': final_artist,
-                'duration': tg_audio.duration, 'file_size': tg_audio.file_size,
+                'duration': tg_audio.duration or file_duration,
+                'file_size': tg_audio.file_size or (os.path.getsize(path) if os.path.exists(path) else 0),
                 'thumb_id': tg_audio.thumbnail.file_id if tg_audio.thumbnail else None,
                 'youtube_id': video_id, 'bitrate': actual_bitrate,
                 'storage_message_id': storage_msg_id
