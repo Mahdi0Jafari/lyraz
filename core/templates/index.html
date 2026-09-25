@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html class="dark" lang="en" dir="ltr">
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
     <meta name="theme-color" content="#050505" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -183,6 +182,21 @@
         }
     </script>
     <style>
+        html, body {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            touch-action: manipulation;
+            overscroll-behavior: none;
+            -webkit-text-size-adjust: 100%;
+            user-select: none;
+            -webkit-user-select: none;
+        }
         .pb-safe { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 20px)); }
         .pt-safe { padding-top: calc(0.5rem + env(safe-area-inset-top, 20px)); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -191,7 +205,7 @@
         .glass-panel { background: rgba(18, 18, 18, 0.65); backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px); }
     </style>
 </head>
-<body ondblclick="toggleFullScreen()" class="bg-dark text-white h-[100dvh] w-full overflow-hidden relative font-sans flex items-center justify-center select-none">
+<body class="bg-dark text-white h-full w-full overflow-hidden relative font-sans flex items-center justify-center select-none">
 
     <!-- 🎧 Modern Glassmorphic Join Live Hub Modal (Universal Room Gateway) -->
     <div id="join-hub-modal" class="fixed inset-0 z-[120] bg-black/85 backdrop-blur-2xl flex flex-col justify-end sm:justify-center items-center p-4 sm:p-6 transition-all duration-500 opacity-0 pointer-events-none">

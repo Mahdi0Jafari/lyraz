@@ -171,6 +171,11 @@ export function initControlSSE(callbacks) {
             if (data.type === 'command') {
                 callbacks.onCommand(data);
             }
+
+            // دریافت آپدیت وضعیت زنده هاب (Continuous Status & Drift Sync)
+            if (data.type === 'status_update' && callbacks.onStatusUpdate) {
+                callbacks.onStatusUpdate(data);
+            }
             
         } catch (err) {}
     };

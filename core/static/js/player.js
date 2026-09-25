@@ -70,7 +70,8 @@ async function recoverHubState() {
     
     Network.initControlSSE({
         onQueueUpdate: () => syncTracks(),
-        onCommand: processRemoteCommand
+        onCommand: processRemoteCommand,
+        onStatusUpdate: handleLiveStatusUpdate
     });
 
     // Client nodes joining a hub session behave as listeners (avoid overwriting host playback on local pause)
@@ -120,7 +121,8 @@ function unlockPlayer(admin) {
     syncTracks(false); 
     Network.initControlSSE({
         onQueueUpdate: () => syncTracks(),
-        onCommand: processRemoteCommand
+        onCommand: processRemoteCommand,
+        onStatusUpdate: handleLiveStatusUpdate
     });
 }
 
@@ -184,7 +186,15 @@ async function loadTrack(index, autoPlay = true, startPos = 0) {
     }
 
     if (startPos > 0) {
-        engines.active.currentTime = startPos;
+        if (engines.active.readyState >= 1) {
+            engines.active.currentTime = startPos;
+        } else {
+            const onLoadedMeta = () => {
+                engines.active.currentTime = startPos;
+                engines.active.removeEventListener('loadedmetadata', onLoadedMeta);
+            };
+            engines.active.addEventListener('loadedmetadata', onLoadedMeta, { once: true });
+        }
     }
 
     if (autoPlay && (!engines.active.src.includes(track.file_unique_id) || engines.active.paused)) {
@@ -277,8 +287,17 @@ function togglePlay() {
 
 function seekToTime(seconds) {
     if (isFinite(seconds) && engines.active.duration) {
+        state.isSyncing = true;
         engines.active.currentTime = seconds;
-        if(!state.isSyncing) reportStatus(true);
+        
+        const onLocalSeeked = () => {
+            engines.active.removeEventListener('seeked', onLocalSeeked);
+            setTimeout(() => {
+                state.isSyncing = false;
+                reportStatus(true);
+            }, 120);
+        };
+        engines.active.addEventListener('seeked', onLocalSeeked, { once: true });
     }
 }
 
@@ -296,21 +315,6 @@ function processRemoteCommand(cmd) {
     // Temporary sync state storage for post-playback latency compensation
     if (cmd.action === 'play' || cmd.action === 'seek' || cmd.action === 'jump') {
         pendingSyncCommand = cmd;
-    }
-
-    // ⚡️ Scheduled Playback Deadline:
-    // If server specified scheduled deadline, start precisely at that millisecond across all clients
-    if (cmd.action === 'play' && cmd.scheduled_at) {
-        const estimatedServerNow = (Date.now() / 1000) + (state.serverTimeOffset || 0);
-        const waitMs = (cmd.scheduled_at - estimatedServerNow) * 1000;
-        
-        if (waitMs > 15 && waitMs < 2500) {
-            console.log(`⏱ [Scheduled Deadline] Syncing play trigger in ${waitMs.toFixed(0)}ms across all devices`);
-            setTimeout(() => {
-                executeCommand(cmd);
-            }, waitMs);
-            return;
-        }
     }
 
     executeCommand(cmd);
@@ -375,11 +379,18 @@ function executeCommand(cmd) {
             loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length); 
             break;
         case 'seek': 
-            seekToTime(cmd.payload); 
-            // If currently playing, compensate delay immediately
-            if(state.isPlaying && pendingSyncCommand) {
-                applyPreciseSync(pendingSyncCommand);
-                pendingSyncCommand = null;
+            const targetSec = Number(cmd.payload);
+            if (isFinite(targetSec)) {
+                state.isSyncing = true;
+                engines.active.currentTime = targetSec;
+                
+                const onRemoteSeeked = () => {
+                    engines.active.removeEventListener('seeked', onRemoteSeeked);
+                    setTimeout(() => {
+                        state.isSyncing = false;
+                    }, 120);
+                };
+                engines.active.addEventListener('seeked', onRemoteSeeked, { once: true });
             }
             break;
         case 'volume': 
@@ -426,6 +437,47 @@ function applyPreciseSync(cmdData) {
             engines.active.currentTime = idealTime;
             try { engines.active.playbackRate = 1.0; } catch(e) {}
         }
+    }
+}
+
+// ==========================================
+// 🎯 SPEED-TO-SYNC: CONTINUOUS DRIFT CORRECTION
+// ==========================================
+
+function handleLiveStatusUpdate(data) {
+    // Only listener nodes synchronize to the host's periodic status updates
+    if (!state.isListenerNode || !state.isPlaying || state.isSyncing) return;
+    
+    const payload = data.payload;
+    if (!payload || !payload.is_playing) return;
+    
+    const currentTrack = state.tracks[state.currentIndex];
+    if (!currentTrack || currentTrack.file_unique_id !== payload.file_unique_id) return;
+    
+    const localNow = Date.now() / 1000;
+    const serverNow = data.server_now || (localNow + (state.serverTimeOffset || 0));
+    const elapsed = Math.max(0, (localNow + (state.serverTimeOffset || 0)) - serverNow);
+    const targetHostTime = payload.current_time + elapsed;
+    
+    const drift = targetHostTime - engines.active.currentTime;
+    const absDrift = Math.abs(drift);
+    
+    // 1. Under 40ms: Imperceptible to human ear (Spotify Jam threshold)
+    if (absDrift <= 0.04) return;
+    
+    // 2. Micro-drift (40ms - 250ms): Speed-to-Sync (seamless ±3% playback rate nudge)
+    if (absDrift <= 0.25) {
+        if (driftTimer) clearTimeout(driftTimer);
+        engines.active.playbackRate = drift > 0 ? 1.03 : 0.97;
+        driftTimer = setTimeout(() => {
+            try { engines.active.playbackRate = 1.0; } catch(e) {}
+        }, 1200);
+    } 
+    // 3. Significant desync (> 250ms): Seek-to-Sync (hard realign)
+    else if (absDrift > 0.25 && absDrift < 15) {
+        console.log(`⏱ [Periodic Sync] Realigning drift: ${engines.active.currentTime.toFixed(2)}s -> ${targetHostTime.toFixed(2)}s (diff: ${(drift * 1000).toFixed(0)}ms)`);
+        engines.active.currentTime = targetHostTime;
+        try { engines.active.playbackRate = 1.0; } catch(e) {}
     }
 }
 
