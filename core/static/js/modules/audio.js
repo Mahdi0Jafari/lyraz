@@ -35,6 +35,42 @@ function initEngineGain(audio) {
     }
 }
 
+export function configureAudioSession() {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+        try {
+            navigator.audioSession.type = 'playback';
+            console.log("🔊 [AudioSession API] Configured to 'playback' (bypasses iOS mute switch).");
+        } catch (e) {
+            console.warn("[AudioSession API] Error setting playback mode:", e);
+        }
+    }
+}
+
+export function primeAudioEngines() {
+    configureAudioSession();
+    const ctx = getAudioContext();
+    if (ctx) {
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+        try {
+            // ایجاد یک بافر یک نمونه‌ای بدون صدا برای باز کردن قفل سخت‌افزار در iOS Safari
+            const silentBuf = ctx.createBuffer(1, 1, 22050);
+            const src = ctx.createBufferSource();
+            src.buffer = silentBuf;
+            src.connect(ctx.destination);
+            src.start(0);
+        } catch (e) {
+            console.warn("Silent buffer priming error:", e);
+        }
+    }
+    [engines.active, engines.buffer].forEach(audio => {
+        try {
+            audio.load();
+        } catch (e) {}
+    });
+}
+
 export function getAudioContext() {
     if (!audioCtx && typeof window !== 'undefined') {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -50,6 +86,7 @@ export function getAudioContext() {
             }
         }
     }
+    configureAudioSession();
     if (audioCtx && audioCtx.state === 'suspended') {
         audioCtx.resume().catch(() => {});
     }

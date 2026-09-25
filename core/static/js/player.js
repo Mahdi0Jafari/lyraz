@@ -5,7 +5,8 @@
 import { state, CONFIG } from './modules/state.js';
 import { 
     engines, swapEngines, setupAudioListeners, 
-    crossfadeEngines, getBufferedAhead, getAudioContext 
+    crossfadeEngines, getBufferedAhead, getAudioContext,
+    primeAudioEngines, configureAudioSession
 } from './modules/audio.js';
 import * as UI from './modules/ui.js';
 import * as Network from './modules/network.js';
@@ -71,9 +72,24 @@ async function recoverHubState() {
         onCommand: processRemoteCommand
     });
 
+    const isTouchOrMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
+    if (isTouchOrMobile) {
+        state.isListenerNode = true;
+    }
+
     if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
         const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
-        
+        const track = idx !== -1 ? state.tracks[idx] : null;
+
+        if (isTouchOrMobile && liveState.is_playing) {
+            showJoinModal(track, liveState);
+            if (idx !== -1) {
+                state.currentIndex = idx;
+                if (track) UI.updatePlayerInfo(track);
+            }
+            return;
+        }
+
         if (idx !== -1) {
             console.log(`⏱ Syncing to track index ${idx} at second ${liveState.seek_position}`);
             state.isSyncing = true; 
@@ -89,6 +105,9 @@ async function recoverHubState() {
         }
     } else {
         if (state.tracks.length > 0) loadTrack(0, false);
+        if (isTouchOrMobile) {
+            showJoinModal(null, null);
+        }
     }
 }
 
@@ -106,13 +125,17 @@ function unlockPlayer(admin) {
 // ==========================================
 
 async function syncTracks(autoStart = false) {
+    const prevCount = state.tracks.length;
     const newTracks = await Network.fetchQueue();
     state.tracks = newTracks || [];
     
     UI.renderPlaylist(state.tracks, loadTrack);
     
     if (state.tracks.length > 0) {
-        if (state.tracks.length === newTracks.length && autoStart) loadTrack(0, true);
+        // 🔥 If queue was previously empty, start playing the first added track!
+        if ((prevCount === 0 || autoStart) && !state.isPlaying) {
+            loadTrack(0, true);
+        }
         if (state.isPlaying) preloadNextTrack();
     }
 }
@@ -294,18 +317,52 @@ function executeCommand(cmd) {
     
     switch(cmd.action) {
         case 'play': 
-            if(!state.isPlaying) togglePlay(); 
-            // اگر در حال پخش است، فقط سینک زمان انجام شود
-            else if(pendingSyncCommand) {
-                applyPreciseSync(pendingSyncCommand);
-                pendingSyncCommand = null;
-            }
+            const ctx = getAudioContext();
+            if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+            engines.active.play().then(() => {
+                state.isPlaying = true;
+                UI.updatePlayBtn(true);
+                requestWakeLock();
+                if(pendingSyncCommand) {
+                    applyPreciseSync(pendingSyncCommand);
+                    pendingSyncCommand = null;
+                }
+                reportStatus(true);
+            }).catch(e => {
+                console.warn("Play blocked:", e);
+                showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
+            });
             break;
         case 'pause': 
-            if(state.isPlaying) togglePlay(); 
+            engines.active.pause();
+            engines.buffer.pause();
+            state.isPlaying = false;
+            UI.updatePlayBtn(false);
+            if (driftTimer) clearTimeout(driftTimer);
+            try { engines.active.playbackRate = 1.0; } catch(e) {}
+            reportStatus(true);
             break;
         case 'toggle': 
-            togglePlay(); 
+            if (state.isPlaying) {
+                engines.active.pause();
+                engines.buffer.pause();
+                state.isPlaying = false;
+                UI.updatePlayBtn(false);
+                if (driftTimer) clearTimeout(driftTimer);
+                try { engines.active.playbackRate = 1.0; } catch(e) {}
+                reportStatus(true);
+            } else {
+                const c = getAudioContext();
+                if (c && c.state === 'suspended') c.resume().catch(() => {});
+                engines.active.play().then(() => {
+                    state.isPlaying = true;
+                    UI.updatePlayBtn(true);
+                    requestWakeLock();
+                    reportStatus(true);
+                }).catch(() => {
+                    showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
+                });
+            }
             break;
         case 'next': 
             nextTrack(); 
@@ -390,6 +447,9 @@ function onTimeUpdate() {
 function reportStatus(force = false) {
     if(!state.tracks[state.currentIndex] || state.isSyncing) return;
     
+    // 🛡️ Listener Isolation: Don't let an unstarted or paused mobile listener device overwrite the host room playback
+    if (!state.isPlaying && !force && state.isListenerNode) return;
+
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
@@ -519,6 +579,66 @@ const unlockOnGesture = () => {
 document.addEventListener('pointerdown', unlockOnGesture, { once: true });
 document.addEventListener('keydown', unlockOnGesture, { once: true });
 
+// ==========================================
+// 🎧 MOBILE JOIN MODAL HANDLERS
+// ==========================================
+
+function showJoinModal(track, liveState) {
+    const modal = document.getElementById('mobile-join-modal');
+    const box = document.getElementById('mobile-join-box');
+    if (!modal) return;
+
+    const playState = document.getElementById('join-playing-state');
+    const idleState = document.getElementById('join-idle-state');
+    const titleEl = document.getElementById('join-track-title');
+    const artistEl = document.getElementById('join-track-artist');
+
+    if (track && liveState && liveState.is_playing) {
+        if (titleEl) titleEl.innerText = track.title || 'Unknown Track';
+        if (artistEl) artistEl.innerText = track.performer || 'Unknown Artist';
+        playState?.classList.remove('hidden');
+        idleState?.classList.add('hidden');
+    } else {
+        playState?.classList.add('hidden');
+        idleState?.classList.remove('hidden');
+    }
+
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    box?.classList.remove('translate-y-8', 'scale-95');
+}
+
+async function joinLiveHubNow() {
+    primeAudioEngines();
+    dismissJoinModal();
+
+    state.isSyncing = true;
+    const liveState = await Network.fetchHubState();
+    if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
+        const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
+        if (idx !== -1) {
+            pendingSyncCommand = {
+                base_seek: liveState.seek_position,
+                server_now: liveState.server_time
+            };
+            loadTrack(idx, true, liveState.seek_position);
+        }
+    } else if (state.tracks.length > 0) {
+        loadTrack(0, true);
+    }
+    setTimeout(() => { state.isSyncing = false; }, 1000);
+}
+
+function dismissJoinModal() {
+    const modal = document.getElementById('mobile-join-modal');
+    const box = document.getElementById('mobile-join-box');
+    if (!modal) return;
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    box?.classList.add('translate-y-8', 'scale-95');
+}
+
+window.joinLiveHubNow = joinLiveHubNow;
+window.dismissJoinModal = dismissJoinModal;
+window.showJoinModal = showJoinModal;
 window.playPause = togglePlay;
 window.nextTrack = nextTrack;
 window.prevTrack = () => loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);

@@ -806,8 +806,9 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 d_name = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
                 hub_admin_id = res['admin_id'] if res else None
 
-            base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
-            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
+            base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+            hub_url = f"{base_url}/live/{session_token}"
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=hub_url)]])
 
             if track_db_id:
                 internal_user_id = get_user_id(user_id)
@@ -826,7 +827,8 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 })
         
         # ۶. ارسال فایل صوتی به چت درخواست‌کننده با قابلیت خودترمیمی (در صورت وجود کاربر)
-        user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
+        hub_link = f"[{d_name}]({hub_url})" if session_token else ""
+        user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: {hub_link}" if session_token else "")
         if not is_batch and chat_id:
             try:
                 # نمایش وضعیت زنده تلگرام برای کاربر (Uploading Audio Status)
@@ -1095,8 +1097,9 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                             return d_n
 
                         d_name = await asyncio.to_thread(update_hub)
-                        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "http://localhost:5000"
-                        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{session_token}")]])
+                        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+                        hub_url = f"{base_url}/live/{session_token}"
+                        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=hub_url)]])
 
                         notify_web_bridge({
                             'type': 'new_track', 'title': title, 'performer': artist,
@@ -1105,7 +1108,8 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                             'sync_timestamp': time.time()
                         })
 
-                    user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: *{d_name}*" if session_token else "")
+                    hub_link = f"[{d_name}]({hub_url})" if session_token else ""
+                    user_caption = f"🎧 *{title}*\n👤 {artist}" + (f"\n📡 Added to: {hub_link}" if session_token else "")
                     ready_to_deliver[idx] = (cached, title, artist, user_caption, reply_markup)
                     delivery_signal.set()
 

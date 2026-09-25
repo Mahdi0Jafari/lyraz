@@ -604,10 +604,11 @@ async def render_queue_info(user_id, token):
         session = get_session_info(token)
         is_admin = (session['admin_id'] == internal_uid) if session else False
         d_name = (session['device_name'] or f"Hub-{token[:4]}") if session else f"Hub-{token[:4]}"
+        is_playing = (session['play_status'] == 'playing') if session and session.get('play_status') else False
         
         conn = get_db_connection()
         if not conn:
-            return [], is_admin, d_name
+            return [], is_admin, d_name, is_playing
         try:
             rows = conn.execute("""
                 SELECT pi.id as item_id, t.title, t.performer, pi.is_played 
@@ -616,12 +617,12 @@ async def render_queue_info(user_id, token):
                 WHERE pi.session_token = ?
                 ORDER BY pi.id ASC
             """, (token,)).fetchall()
-            return [dict(r) for r in rows], is_admin, d_name
+            return [dict(r) for r in rows], is_admin, d_name, is_playing
         except Exception as e:
             logger.error(f"Error fetching queue items from DB: {e}")
-            return [], is_admin, d_name
+            return [], is_admin, d_name, is_playing
 
-    items, is_admin, d_name = await asyncio.to_thread(get_data)
+    items, is_admin, d_name, is_playing = await asyncio.to_thread(get_data)
 
     def safe_text(val, fallback="Unknown"):
         if not val:
@@ -640,7 +641,7 @@ async def render_queue_info(user_id, token):
             f"📭 <i>The queue is currently empty.</i>\n\n"
             f"💡 <i>Tip: Send any song name, Spotify, or YouTube link to start playing live!</i>"
         )
-        markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0, has_active=False)
+        markup = get_queue_keyboard(token, is_admin=is_admin, total_items=0, has_active=False, is_playing=is_playing)
         return text, markup
 
     text = f"📋 <b>Live Queue: {safe_hub}</b> ({len(items)} tracks)\n"
@@ -678,7 +679,7 @@ async def render_queue_info(user_id, token):
     if not active_items:
         text += "\n💡 <i>Send any song or tap <b>Search Music</b> below to queue more!</i>"
 
-    markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items), has_active=has_active)
+    markup = get_queue_keyboard(token, is_admin=is_admin, total_items=len(items), has_active=has_active, is_playing=is_playing)
     return text, markup
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -708,6 +709,29 @@ async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Failed to send queue message with HTML: {e}")
         plain = re.sub(r'<[^>]+>', '', q_text)
         await update.message.reply_text(plain, reply_markup=q_markup)
+
+async def leave_hub_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /leave, /leave_hub, and /disconnect commands"""
+    user = update.effective_user
+    if not user: return
+    current_token = await asyncio.to_thread(get_user_current_session, user.id)
+    if not current_token:
+        await update.message.reply_text(
+            "ℹ️ <b>You are not currently connected to any Hub.</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+    session = await asyncio.to_thread(get_session_info, current_token)
+    d_name = (session['device_name'] or f"Hub-{current_token[:4]}") if session else "Hub"
+    await asyncio.to_thread(update_user_session, user.id, None)
+    await update.message.reply_text(
+        f"🚪 <b>Disconnected from {html.escape(d_name)}!</b>\n\n"
+        "Your music searches and requests will no longer be routed to this Hub.\n"
+        "To connect to another Hub, scan its QR code or tap <b>📺 My Hubs</b>.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_menu_keyboard()
+    )
 
 # ==========================================
 # 💬 TEXT & NAVIGATION HANDLER
@@ -1114,6 +1138,70 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_text(plain, reply_markup=q_markup)
             except Exception: pass
+
+    elif data.startswith("q_toggle_"):
+        target_token = data.replace("q_toggle_", "")
+        def toggle_playback_db():
+            internal_uid = get_user_id(user.id)
+            session = get_session_info(target_token)
+            is_admin = (session['admin_id'] == internal_uid) if session else False
+            if not is_admin:
+                return False, None
+            conn = get_db_connection()
+            if not conn:
+                return False, None
+            try:
+                cur_status = session.get('play_status', 'playing') if session else 'playing'
+                new_status = 'paused' if cur_status == 'playing' else 'playing'
+                with conn:
+                    conn.execute("UPDATE sessions SET play_status = ?, sync_timestamp = ? WHERE token = ?", (new_status, time.time(), target_token))
+                return True, new_status
+            except Exception as e:
+                logger.error(f"Error toggling playback in DB: {e}")
+                return False, None
+
+        allowed, new_status = await asyncio.to_thread(toggle_playback_db)
+        if not allowed or not new_status:
+            await query.answer("⛔️ Only Hub Admin can control playback.", show_alert=True)
+            return
+
+        cmd_action = 'pause' if new_status == 'paused' else 'play'
+        await notify_web_container({
+            'type': 'command',
+            'action': cmd_action,
+            'session_token': target_token,
+            'server_now': time.time()
+        })
+        msg_toast = "⏸ Playback Paused" if new_status == 'paused' else "▶️ Playback Resumed"
+        await query.answer(msg_toast)
+        q_text, q_markup = await render_queue_info(user.id, target_token)
+        try:
+            await query.edit_message_text(q_text, parse_mode=ParseMode.HTML, reply_markup=q_markup)
+        except Exception:
+            plain = re.sub(r'<[^>]+>', '', q_text)
+            try:
+                await query.edit_message_text(plain, reply_markup=q_markup)
+            except Exception: pass
+
+    elif data.startswith("leave_"):
+        target_token = data.replace("leave_", "")
+        await asyncio.to_thread(update_user_session, user.id, None)
+        await query.answer("🚪 Disconnected from Hub.", show_alert=True)
+        try:
+            await query.edit_message_text(
+                "🚪 <b>Disconnected from Hub</b>\n\n"
+                "Your bot searches and requests will no longer be sent to this Hub.\n"
+                "To join another Hub, scan its QR code or tap <b>📺 My Hubs</b> below.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📺 My Hubs", callback_data="open_my_hubs")
+                ]])
+            )
+        except Exception: pass
+
+    elif data == "open_my_hubs":
+        await query.answer()
+        await list_devices(update, context)
 
     elif data == "cancel_search":
         try: await query.message.delete()

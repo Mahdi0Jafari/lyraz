@@ -90,10 +90,11 @@ def get_smart_buttons(token, is_current, is_admin=True):
         else:
             buttons.append([InlineKeyboardButton("🎛 Open Remote UI", url=remote_url)])
             
-        # Row 3: Select / Active Indicator & Rename
+        # Row 3: Select / Active Indicator, Rename, & Leave
         row3 = []
         if is_current:
             row3.append(InlineKeyboardButton("✅ Active Hub", callback_data="noop"))
+            row3.append(InlineKeyboardButton("🚪 Leave", callback_data=f"leave_{token}"))
         else:
             row3.append(InlineKeyboardButton("🎯 Activate", callback_data=f"select_{token}"))
         
@@ -101,9 +102,12 @@ def get_smart_buttons(token, is_current, is_admin=True):
         buttons.append(row3)
         
     else:
-        # Guest View: Can only set it as their active routing destination
+        # Guest View: Can only set it as their active routing destination or leave
         if is_current:
-            buttons.append([InlineKeyboardButton("✅ Active Hub (Guest)", callback_data="noop")])
+            buttons.append([
+                InlineKeyboardButton("✅ Active Hub (Guest)", callback_data="noop"),
+                InlineKeyboardButton("🚪 Leave", callback_data=f"leave_{token}")
+            ])
         else:
             buttons.append([InlineKeyboardButton("🎯 Switch to this Hub", callback_data=f"select_{token}")])
         
@@ -117,22 +121,31 @@ def get_search_buttons():
         InlineKeyboardButton("🔎 Search Another Song", switch_inline_query_current_chat="")
     ]])
 
-def get_queue_keyboard(token, is_admin=True, total_items=0, has_active=True):
+def get_queue_keyboard(token, is_admin=True, total_items=0, has_active=True, is_playing=True):
     """
     Interactive inline buttons for queue management directly within Telegram.
-    Intelligently displays Skip only when active tracks exist, and offers Search when queue is finished.
+    Features direct Play/Pause Master Control, Skip, Clear, and Hub Leaving.
     """
     buttons = []
     
     if has_active:
-        row1 = []
         if is_admin:
-            row1.append(InlineKeyboardButton("⏭ Skip", callback_data=f"q_skip_{token}"))
-            row1.append(InlineKeyboardButton("🗑 Clear", callback_data=f"q_clear_{token}"))
-        row1.append(InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}"))
-        buttons.append(row1)
+            toggle_label = "⏸ Pause" if is_playing else "▶️ Play"
+            row1 = [
+                InlineKeyboardButton(toggle_label, callback_data=f"q_toggle_{token}"),
+                InlineKeyboardButton("⏭ Skip", callback_data=f"q_skip_{token}"),
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}")
+            ]
+            buttons.append(row1)
+            buttons.append([InlineKeyboardButton("🗑 Clear Queue", callback_data=f"q_clear_{token}")])
+        else:
+            row1 = [
+                InlineKeyboardButton("🔍 Search Music", switch_inline_query_current_chat=""),
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}")
+            ]
+            buttons.append(row1)
     else:
-        # وقتی تمام آهنگ‌ها تمام شده یا صف خالی است، دکمه Skip بی‌معنی است
+        # وقتی تمام آهنگ‌ها تمام شده یا صف خالی است
         row1 = [
             InlineKeyboardButton("🔍 Search Music", switch_inline_query_current_chat=""),
             InlineKeyboardButton("🔄 Refresh", callback_data=f"q_refresh_{token}")
@@ -145,13 +158,23 @@ def get_queue_keyboard(token, is_admin=True, total_items=0, has_active=True):
     remote_url = f"{base_url}/remote/{token}"
     if is_admin:
         if remote_url.startswith('https://'):
-            buttons.append([InlineKeyboardButton("🎛 Open Full Remote (WebApp)", web_app=WebAppInfo(url=remote_url))])
+            buttons.append([
+                InlineKeyboardButton("🎛 Open Full Remote (WebApp)", web_app=WebAppInfo(url=remote_url)),
+                InlineKeyboardButton("🚪 Leave Hub", callback_data=f"leave_{token}")
+            ])
         elif remote_url.startswith('http://') and not any(h in remote_url for h in ['localhost', '127.0.0.1']):
-            buttons.append([InlineKeyboardButton("🎛 Open Full Remote", url=remote_url)])
+            buttons.append([
+                InlineKeyboardButton("🎛 Open Full Remote", url=remote_url),
+                InlineKeyboardButton("🚪 Leave Hub", callback_data=f"leave_{token}")
+            ])
+        else:
+            buttons.append([InlineKeyboardButton("🚪 Leave Hub", callback_data=f"leave_{token}")])
     else:
         live_url = f"{base_url}/live/{token}"
+        row_extra = [InlineKeyboardButton("🚪 Leave Hub", callback_data=f"leave_{token}")]
         if live_url.startswith('https://') or (live_url.startswith('http://') and not any(h in live_url for h in ['localhost', '127.0.0.1'])):
-            buttons.append([InlineKeyboardButton("🎧 Open Live Player", url=live_url)])
+            row_extra.insert(0, InlineKeyboardButton("🎧 Open Live Player", url=live_url))
+        buttons.append(row_extra)
 
     return InlineKeyboardMarkup(buttons)
 

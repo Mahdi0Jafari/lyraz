@@ -193,8 +193,77 @@
 </head>
 <body ondblclick="toggleFullScreen()" class="bg-dark text-white h-[100dvh] w-full overflow-hidden relative font-sans flex items-center justify-center select-none">
 
-    <!-- 🔊 Floating Audio Unlock Banner (for Mobile Browser Autoplay Policies) -->
-    <div id="audio-unlock-banner" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary/25 backdrop-blur-xl border border-primary/40 text-white px-5 py-2.5 rounded-full shadow-[0_10px_35px_rgba(29,185,84,0.35)] flex items-center gap-2.5 cursor-pointer animate-pulse-slow hidden transition-all" onclick="unlockAudio()">
+    <!-- 🎧 Modern Glassmorphic Join Live Hub Modal (Mobile & New Joiner Experience) -->
+    <div id="mobile-join-modal" class="fixed inset-0 z-[120] bg-black/85 backdrop-blur-2xl flex flex-col justify-end sm:justify-center items-center p-4 sm:p-6 transition-all duration-500 opacity-0 pointer-events-none">
+        <div class="relative w-full max-w-md bg-gradient-to-b from-white/[0.14] to-white/[0.04] border border-white/20 rounded-[2.5rem] p-6 sm:p-8 shadow-[0_30px_70px_rgba(0,0,0,0.85)] backdrop-blur-3xl flex flex-col items-center text-center transform transition-all duration-500 translate-y-8 sm:translate-y-0 scale-95" id="mobile-join-box">
+            
+            <!-- Ambient Emerald Glow -->
+            <div class="absolute -top-12 left-1/2 -translate-x-1/2 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Hub Badge -->
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-mono font-semibold tracking-wide text-gray-200 mb-6 shadow-inner">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span id="join-hub-name">{{ session.device_name if session and session.device_name else 'Lyraz Live Hub' }}</span>
+            </div>
+
+            <!-- 3D Sound Sphere Icon -->
+            <div class="relative size-24 mb-5 flex items-center justify-center">
+                <div class="absolute inset-0 rounded-full bg-primary/25 blur-xl animate-pulse"></div>
+                <img src="/static/images/brand/lyraz_sound_orb.webp" alt="Lyraz Orb" class="size-20 object-contain drop-shadow-[0_15px_30px_rgba(29,185,84,0.45)] hover:scale-105 transition-transform duration-500">
+            </div>
+
+            <!-- Active Song Playing State -->
+            <div id="join-playing-state" class="w-full flex flex-col items-center">
+                <span class="text-[11px] uppercase font-mono tracking-widest text-emerald-400 font-bold mb-1.5 flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    NOW PLAYING ON THIS HUB
+                </span>
+                <h3 id="join-track-title" class="text-xl sm:text-2xl font-display font-extrabold text-white truncate max-w-xs mb-1">
+                    Connecting to Sound Grid...
+                </h3>
+                <p id="join-track-artist" class="text-sm text-gray-300 font-medium truncate max-w-xs mb-6">
+                    Lyraz Studio Master
+                </p>
+
+                <p class="text-xs text-gray-300/80 leading-relaxed mb-6 max-w-xs font-sans">
+                    Tap below to unlock audio and listen in real-time sync with all room devices.
+                </p>
+
+                <!-- Join & Sync Action Button -->
+                <button id="btn-join-sync" onclick="window.joinLiveHubNow && window.joinLiveHubNow()" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-primary to-lime-400 hover:brightness-110 active:scale-95 text-black font-extrabold text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-[0_10px_35px_rgba(29,185,84,0.4)] transition-all">
+                    <i class="ri-headphone-fill text-xl"></i>
+                    <span>JOIN &amp; LISTEN LIVE</span>
+                </button>
+            </div>
+
+            <!-- Idle State (When no song is playing) -->
+            <div id="join-idle-state" class="w-full flex flex-col items-center hidden">
+                <h3 class="text-xl font-display font-bold text-white mb-2">Hub Ready &amp; Standing By</h3>
+                <p class="text-xs text-gray-400 mb-6 max-w-xs leading-relaxed font-sans">
+                    No tracks currently playing. Send Spotify tracks or YouTube links to start live synchronized streaming.
+                </p>
+                <button onclick="window.joinLiveHubNow && window.joinLiveHubNow()" class="w-full py-3.5 px-6 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all border border-white/10 mb-3">
+                    <i class="ri-login-circle-line text-lg"></i>
+                    <span>CONNECT &amp; ENABLE AUDIO</span>
+                </button>
+                <a href="https://t.me/{{ bot_username if bot_username else 'LyrazBot' }}" target="_blank" class="text-xs text-emerald-400 hover:underline flex items-center gap-1 font-mono">
+                    <i class="ri-telegram-fill"></i>
+                    <span>Queue Tracks via Telegram</span>
+                </a>
+            </div>
+
+            <button onclick="window.dismissJoinModal && window.dismissJoinModal()" class="mt-4 text-[11px] text-gray-500 hover:text-gray-300 font-mono transition">
+                Visualizer Only (Silent Mode)
+            </button>
+
+        </div>
+    </div>
+
+    <!-- 🔊 Floating Audio Unlock Banner (Fallback for unexpected browser blocks) -->
+    <div id="audio-unlock-banner" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary/25 backdrop-blur-xl border border-primary/40 text-white px-5 py-2.5 rounded-full shadow-[0_10px_35px_rgba(29,185,84,0.35)] flex items-center gap-2.5 cursor-pointer animate-pulse-slow hidden transition-all" onclick="window.unlockAudio && window.unlockAudio()">
         <span class="relative flex h-2 w-2">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
             <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
@@ -206,6 +275,7 @@
     <script>
         window.INJECTED_TOKEN = "{{ token|default('', true) }}";
         window.HUB_STATUS = "{{ session.status if session else 'waiting' }}";
+        window.HUB_NAME = "{{ session.device_name if session and session.device_name else 'Lyraz Hub' }}";
     </script>
 
     <div class="absolute inset-0 z-0 pointer-events-none">

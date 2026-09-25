@@ -17,7 +17,7 @@ from core.models import init_db
 from .handlers import (
     start, list_devices, handle_callbacks, handle_text, 
     handle_audio, inline_music_search, youtube_dl, handle_my_chat_member,
-    sync_vault_cmd, show_menu, handle_queue_cmd, vault_repair_cmd
+    sync_vault_cmd, show_menu, handle_queue_cmd, vault_repair_cmd, leave_hub_cmd
 )
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,8 @@ async def on_post_init(application):
             BotCommand("menu", "📌 Main Navigation Menu"),
             BotCommand("start", "🚀 Start / Connect to Hub"),
             BotCommand("queue", "📋 Playback Queue & Controls"),
-            BotCommand("devices", "📺 My Connected Live Hubs")
+            BotCommand("devices", "📺 My Connected Live Hubs"),
+            BotCommand("leave", "🚪 Disconnect from Active Hub")
         ]
         await application.bot.set_my_commands(commands)
         logger.info("✅ Telegram Bot Commands registered successfully.")
@@ -65,6 +66,7 @@ def run_bot_service():
             app.add_handler(CommandHandler("menu", show_menu))
             app.add_handler(CommandHandler("queue", handle_queue_cmd))
             app.add_handler(CommandHandler("devices", list_devices))
+            app.add_handler(CommandHandler(["leave", "leave_hub", "disconnect"], leave_hub_cmd))
             app.add_handler(CommandHandler("dl", youtube_dl))
             app.add_handler(CommandHandler("sync", sync_vault_cmd))
             app.add_handler(CommandHandler("repair", vault_repair_cmd))

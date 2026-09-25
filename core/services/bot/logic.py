@@ -329,11 +329,12 @@ async def process_track_and_queue(update, context, track_meta, is_upload=False, 
         
         # Deliver File with Hub Context
         d_name = session['device_name'] or f"Hub-{target_token[:4]}"
-        caption = f"🎧 *{track_meta['title']}*\n👤 {track_meta['performer']}\n📡 Added to: *{d_name}*"
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+        hub_url = f"{base_url}/live/{target_token}"
+        caption = f"🎧 *{track_meta['title']}*\n👤 {track_meta['performer']}\n📡 Added to: [{d_name}]({hub_url})"
         
-        base_url = Config.BASE_URL.rstrip('/') if Config.BASE_URL else "http://localhost:5000"
         reply_markup = InlineKeyboardMarkup([[
-            InlineKeyboardButton("▶️ Open Player", url=f"{base_url}/live/{target_token}")
+            InlineKeyboardButton("▶️ Open Player", url=hub_url)
         ]])
 
         if track_meta.get('youtube_id'):
@@ -380,8 +381,20 @@ async def handle_broadcast(context, user, file_id, meta, session):
     
     if target_channel_id:
         final_tmpl = channel_tmpl if channel_tmpl else (settings['default_caption'] if settings else "{title} - {artist}")
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+        d_name = (session.get('device_name') or f"Hub-{session.get('token', '')[:4]}") if session else "Lyraz Hub"
+        s_token = session.get('token') if session else ""
+        hub_url = f"{base_url}/live/{s_token}" if s_token else base_url
+        hub_link = f"[{d_name}]({hub_url})"
+
         caption = final_tmpl.replace('{title}', meta['title']).replace('{artist}', meta['performer']).replace('{sender}', user.first_name)
+        if '{hub}' in caption:
+            caption = caption.replace('{hub}', hub_link)
+        elif '{hub_link}' in caption:
+            caption = caption.replace('{hub_link}', hub_link)
+        elif session and 'Added to:' not in caption:
+            caption += f"\n📡 Added to: {hub_link}"
         try:
-            await context.bot.send_audio(chat_id=target_channel_id, audio=file_id, caption=caption)
+            await context.bot.send_audio(chat_id=target_channel_id, audio=file_id, caption=caption, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             logger.error(f"Channel Broadcast Failed: {e}")
