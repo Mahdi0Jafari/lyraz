@@ -2,14 +2,14 @@
  * Lyraz Player - Main Controller (Live Hubs V4.4)
  * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
-import { state, CONFIG } from './modules/state.js';
+import { state, CONFIG } from './modules/state.js?v=4.6';
 import { 
     engines, swapEngines, setupAudioListeners, 
     crossfadeEngines, getBufferedAhead, getAudioContext,
     primeAudioEngines, configureAudioSession
-} from './modules/audio.js';
-import * as UI from './modules/ui.js';
-import * as Network from './modules/network.js';
+} from './modules/audio.js?v=4.6';
+import * as UI from './modules/ui.js?v=4.6';
+import * as Network from './modules/network.js?v=4.6';
 
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;

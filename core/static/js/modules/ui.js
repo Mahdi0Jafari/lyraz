@@ -1,5 +1,5 @@
 // modules/ui.js
-import { state } from './state.js';
+import { state } from './state.js?v=4.6';
 
 // کش کردن المنت‌ها
 export const elements = {

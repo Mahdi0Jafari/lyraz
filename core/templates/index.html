@@ -131,7 +131,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4.6">
     <style>
         #qrcode, #mini-qrcode {
             display: flex !important;
@@ -529,8 +533,8 @@
         </section>
     </footer>
 
-    <script src="{{ url_for('static', filename='js/lyrics.js') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='js/player.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/lyrics.js') }}?v=4.6"></script>
+    <script type="module" src="{{ url_for('static', filename='js/player.js') }}?v=4.6"></script>
     
     <script>
         if(typeof isLyricsViewActive !== 'undefined') { isLyricsViewActive = true; }
