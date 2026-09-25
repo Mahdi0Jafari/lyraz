@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupUIControls();
     setupNetworkRecovery();
+    setupMediaSession();
     UI.updateControlButtons();
 
     if (state.sessionToken) {
@@ -269,19 +270,96 @@ function nextTrack() {
 // 🎮 CONTROLS, COMMANDS & NTP SYNC
 // ==========================================
 
+// ==========================================
+// 🛡️ SMART BACKGROUND GRACE WINDOW (MOBILE SCREEN OFF)
+// ==========================================
+let backgroundGraceTimer = null;
+let isGracePaused = false;
+
+function handleRemotePause() {
+    state.isPlaying = false;
+    UI.updatePlayBtn(false);
+    if (driftTimer) clearTimeout(driftTimer);
+    try { engines.active.playbackRate = 1.0; } catch(e) {}
+    
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+    }
+
+    // Keep audio session warm in zero-volume state for a 90-second Grace Window on screen off
+    isGracePaused = true;
+    if (engines.active._gainNode) {
+        engines.active._gainNode.gain.value = 0.0;
+    } else {
+        engines.active.volume = 0.0;
+    }
+
+    if (backgroundGraceTimer) clearTimeout(backgroundGraceTimer);
+    backgroundGraceTimer = setTimeout(() => {
+        if (isGracePaused) {
+            console.log("🔋 [Grace Window] 90s timeout. Releasing audio engine to save battery.");
+            engines.active.pause();
+            engines.buffer.pause();
+            if (engines.active._gainNode) engines.active._gainNode.gain.value = 1.0;
+            engines.active.volume = 1.0;
+            isGracePaused = false;
+        }
+    }, 90000);
+
+    reportStatus(true);
+}
+
+function handleRemoteResume() {
+    if (backgroundGraceTimer) {
+        clearTimeout(backgroundGraceTimer);
+        backgroundGraceTimer = null;
+    }
+
+    state.isPlaying = true;
+    UI.updatePlayBtn(true);
+    requestWakeLock();
+
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+    }
+
+    if (isGracePaused) {
+        isGracePaused = false;
+        // Audio stream was warm; seamlessly restore gain
+        if (engines.active._gainNode) {
+            engines.active._gainNode.gain.value = 1.0;
+        } else {
+            engines.active.volume = 1.0;
+        }
+        if (pendingSyncCommand) {
+            applyPreciseSync(pendingSyncCommand);
+            pendingSyncCommand = null;
+        }
+        reportStatus(true);
+    } else {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+        engines.active.play().then(() => {
+            if (pendingSyncCommand) {
+                applyPreciseSync(pendingSyncCommand);
+                pendingSyncCommand = null;
+            }
+            reportStatus(true);
+        }).catch(e => {
+            console.warn("Play blocked:", e);
+            if (!hasUserJoined) {
+                showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
+            }
+        });
+    }
+}
+
 function togglePlay() {
     if (state.tracks.length === 0) return;
     if (state.isPlaying) {
-        engines.active.pause();
+        handleRemotePause();
     } else {
-        const audioCtx = getAudioContext();
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-        engines.active.play().then(() => {
-            requestWakeLock();
-        }).catch(e => {
-            console.warn("Play blocked:", e);
-            showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
-        });
+        handleRemoteResume();
     }
 }
 
@@ -325,51 +403,16 @@ function executeCommand(cmd) {
     
     switch(cmd.action) {
         case 'play': 
-            const ctx = getAudioContext();
-            if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-            engines.active.play().then(() => {
-                state.isPlaying = true;
-                UI.updatePlayBtn(true);
-                requestWakeLock();
-                if(pendingSyncCommand) {
-                    applyPreciseSync(pendingSyncCommand);
-                    pendingSyncCommand = null;
-                }
-                reportStatus(true);
-            }).catch(e => {
-                console.warn("Play blocked:", e);
-                showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
-            });
+            handleRemoteResume();
             break;
         case 'pause': 
-            engines.active.pause();
-            engines.buffer.pause();
-            state.isPlaying = false;
-            UI.updatePlayBtn(false);
-            if (driftTimer) clearTimeout(driftTimer);
-            try { engines.active.playbackRate = 1.0; } catch(e) {}
-            reportStatus(true);
+            handleRemotePause();
             break;
         case 'toggle': 
             if (state.isPlaying) {
-                engines.active.pause();
-                engines.buffer.pause();
-                state.isPlaying = false;
-                UI.updatePlayBtn(false);
-                if (driftTimer) clearTimeout(driftTimer);
-                try { engines.active.playbackRate = 1.0; } catch(e) {}
-                reportStatus(true);
+                handleRemotePause();
             } else {
-                const c = getAudioContext();
-                if (c && c.state === 'suspended') c.resume().catch(() => {});
-                engines.active.play().then(() => {
-                    state.isPlaying = true;
-                    UI.updatePlayBtn(true);
-                    requestWakeLock();
-                    reportStatus(true);
-                }).catch(() => {
-                    showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
-                });
+                handleRemoteResume();
             }
             break;
         case 'next': 
@@ -602,9 +645,43 @@ async function requestWakeLock() {
     } catch (e) {}
 }
 
+function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+        navigator.mediaSession.setActionHandler('play', () => togglePlay());
+        navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+            loadTrack((state.currentIndex - 1 + state.tracks.length) % state.tracks.length);
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+            if (details.seekTime !== undefined) seekToTime(details.seekTime);
+        });
+    } catch (e) {
+        console.warn("[MediaSession] Error setting handlers:", e);
+    }
+}
+
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.isPlaying) {
+    if (document.visibilityState === 'visible') {
         requestWakeLock();
+        if (state.sessionToken) {
+            Network.fetchHubState().then(liveState => {
+                if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
+                    const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
+                    if (idx !== -1 && liveState.is_playing) {
+                        if (state.currentIndex !== idx || !state.isPlaying) {
+                            loadTrack(idx, true, liveState.seek_position);
+                        } else {
+                            const drift = liveState.seek_position - engines.active.currentTime;
+                            if (Math.abs(drift) > 0.2) {
+                                engines.active.currentTime = liveState.seek_position;
+                            }
+                        }
+                    }
+                }
+            }).catch(() => {});
+        }
     }
 });
 
