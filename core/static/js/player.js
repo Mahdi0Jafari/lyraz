@@ -13,11 +13,12 @@ import * as Network from './modules/network.js';
 
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
-// تاریخچه اکشن‌های اجرا شده برای جلوگیری از اجرای تکراری
+// History of executed actions to prevent duplicate execution (Idempotency)
 const executedActions = new Set(); 
 
-// متغیرهای حیاتی برای جبران تاخیر شبکه
+// Critical variables for network delay compensation
 let pendingSyncCommand = null;
+let hasUserJoined = false;
 
 // ==========================================
 // 🚀 INITIALIZATION (V4: State-Driven)
@@ -34,13 +35,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.isPlaying = playing;
             UI.updatePlayBtn(playing);
             
-            // 🔥 True PTP Sync: کالیبره کردن زمان بلافاصله پس از شروع پخش
+            // 🔥 True PTP Sync: calibrate time immediately upon playback start
             if (playing && pendingSyncCommand) {
                 applyPreciseSync(pendingSyncCommand);
                 pendingSyncCommand = null;
             }
             
-            // فقط زمانی ریپورت کن که سیستم در حال سینک خودکار نباشد
+            // Only report when system is not currently in auto-sync
             if (!state.isSyncing) reportStatus(true); 
         }
     );
@@ -50,7 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     UI.updateControlButtons();
 
     if (state.sessionToken) {
-        if (state.hubStatus === 'active') {
+        if (state.hubStatus === 'active' || window.location.pathname.startsWith('/live/')) {
             await recoverHubState();
         } else {
             Network.validateSession({ onLogin: unlockPlayer, onQRReady: UI.showLoginQR });
@@ -62,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function recoverHubState() {
     console.log("🔄 Recovering Live Hub State...");
-    UI.unlockInterface({ name: 'Hub', device_display_name: 'Live Sync' }); 
+    UI.unlockInterface({ name: window.HUB_NAME || 'Live Hub', device_display_name: 'Live Sync' }); 
     
     const liveState = await Network.fetchHubState();
     await syncTracks(false);
@@ -72,21 +73,21 @@ async function recoverHubState() {
         onCommand: processRemoteCommand
     });
 
-    const isTouchOrMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
-    if (isTouchOrMobile) {
-        state.isListenerNode = true;
-    }
+    // Client nodes joining a hub session behave as listeners (avoid overwriting host playback on local pause)
+    state.isListenerNode = true;
 
     if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
         const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
         const track = idx !== -1 ? state.tracks[idx] : null;
 
-        if (isTouchOrMobile && liveState.is_playing) {
+        if (idx !== -1) {
+            state.currentIndex = idx;
+            if (track) UI.updatePlayerInfo(track);
+        }
+
+        // Show Join Live Hub gateway modal on every device / screen visiting /live/<token>
+        if (!hasUserJoined) {
             showJoinModal(track, liveState);
-            if (idx !== -1) {
-                state.currentIndex = idx;
-                if (track) UI.updatePlayerInfo(track);
-            }
             return;
         }
 
@@ -94,7 +95,7 @@ async function recoverHubState() {
             console.log(`⏱ Syncing to track index ${idx} at second ${liveState.seek_position}`);
             state.isSyncing = true; 
             
-            // شبیه‌سازی یک فرمان سینک برای ریکاور شدن
+            // Simulate sync command for recovery
             pendingSyncCommand = {
                 base_seek: liveState.seek_position,
                 server_now: liveState.server_time
@@ -104,9 +105,12 @@ async function recoverHubState() {
             setTimeout(() => { state.isSyncing = false; }, 1000);
         }
     } else {
-        if (state.tracks.length > 0) loadTrack(0, false);
-        if (isTouchOrMobile) {
-            showJoinModal(null, null);
+        if (state.tracks.length > 0) {
+            loadTrack(0, false);
+            UI.updatePlayerInfo(state.tracks[0]);
+        }
+        if (!hasUserJoined) {
+            showJoinModal(state.tracks[0] || null, liveState);
         }
     }
 }
@@ -190,12 +194,13 @@ async function loadTrack(index, autoPlay = true, startPos = 0) {
                 state.isPlaying = true;
                 UI.updatePlayBtn(true);
                 preloadNextTrack();
-                document.getElementById('audio-unlock-banner')?.classList.add('hidden');
                 requestWakeLock();
                 if(!state.isSyncing) reportStatus(true); 
             }).catch(e => {
                 console.warn("Auto-play prevented by browser:", e);
-                document.getElementById('audio-unlock-banner')?.classList.remove('hidden');
+                if (!hasUserJoined) {
+                    showJoinModal(track, { is_playing: true });
+                }
             });
         }
     } else if (state.isPlaying) {
@@ -262,11 +267,10 @@ function togglePlay() {
         const audioCtx = getAudioContext();
         if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
         engines.active.play().then(() => {
-            document.getElementById('audio-unlock-banner')?.classList.add('hidden');
             requestWakeLock();
         }).catch(e => {
             console.warn("Play blocked:", e);
-            document.getElementById('audio-unlock-banner')?.classList.remove('hidden');
+            showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
         });
     }
 }
@@ -279,7 +283,7 @@ function seekToTime(seconds) {
 }
 
 function processRemoteCommand(cmd) {
-    // جلوگیری از اجرای فرمان تکراری (Idempotency)
+    // Prevent duplicate action execution (Idempotency)
     if (cmd.action_id) {
         if (executedActions.has(cmd.action_id)) return;
         executedActions.add(cmd.action_id);
@@ -289,13 +293,13 @@ function processRemoteCommand(cmd) {
         }
     }
 
-    // ذخیره موقت اطلاعات سینک برای جبران زمان پس از شروع موفق پخش
+    // Temporary sync state storage for post-playback latency compensation
     if (cmd.action === 'play' || cmd.action === 'seek' || cmd.action === 'jump') {
         pendingSyncCommand = cmd;
     }
 
-    // ⚡️ مهلت زمان‌بندی پویا (Scheduled Playback Deadline):
-    // اگر سرور مهلت زمانی مشخص کرده باشد، استارت دقیقاً در آن میلی‌ثانیه برای تمام کلاینت‌ها زده می‌شود
+    // ⚡️ Scheduled Playback Deadline:
+    // If server specified scheduled deadline, start precisely at that millisecond across all clients
     if (cmd.action === 'play' && cmd.scheduled_at) {
         const estimatedServerNow = (Date.now() / 1000) + (state.serverTimeOffset || 0);
         const waitMs = (cmd.scheduled_at - estimatedServerNow) * 1000;
@@ -313,7 +317,7 @@ function processRemoteCommand(cmd) {
 }
 
 function executeCommand(cmd) {
-    state.isSyncing = true; // مسدود کردن ریپورت تا پایان عملیات
+    state.isSyncing = true; // Block status reporting until sync complete
     
     switch(cmd.action) {
         case 'play': 
@@ -372,7 +376,7 @@ function executeCommand(cmd) {
             break;
         case 'seek': 
             seekToTime(cmd.payload); 
-            // اگر در حال پخش است، فورا جبران تاخیر کن
+            // If currently playing, compensate delay immediately
             if(state.isPlaying && pendingSyncCommand) {
                 applyPreciseSync(pendingSyncCommand);
                 pendingSyncCommand = null;
@@ -393,14 +397,14 @@ function executeCommand(cmd) {
     setTimeout(() => { state.isSyncing = false; }, 500);
 }
 
-// 🔥 قلب تپنده سینک دقیق استودیویی (True NTP + Sub-pitch Drift Correction)
+// 🔥 Studio Precision Sync (True NTP + Sub-pitch Drift Correction)
 let driftTimer = null;
 
 function applyPreciseSync(cmdData) {
     if (!cmdData || !cmdData.server_now || cmdData.base_seek === undefined) return;
     
     const localNow = Date.now() / 1000;
-    // محاسبه زمان گذشته از لحظه صدور فرمان با ساعت کالیبره‌شده NTP
+    // Calculate elapsed time from command issuance using NTP-calibrated clock
     const timePassedSinceCommand = localNow - cmdData.server_now + (state.serverTimeOffset || 0);
     
     if (timePassedSinceCommand >= 0 && timePassedSinceCommand < 15) {
@@ -408,7 +412,7 @@ function applyPreciseSync(cmdData) {
         const diff = idealTime - engines.active.currentTime;
         const absDiff = Math.abs(diff);
 
-        // ۱. اختلاف اندک (بین ۳۰ تا ۱۵۰ میلی‌ثانیه): تنظیم نامحسوس سرعت به جای پرش ناگهانی (مشابه Spotify Jam)
+        // 1. Minor drift (30ms - 150ms): subtle playback rate nudging (Spotify Jam style)
         if (absDiff > 0.03 && absDiff <= 0.15) {
             if (driftTimer) clearTimeout(driftTimer);
             engines.active.playbackRate = diff > 0 ? 1.025 : 0.975;
@@ -416,7 +420,7 @@ function applyPreciseSync(cmdData) {
                 try { engines.active.playbackRate = 1.0; } catch(e) {}
             }, 1200);
         }
-        // ۲. اختلاف بزرگ‌تر (بیشتر از ۱۵۰ میلی‌ثانیه): پرش زمانی دقیق
+        // 2. Significant drift (> 150ms): precise time seek
         else if (absDiff > 0.15) {
             console.log(`⏱ [NTP PTP Sync] Realigning head: Current ${engines.active.currentTime.toFixed(2)}s -> Target ${idealTime.toFixed(2)}s`);
             engines.active.currentTime = idealTime;
@@ -436,7 +440,7 @@ function onTimeUpdate() {
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
     
-    // گزارش به سرور هر ۵ ثانیه
+    // Report status to server every 5 seconds
     if (currentSec !== lastReportedSecond && currentSec % 5 === 0 && (now - lastReportTimestamp > 4000)) {
         reportStatus();
         lastReportedSecond = currentSec;
@@ -476,7 +480,7 @@ function onTrackEnded() {
     const dur = engines.active.duration;
     const cur = engines.active.currentTime;
     
-    // 🔥 بررسی پایان واقعی ترک: اگر طول آهنگ مشخص است و پخش هنوز به ۳ ثانیه پایانی نرسیده، قطعی استریم بوده نه پایان واقعی
+    // 🔥 True track end verification: check if track length reached before declaring ended
     if (dur && isFinite(dur) && dur > 10 && cur < dur - 4) {
         console.warn(`[Playback] Premature stream disconnect at ${cur.toFixed(1)}s / ${dur.toFixed(1)}s. Auto-resuming...`);
         const resumePos = cur;
@@ -559,20 +563,18 @@ function unlockAudio() {
         engines.active.play().then(() => {
             state.isPlaying = true;
             UI.updatePlayBtn(true);
-            document.getElementById('audio-unlock-banner')?.classList.add('hidden');
             requestWakeLock();
         }).catch(err => console.warn("Unlock attempt blocked:", err));
     }
 }
 
-// باز کردن اتوماتیک قفل ساند کارت مرورگر با اولین اشاره کاربر روی صفحه
+// Automatic unlock of browser soundcard on first user gesture
 const unlockOnGesture = () => {
     const ctx = getAudioContext();
     if (ctx && ctx.state === 'suspended') ctx.resume();
     if (engines.active && state.isPlaying && engines.active.paused) {
         engines.active.play().catch(() => {});
     }
-    document.getElementById('audio-unlock-banner')?.classList.add('hidden');
     document.removeEventListener('pointerdown', unlockOnGesture);
     document.removeEventListener('keydown', unlockOnGesture);
 };
@@ -580,22 +582,35 @@ document.addEventListener('pointerdown', unlockOnGesture, { once: true });
 document.addEventListener('keydown', unlockOnGesture, { once: true });
 
 // ==========================================
-// 🎧 MOBILE JOIN MODAL HANDLERS
+// 🎧 UNIVERSAL JOIN LIVE HUB MODAL HANDLERS
 // ==========================================
 
 function showJoinModal(track, liveState) {
-    const modal = document.getElementById('mobile-join-modal');
-    const box = document.getElementById('mobile-join-box');
+    const modal = document.getElementById('join-hub-modal');
+    const box = document.getElementById('join-hub-box');
     if (!modal) return;
 
     const playState = document.getElementById('join-playing-state');
     const idleState = document.getElementById('join-idle-state');
     const titleEl = document.getElementById('join-track-title');
     const artistEl = document.getElementById('join-track-artist');
+    const hubNameEl = document.getElementById('join-hub-name');
 
-    if (track && liveState && liveState.is_playing) {
-        if (titleEl) titleEl.innerText = track.title || 'Unknown Track';
-        if (artistEl) artistEl.innerText = track.performer || 'Unknown Artist';
+    if (window.HUB_NAME && hubNameEl) {
+        hubNameEl.textContent = window.HUB_NAME;
+    }
+
+    const currentTrack = track || (state.tracks && state.tracks.length > 0 ? state.tracks[state.currentIndex || 0] : null);
+    const isPlaying = liveState && (liveState.is_playing === true || liveState.status === 'active');
+
+    if (currentTrack && isPlaying) {
+        if (titleEl) titleEl.innerText = currentTrack.title || 'Unknown Track';
+        if (artistEl) artistEl.innerText = currentTrack.performer || 'Unknown Artist';
+        playState?.classList.remove('hidden');
+        idleState?.classList.add('hidden');
+    } else if (currentTrack) {
+        if (titleEl) titleEl.innerText = currentTrack.title || 'Ready to Play';
+        if (artistEl) artistEl.innerText = currentTrack.performer || 'Lyraz Studio';
         playState?.classList.remove('hidden');
         idleState?.classList.add('hidden');
     } else {
@@ -604,10 +619,11 @@ function showJoinModal(track, liveState) {
     }
 
     modal.classList.remove('opacity-0', 'pointer-events-none');
-    box?.classList.remove('translate-y-8', 'scale-95');
+    box?.classList.remove('translate-y-6', 'scale-95');
 }
 
 async function joinLiveHubNow() {
+    hasUserJoined = true;
     primeAudioEngines();
     dismissJoinModal();
 
@@ -623,17 +639,18 @@ async function joinLiveHubNow() {
             loadTrack(idx, true, liveState.seek_position);
         }
     } else if (state.tracks.length > 0) {
-        loadTrack(0, true);
+        loadTrack(state.currentIndex >= 0 ? state.currentIndex : 0, true);
     }
     setTimeout(() => { state.isSyncing = false; }, 1000);
 }
 
 function dismissJoinModal() {
-    const modal = document.getElementById('mobile-join-modal');
-    const box = document.getElementById('mobile-join-box');
+    hasUserJoined = true;
+    const modal = document.getElementById('join-hub-modal');
+    const box = document.getElementById('join-hub-box');
     if (!modal) return;
     modal.classList.add('opacity-0', 'pointer-events-none');
-    box?.classList.add('translate-y-8', 'scale-95');
+    box?.classList.add('translate-y-6', 'scale-95');
 }
 
 window.joinLiveHubNow = joinLiveHubNow;
