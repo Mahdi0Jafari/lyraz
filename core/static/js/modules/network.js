@@ -1,5 +1,5 @@
 // modules/network.js
-import { state } from './state.js?v=4.6';
+import { state } from './state.js?v=4.7';
 
 let sseConnection = null;
 let authConnection = null;

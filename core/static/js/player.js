@@ -2,14 +2,14 @@
  * Lyraz Player - Main Controller (Live Hubs V4.4)
  * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
-import { state, CONFIG } from './modules/state.js?v=4.6';
+import { state, CONFIG } from './modules/state.js?v=4.7';
 import { 
     engines, swapEngines, setupAudioListeners, 
     crossfadeEngines, getBufferedAhead, getAudioContext,
     primeAudioEngines, configureAudioSession
-} from './modules/audio.js?v=4.6';
-import * as UI from './modules/ui.js?v=4.6';
-import * as Network from './modules/network.js?v=4.6';
+} from './modules/audio.js?v=4.7';
+import * as UI from './modules/ui.js?v=4.7';
+import * as Network from './modules/network.js?v=4.7';
 
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
@@ -75,8 +75,8 @@ async function recoverHubState() {
         onStatusUpdate: handleLiveStatusUpdate
     });
 
-    // Client nodes joining a hub session behave as listeners (avoid overwriting host playback on local pause)
-    state.isListenerNode = true;
+    // Client nodes joining a hub session
+    // (Master host player is the source of truth, not a listener)
 
     if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
         const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
@@ -271,50 +271,33 @@ function nextTrack() {
 // ==========================================
 
 // ==========================================
-// 🛡️ SMART BACKGROUND GRACE WINDOW (MOBILE SCREEN OFF)
+// 🛡️ ACCURATE PLAYBACK STATE CONTROLLERS
 // ==========================================
-let backgroundGraceTimer = null;
-let isGracePaused = false;
-
 function handleRemotePause() {
     state.isPlaying = false;
     UI.updatePlayBtn(false);
     if (driftTimer) clearTimeout(driftTimer);
     try { engines.active.playbackRate = 1.0; } catch(e) {}
     
+    // Stop audio immediately
+    engines.active.pause();
+    engines.buffer.pause();
+    
+    // Ensure gain and volume are normalized
+    if (engines.active._gainNode) {
+        engines.active._gainNode.gain.value = 1.0;
+    }
+    engines.active.volume = 1.0;
+
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
     }
 
-    // Keep audio session warm in zero-volume state for a 90-second Grace Window on screen off
-    isGracePaused = true;
-    if (engines.active._gainNode) {
-        engines.active._gainNode.gain.value = 0.0;
-    } else {
-        engines.active.volume = 0.0;
-    }
-
-    if (backgroundGraceTimer) clearTimeout(backgroundGraceTimer);
-    backgroundGraceTimer = setTimeout(() => {
-        if (isGracePaused) {
-            console.log("🔋 [Grace Window] 90s timeout. Releasing audio engine to save battery.");
-            engines.active.pause();
-            engines.buffer.pause();
-            if (engines.active._gainNode) engines.active._gainNode.gain.value = 1.0;
-            engines.active.volume = 1.0;
-            isGracePaused = false;
-        }
-    }, 90000);
-
+    pendingSyncCommand = null;
     reportStatus(true);
 }
 
 function handleRemoteResume() {
-    if (backgroundGraceTimer) {
-        clearTimeout(backgroundGraceTimer);
-        backgroundGraceTimer = null;
-    }
-
     state.isPlaying = true;
     UI.updatePlayBtn(true);
     requestWakeLock();
@@ -323,35 +306,27 @@ function handleRemoteResume() {
         navigator.mediaSession.playbackState = 'playing';
     }
 
-    if (isGracePaused) {
-        isGracePaused = false;
-        // Audio stream was warm; seamlessly restore gain
-        if (engines.active._gainNode) {
-            engines.active._gainNode.gain.value = 1.0;
-        } else {
-            engines.active.volume = 1.0;
-        }
+    // Ensure gain and volume are 1.0
+    if (engines.active._gainNode) {
+        engines.active._gainNode.gain.value = 1.0;
+    }
+    engines.active.volume = 1.0;
+
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    
+    engines.active.play().then(() => {
         if (pendingSyncCommand) {
             applyPreciseSync(pendingSyncCommand);
             pendingSyncCommand = null;
         }
         reportStatus(true);
-    } else {
-        const ctx = getAudioContext();
-        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-        engines.active.play().then(() => {
-            if (pendingSyncCommand) {
-                applyPreciseSync(pendingSyncCommand);
-                pendingSyncCommand = null;
-            }
-            reportStatus(true);
-        }).catch(e => {
-            console.warn("Play blocked:", e);
-            if (!hasUserJoined) {
-                showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
-            }
-        });
-    }
+    }).catch(e => {
+        console.warn("Play blocked:", e);
+        if (!hasUserJoined) {
+            showJoinModal(state.tracks[state.currentIndex], { is_playing: true });
+        }
+    });
 }
 
 function togglePlay() {
@@ -391,7 +366,8 @@ function processRemoteCommand(cmd) {
     }
 
     // Temporary sync state storage for post-playback latency compensation
-    if (cmd.action === 'play' || cmd.action === 'seek' || cmd.action === 'jump') {
+    // Only queue sync compensation for explicit time seek, never for simple resume
+    if (cmd.action === 'seek') {
         pendingSyncCommand = cmd;
     }
 
@@ -505,20 +481,20 @@ function handleLiveStatusUpdate(data) {
     const drift = targetHostTime - engines.active.currentTime;
     const absDrift = Math.abs(drift);
     
-    // 1. Under 40ms: Imperceptible to human ear (Spotify Jam threshold)
-    if (absDrift <= 0.04) return;
+    // 1. Under 50ms: Imperceptible to human ear
+    if (absDrift <= 0.05) return;
     
-    // 2. Micro-drift (40ms - 250ms): Speed-to-Sync (seamless ±3% playback rate nudge)
-    if (absDrift <= 0.25) {
+    // 2. Micro-drift (50ms - 1.5s): Speed-to-Sync (seamless ±2% playback rate nudge - ZERO audio cutout)
+    if (absDrift <= 1.5) {
         if (driftTimer) clearTimeout(driftTimer);
-        engines.active.playbackRate = drift > 0 ? 1.03 : 0.97;
+        engines.active.playbackRate = drift > 0 ? 1.02 : 0.98;
         driftTimer = setTimeout(() => {
             try { engines.active.playbackRate = 1.0; } catch(e) {}
-        }, 1200);
+        }, 1500);
     } 
-    // 3. Significant desync (> 250ms): Seek-to-Sync (hard realign)
-    else if (absDrift > 0.25 && absDrift < 15) {
-        console.log(`⏱ [Periodic Sync] Realigning drift: ${engines.active.currentTime.toFixed(2)}s -> ${targetHostTime.toFixed(2)}s (diff: ${(drift * 1000).toFixed(0)}ms)`);
+    // 3. Significant desync (> 3.0s): Seek-to-Sync (hard realign only for huge lag)
+    else if (absDrift > 3.0 && absDrift < 30) {
+        console.log(`⏱ [Periodic Sync] Large drift realignment: ${engines.active.currentTime.toFixed(2)}s -> ${targetHostTime.toFixed(2)}s (diff: ${(drift * 1000).toFixed(0)}ms)`);
         engines.active.currentTime = targetHostTime;
         try { engines.active.playbackRate = 1.0; } catch(e) {}
     }
@@ -572,6 +548,9 @@ function reportStatus(force = false) {
 // ==========================================
 
 function onTrackEnded() {
+    // If playback is paused, do NOT advance to next track
+    if (!state.isPlaying) return;
+
     const dur = engines.active.duration;
     const cur = engines.active.currentTime;
     
@@ -669,14 +648,13 @@ document.addEventListener('visibilitychange', () => {
             Network.fetchHubState().then(liveState => {
                 if (liveState && liveState.status === 'active' && liveState.file_unique_id) {
                     const idx = state.tracks.findIndex(t => t.file_unique_id === liveState.file_unique_id);
-                    if (idx !== -1 && liveState.is_playing) {
-                        if (state.currentIndex !== idx || !state.isPlaying) {
+                    if (idx !== -1) {
+                        if (state.currentIndex !== idx) {
+                            loadTrack(idx, liveState.is_playing, liveState.seek_position);
+                        } else if (!state.isPlaying && liveState.is_playing) {
                             loadTrack(idx, true, liveState.seek_position);
-                        } else {
-                            const drift = liveState.seek_position - engines.active.currentTime;
-                            if (Math.abs(drift) > 0.2) {
-                                engines.active.currentTime = liveState.seek_position;
-                            }
+                        } else if (state.isPlaying && !liveState.is_playing) {
+                            handleRemotePause();
                         }
                     }
                 }
