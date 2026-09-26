@@ -2,14 +2,14 @@
  * Lyraz Player - Main Controller (Live Hubs V4.4)
  * Features: True PTP Sync (Auto-Correction), Idempotent Execution, Dual Engine
  */
-import { state, CONFIG } from './modules/state.js?v=4.7';
+import { state, CONFIG } from './modules/state.js?v=4.8';
 import { 
     engines, swapEngines, setupAudioListeners, 
     crossfadeEngines, getBufferedAhead, getAudioContext,
     primeAudioEngines, configureAudioSession
-} from './modules/audio.js?v=4.7';
-import * as UI from './modules/ui.js?v=4.7';
-import * as Network from './modules/network.js?v=4.7';
+} from './modules/audio.js?v=4.8';
+import * as UI from './modules/ui.js?v=4.8';
+import * as Network from './modules/network.js?v=4.8';
 
 let lastReportedSecond = -1;
 let lastReportTimestamp = 0;
@@ -464,11 +464,10 @@ function applyPreciseSync(cmdData) {
 // ==========================================
 
 function handleLiveStatusUpdate(data) {
-    // Only listener nodes synchronize to the host's periodic status updates
-    if (!state.isListenerNode || !state.isPlaying || state.isSyncing) return;
-    
     const payload = data.payload;
-    if (!payload || !payload.is_playing) return;
+    if (!payload || payload.client_id === state.clientId) return;
+    if (!state.isPlaying || state.isSyncing || !payload.is_playing) return;
+
     
     const currentTrack = state.tracks[state.currentIndex];
     if (!currentTrack || currentTrack.file_unique_id !== payload.file_unique_id) return;
@@ -522,8 +521,7 @@ function onTimeUpdate() {
 function reportStatus(force = false) {
     if(!state.tracks[state.currentIndex] || state.isSyncing) return;
     
-    // 🛡️ Listener Isolation: Don't let an unstarted or paused mobile listener device overwrite the host room playback
-    if (!state.isPlaying && !force && state.isListenerNode) return;
+    if (!state.isPlaying && !force) return;
 
     const currentSec = Math.floor(engines.active.currentTime);
     const now = Date.now();
@@ -573,6 +571,9 @@ function onAudioError(e) {
         return;
     }
     console.warn("[Playback] Audio error event:", e);
+    
+    if (!state.isPlaying) return;
+
     if (state.retryCount < CONFIG.retryLimit && navigator.onLine) {
         state.retryCount++;
         setTimeout(() => {

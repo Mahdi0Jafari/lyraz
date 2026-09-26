@@ -1,5 +1,5 @@
 // modules/network.js
-import { state } from './state.js?v=4.7';
+import { state } from './state.js?v=4.8';
 
 let sseConnection = null;
 let authConnection = null;
@@ -224,7 +224,8 @@ export function reportStatus(trackId, isPlaying, currentTime, duration) {
             file_unique_id: trackId,
             is_playing: isPlaying,
             current_time: currentTime,
-            duration: duration || 0
+            duration: duration || 0,
+            client_id: state.clientId
         })
     }).catch(() => {});
 }

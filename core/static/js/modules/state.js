@@ -43,6 +43,7 @@ export const state = {
     // شناسه‌های هاب
     sessionToken: resolvedToken,
     hubStatus: window.HUB_STATUS || 'waiting', 
+    clientId: Math.random().toString(36).substring(2, 15),
     
     // وضعیت پخش
     tracks: [],

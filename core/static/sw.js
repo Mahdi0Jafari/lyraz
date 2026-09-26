@@ -3,7 +3,7 @@
  * Optimized for Flaky Networks & Smart TVs
  */
 
-const CACHE_NAME = 'Lyraz-player-v4-7';
+const CACHE_NAME = 'Lyraz-player-v4-8';
 // فقط فایل‌های استاتیک که برای لود شدن ظاهر پلیر حیاتی هستند
 const ASSETS_TO_CACHE = [
     '/',

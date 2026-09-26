@@ -232,6 +232,7 @@ def report_status():
             'session_token': token,
             'server_now': sync_time,
             'payload': {
+                'client_id': data.get('client_id'),
                 'file_unique_id': unique_id,
                 'is_playing': is_playing,
                 'current_time': current_time,
