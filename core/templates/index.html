@@ -43,11 +43,11 @@
     <meta name="twitter:image" content="https://lyraz.ir/static/images/og-banner.jpg">
     <meta name="twitter:image:alt" content="Lyraz High-Res Music Player & Audio Hub Banner">
 
-    <!-- PWA & App Icons -->
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+    <!-- Primary Vector Favicon & PWA Icons -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}?v=3">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}?v=3">
+    <link rel="mask-icon" href="{{ url_for('static', filename='favicon.svg') }}?v=3" color="#84cc16">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v=3">
 
     <!-- Structured Data: JSON-LD (Knowledge Graph, WebApp, Organization, FAQ) -->
     <script type="application/ld+json">
