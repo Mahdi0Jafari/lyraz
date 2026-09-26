@@ -48,7 +48,7 @@ class YouTubeService:
         except Exception as e:
             logger.warning(f"YTMusic API Search Error for '{query}': {e}, falling back to yt-dlp...")
 
-        # پلن پشتیبان سریع و پایدار با yt-dlp مجهز به POT Provider (بدون خطای 403 یا مسدودی یوتیوب)
+        # پلن پشتیبان با ساندکلاد (ضد فیلتر و بدون خطای 403)
         try:
             import yt_dlp
             ydl_opts = {
@@ -57,31 +57,24 @@ class YouTubeService:
                 'skip_download': True,
                 'no_warnings': True,
                 'socket_timeout': 5,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['tv_downgraded', 'web_embedded', 'mweb', 'web', 'android', 'ios'],
-                    },
-                    'youtubepot-bgutilhttp': {
-                        'base_url': ['http://Lyraz_pot:4416']
-                    }
-                }
             }
-            if getattr(Config, 'YOUTUBE_PROXY', None):
-                ydl_opts['proxy'] = Config.YOUTUBE_PROXY
-            if os.path.exists(Config.YT_COOKIES_PATH):
-                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+                info = ydl.extract_info(f"scsearch10:{query}", download=False)
                 entries = info.get('entries', [])
-                if entries and entries[0]:
-                    e = entries[0]
-                    return [{
-                        'videoId': e.get('id'),
-                        'title': e.get('title'),
-                        'duration_seconds': e.get('duration')
-                    }]
-        except Exception as ydl_err:
-            logger.error(f"yt-dlp fallback search error for '{query}': {ydl_err}")
+                results = []
+                for e in entries:
+                    if e and e.get('id'):
+                        results.append({
+                            'videoId': f"sc_{e.get('id')}",
+                            'title': e.get('title', 'Unknown Track'),
+                            'artists': [{'name': e.get('uploader', 'Unknown Artist')}],
+                            'duration_seconds': e.get('duration', 0),
+                            'thumbnails': [{'url': e.get('thumbnail')}]
+                        })
+                if results:
+                    return results
+        except Exception as sc_err:
+            logger.error(f"SoundCloud fallback search error for '{query}': {sc_err}")
 
         return []
 
@@ -169,7 +162,7 @@ class YouTubeService:
                         except Exception:
                             c_dur = 0
                     vid = r.get('videoId')
-                    if vid:
+                    if vid and len(vid) == 11:
                         s = self.score_match(title or query, artist, duration, c_title, c_arts, c_dur)
                         candidates.append((s, vid, c_title, c_arts, c_dur, 'ytmusic'))
         except Exception as e:
@@ -181,7 +174,7 @@ class YouTubeService:
             logger.info(f"🎯 Exact YTMusic Match (Score: {candidates[0][0]}): {candidates[0][2]} [{candidates[0][1]}]")
             return candidates[0][1]
 
-        # ۲. جستجوی ویدیوی رسمی در یوتیوب عمومی (Official Music Videos) با yt-dlp
+        # ۲. فیلتر کردن کدهای زباله و جستجوی پشتیبان در ساندکلاد با yt-dlp
         try:
             import yt_dlp
             ydl_opts = {
@@ -190,31 +183,20 @@ class YouTubeService:
                 'skip_download': True,
                 'no_warnings': True,
                 'socket_timeout': 5,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['tv_downgraded', 'web_embedded', 'mweb', 'web', 'android', 'ios'],
-                    },
-                    'youtubepot-bgutilhttp': {
-                        'base_url': ['http://Lyraz_pot:4416']
-                    }
-                }
             }
-            if getattr(Config, 'YOUTUBE_PROXY', None):
-                ydl_opts['proxy'] = Config.YOUTUBE_PROXY
-            if os.path.exists(Config.YT_COOKIES_PATH):
-                ydl_opts['cookiefile'] = Config.YT_COOKIES_PATH
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch6:{search_query}", download=False)
+                info = ydl.extract_info(f"scsearch6:{search_query}", download=False)
                 for e in info.get('entries', []):
-                    vid = e.get('id')
+                    sc_id = e.get('id')
                     c_title = e.get('title', '')
                     c_arts = e.get('uploader', '')
                     c_dur = int(e.get('duration') or 0)
-                    if vid:
+                    if sc_id:
+                        vid = f"sc_{sc_id}"
                         s = self.score_match(title or query, artist, duration, c_title, c_arts, c_dur)
-                        candidates.append((s, vid, c_title, c_arts, c_dur, 'youtube'))
-        except Exception as yt_err:
-            logger.debug(f"yt-dlp fallback search error in find_best_match: {yt_err}")
+                        candidates.append((s, vid, c_title, c_arts, c_dur, 'soundcloud'))
+        except Exception as sc_err:
+            logger.debug(f"SoundCloud fallback search error in find_best_match: {sc_err}")
 
         candidates.sort(key=lambda x: x[0], reverse=True)
         if candidates and candidates[0][0] > 0:
@@ -230,6 +212,30 @@ class YouTubeService:
         """
         دریافت مستقیم و دقیق مشخصات ویدیو/موزیک با استراتژی چندمرحله‌ای (oEmbed -> YTMusic -> yt_dlp)
         """
+        if not video_id:
+            return {'title': 'Unknown Track', 'artist': 'Unknown Artist', 'videoId': video_id}
+
+        if video_id.startswith('sc_'):
+            sc_id = video_id.replace('sc_', '')
+            try:
+                import yt_dlp
+                ydl_opts = {'quiet': True, 'no_warnings': True, 'socket_timeout': 5}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f"https://api.soundcloud.com/tracks/{sc_id}", download=False)
+                    if info:
+                        title = info.get('title', 'Unknown Track')
+                        raw_artist = info.get('uploader') or info.get('channel') or 'Unknown Artist'
+                        artist = self.clean_artist_name(raw_artist)
+                        if ' - ' in title:
+                            parts = title.split(' - ', 1)
+                            if len(parts) == 2 and len(parts[0].strip()) > 0 and len(parts[1].strip()) > 0:
+                                artist = parts[0].strip()
+                                title = parts[1].strip()
+                        return {'title': title, 'artist': artist, 'videoId': video_id}
+            except Exception as sc_err:
+                logger.error(f"SoundCloud get_video_info error for {video_id}: {sc_err}")
+            return {'title': 'Track', 'artist': 'Unknown Artist', 'videoId': video_id}
+
         # ۱. استراتژی اول: استفاده از YouTube oEmbed (سریع‌ترین و ۱۰۰٪ بدون بلاک آی‌پی یا خطای بات)
         try:
             oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
@@ -387,15 +393,26 @@ class YouTubeService:
                 '-f', 'null', '-'
             ]
             proc = subprocess.run(detect_cmd, capture_output=True, text=True, timeout=20)
+            silence_start = None
             silence_end = None
             for line in proc.stderr.splitlines():
-                if 'silence_end:' in line:
+                if 'silence_start:' in line:
+                    parts = line.split('silence_start:')
+                    if len(parts) > 1:
+                        try:
+                            silence_start = float(parts[1].split()[0].strip())
+                        except ValueError:
+                            pass
+                elif 'silence_end:' in line:
                     parts = line.split('silence_end:')
                     if len(parts) > 1:
                         val = parts[1].split('|')[0].strip()
                         try:
-                            silence_end = float(val)
-                            break
+                            cur_end = float(val)
+                            # فقط در صورتی سکوت ابتدایی محسوب می‌شود که از ابتدای فایل (ثانیه صفر) آغاز شده باشد
+                            if silence_start is not None and silence_start <= 0.5:
+                                silence_end = cur_end
+                                break
                         except ValueError:
                             pass
 
@@ -451,7 +468,8 @@ class YouTubeService:
                 sources.append(f"scsearch3:{search_query}")
                 sources.append(f"ytsearch3:{search_query}")
         elif video_id.startswith('sc_'):
-            sources = []
+            raw_sc_id = video_id.replace('sc_', '')
+            sources = [f"https://api.soundcloud.com/tracks/{raw_sc_id}"]
             if search_query:
                 sources.append(f"scsearch3:{search_query}")
                 sources.append(f"ytsearch3:{search_query}")

@@ -6,6 +6,8 @@ import re
 import html
 import urllib.parse
 import logging
+import time
+import sqlite3
 from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
@@ -1012,7 +1014,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("❌ Failed to initiate playlist download.")
 
     elif data.startswith("dl_"):
-        vid = data.split("_")[1]
+        vid = data[3:]
         try:
             await query.edit_message_text("⏳ Processing selected track...", parse_mode=ParseMode.MARKDOWN)
             info = await asyncio.to_thread(yt_service.get_video_info, vid)
