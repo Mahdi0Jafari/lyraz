@@ -84,8 +84,16 @@ def create_app():
         })
 
     @app.route('/favicon.ico')
-    def favicon():
-        return send_from_directory('static/icons', 'icon-48x48.png', mimetype='image/png')
+    def favicon_ico():
+        return send_from_directory('static', 'favicon.ico', mimetype='image/x-icon')
+
+    @app.route('/favicon.svg')
+    def favicon_svg():
+        return send_from_directory('static', 'favicon.svg', mimetype='image/svg+xml')
+
+    @app.route('/apple-touch-icon.png')
+    def apple_touch_icon():
+        return send_from_directory('static', 'apple-touch-icon.png', mimetype='image/png')
 
     # ==========================================
     # 🔍 TECHNICAL SEO & AI BOT CRAWLABILITY (2026 STANDARDS)

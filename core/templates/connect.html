@@ -15,6 +15,12 @@
     <meta property="og:description" content="Connect your mobile device to Lyraz Live Hub to stream and queue music synchronously.">
     <meta property="og:image" content="https://lyraz.ir/static/images/brand/lyraz_sound_orb.webp">
 
+    <!-- Favicon & PWA Icons -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+
     <!-- Fonts: Anton + Plus Jakarta Sans + Space Grotesk -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

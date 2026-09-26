@@ -12,6 +12,7 @@ import time
 import re
 import threading
 from huey import SqliteHuey, crontab
+from mutagen.mp3 import MP3
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
