@@ -13,6 +13,11 @@ services:
     volumes:
       - .:/app
     env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 180M
 
   # -------------------------------------------------------
   # سرویس ۲: ربات تلگرام
@@ -26,6 +31,11 @@ services:
     volumes:
       - .:/app
     env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 120M
     depends_on:
       - web
 
@@ -44,8 +54,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1500M
+          cpus: '0.8'
+          memory: 380M
     depends_on:
       - web
 
@@ -58,3 +68,8 @@ services:
     restart: unless-stopped
     ports:
       - "4416:4416"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 260M

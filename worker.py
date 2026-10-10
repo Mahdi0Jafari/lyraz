@@ -1,16 +1,57 @@
 # worker.py
 import sys
 import os
+import gc
 
 # افزودن مسیر جاری به PATH پایتون (برای اطمینان از پیدا شدن پوشه core)
 sys.path.append(os.getcwd())
 
+from huey import signals
 from huey.consumer import Consumer
 from core.tasks import huey
 from core.logger import setup_logger
 
 # 🔥 اتصال به سیستم لاگینگ متمرکز (ذخیره در worker.log)
 logger = setup_logger('WORKER', 'worker.log')
+
+def get_current_rss_mb():
+    """محاسبه دقیق حافظه مصرفی واقعی فرآیند ورکر در سیستم‌عامل برحسب مگابایت"""
+    try:
+        with open('/proc/self/status') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    return float(line.split()[1]) / 1024.0
+    except Exception:
+        pass
+    try:
+        import resource
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 if sys.platform == 'darwin' else 1.0) / 1024.0
+    except Exception:
+        return 0.0
+
+@huey.signal(signals.SIGNAL_COMPLETE, signals.SIGNAL_ERROR)
+def on_task_finish(signal, task, exc=None):
+    """جمع‌آوری بلادرنگ زباله‌های حافظه پس از اجرای هر تسک برای جلوگیری از فرگمنتیشن حافظه"""
+    gc.collect()
+
+class MemoryAwareConsumer(Consumer):
+    """مصرف‌کننده هوشمند با دیده‌بان حافظه برای بازیافت خودکار در صورت عبور از سقف مجاز"""
+    def __init__(self, *args, max_memory_mb=350, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_memory_mb = max_memory_mb
+
+    def check_worker_health(self):
+        healthy = super().check_worker_health()
+        rss_mb = get_current_rss_mb()
+        if rss_mb > self.max_memory_mb:
+            self._logger.warning(
+                f"🚨 [Memory Watchdog] Worker RSS memory reached {rss_mb:.1f} MB (exceeds limit {self.max_memory_mb} MB). "
+                f"Initiating graceful restart to reclaim system memory..."
+            )
+            self.stop(graceful=True)
+            # خروج صفر تا داکر کانتینر را بلافاصله با رم تازه و بدون نشتی بالا بیاورد
+            os._exit(0)
+        return healthy
 
 def clean_stale_backlog():
     """پاکسازی صف از تسک‌های انباشته‌شده دوره‌ای یا حلقه‌های مرگبار هنگام استارت ورکر"""
@@ -53,12 +94,13 @@ if __name__ == "__main__":
     logger.info("="*40 + "\n")
 
     try:
-        # تنظیمات مصرف‌کننده (Consumer)
-        consumer = Consumer(
+        # تنظیمات مصرف‌کننده بهینه با دیده‌بان حافظه و ۲ ورکر همزمان
+        consumer = MemoryAwareConsumer(
             huey,
-            workers=3,             # ۳ پردازشگر همزمان بهینه و هماهنگ با محدودیت سرعت تلگرام برای خنک ماندن سرور
+            workers=2,             # ۲ پردازشگر همزمان جهت جلوگیری از داغ شدن CPU و جهش ناگهانی رم
             worker_type='thread',  # استفاده از Thread
-            check_worker_health=True
+            check_worker_health=True,
+            max_memory_mb=350
         )
         consumer.run()
         

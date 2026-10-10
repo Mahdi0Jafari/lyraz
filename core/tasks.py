@@ -59,6 +59,12 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
         logger.error(f"Cannot upload to Telegram: file '{file_path}' does not exist.")
         return None, None
 
+    # بررسی حجم فایل برای عدم نقض سقف ۵۰ مگابایت ربات‌های تلگرام
+    fsize = os.path.getsize(file_path)
+    if fsize > 49.5 * 1024 * 1024:
+        logger.error(f"Cannot upload to Telegram: file size ({fsize / (1024*1024):.1f}MB) exceeds Telegram Bot API 50MB limit.")
+        return None, None
+
     # استخراج قطعی مدت زمان فایل از روی تگ‌های صوتی در صورت عدم ارسال
     upload_duration = None
     if duration:
@@ -112,6 +118,10 @@ async def upload_to_telegram(local_bot, file_path, title, artist, video_id, cove
                 return sent_msg.audio, sent_msg.message_id
         except Exception as e:
             err_msg = str(e).lower()
+            if "file is too big" in err_msg or "entity too large" in err_msg or "file too large" in err_msg:
+                logger.error(f"Telegram rejected file as too large: {e}")
+                return None, None
+
             if ("flood control" in err_msg or "retry in" in err_msg or "retryafter" in err_msg) and attempt < retries - 1:
                 wait_seconds = 25
                 m = re.search(r'retry in (\d+)', err_msg)
@@ -623,14 +633,20 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
             logger.warning(f"Cache check error: {c_err}")
 
         if cached_track:
-            # 🛡 بررسی اعتبارسنجی مدت‌زمان ترک در کش مخزن (Duration Integrity Guard)
+            # 🛡 بررسی اعتبارسنجی مدت‌زمان و حجم ترک در کش مخزن (Duration & Size Integrity Guard)
             expected_dur = duration or rich_metadata.get('duration')
             cached_dur = cached_track.get('duration') or 0
-            if expected_dur and cached_dur and abs(expected_dur - cached_dur) > 15:
+            cached_size = cached_track.get('file_size') or 0
+
+            # اگر حجم فایل کمتر از ۵۰۰ کیلوبایت باشد در حالی که آهنگ بیش از ۳۰ ثانیه است، فایل خراب یا خالی است
+            is_corrupt_size = bool(cached_dur > 30 and cached_size < 500 * 1024)
+            is_duration_mismatch = bool(expected_dur and cached_dur and abs(expected_dur - cached_dur) > 15)
+
+            if is_duration_mismatch or is_corrupt_size:
                 logger.warning(
-                    f"⚠️ Vault Cache Mismatch for '{final_title}' ({video_id}): "
-                    f"Cached duration ({cached_dur}s) deviates significantly from requested ({expected_dur}s). "
-                    f"Bypassing stale/mismatched vault cache to re-download true audio."
+                    f"⚠️ Vault Cache Mismatch/Corrupt for '{final_title}' ({video_id}): "
+                    f"Cached duration ({cached_dur}s), size ({cached_size}B, corrupt={is_corrupt_size}). "
+                    f"Bypassing stale/corrupted vault cache to re-download true audio."
                 )
                 cached_track = None
             else:

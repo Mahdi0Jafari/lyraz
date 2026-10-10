@@ -831,6 +831,15 @@ class CatalogAutopilotService:
             existing_names = set(r[1] for r in existing_camps if r[1])
 
             # ==========================================
+            # 🎯 بررسی هدف تعداد قطعات گنجینه (Target Goal)
+            # ==========================================
+            target_goal = int(settings['autopilot_target_goal'] or 25000)
+            total_current_tracks = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+            if total_current_tracks >= target_goal:
+                logger.debug(f"🏆 [Autopilot] Target goal of {target_goal} tracks reached (Current: {total_current_tracks}). Pool expansion paused.")
+                return
+
+            # ==========================================
             # 🎯 POOL 1: حفظ پایدار ۱۰ آرتیست فعال در صف
             # ==========================================
             # به‌روزرسانی آنی کمپین‌هایی که تمام قطعاتشان پردازش شده تا از صف فعال خارج شوند
