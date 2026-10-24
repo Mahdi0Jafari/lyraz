@@ -1301,10 +1301,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     conn.execute("""
                         UPDATE campaign_tracks 
                         SET status = 'completed', 
-                            error_msg = NULL,
-                            storage_message_id = ?
+                            error_msg = 'Rescued via Telegram Leech',
+                            delivered_at = CURRENT_TIMESTAMP
                         WHERE (spotify_url LIKE ? OR spotify_url LIKE ?) AND status != 'completed'
-                    """, (storage_msg_id, f"%{spotify_id}%", f"%{spotify_id}"))
+                    """, (f"%{spotify_id}%", f"%{spotify_id}"))
                 conn.commit()
 
             logger.info(f"⚡️ [CloudLeechRelay] Stored '{clean_title}' by '{clean_performer}' in {dest_channel} (Msg ID: {storage_msg_id})")
