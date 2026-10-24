@@ -1150,11 +1150,20 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     d_name = "Hub"
                     reply_markup = None
 
-                    if user_id:
-                        from core.services.bot.database import log_user_download
-                        await asyncio.to_thread(log_user_download, user_id, cached['id'], 'spotify_playlist', user_first_name)
+                    track_db_id = cached.get('id') if isinstance(cached, dict) else None
+                    if not track_db_id and cached.get('storage_message_id'):
+                        try:
+                            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                                row = conn.execute("SELECT id FROM tracks WHERE storage_message_id = ? LIMIT 1", (cached['storage_message_id'],)).fetchone()
+                                if row: track_db_id = row[0]
+                        except Exception:
+                            pass
 
-                    if session_token:
+                    if user_id and track_db_id:
+                        from core.services.bot.database import log_user_download
+                        await asyncio.to_thread(log_user_download, user_id, track_db_id, 'spotify_playlist', user_first_name)
+
+                    if session_token and track_db_id:
                         def update_hub():
                             with sqlite3.connect(Config.DATABASE_URI) as conn:
                                 conn.row_factory = sqlite3.Row  
@@ -1165,7 +1174,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                             int_uid = get_user_id(user_id)
                             safe_owner = h_admin_id if h_admin_id else int_uid
                             bot_db_exec("INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) VALUES (?, ?, ?, ?)",
-                                        (safe_owner, cached['id'], int_uid, session_token))
+                                        (safe_owner, track_db_id, int_uid, session_token))
                             return d_n
 
                         d_name = await asyncio.to_thread(update_hub)
@@ -1189,6 +1198,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                     async with state_lock:
                         success_count += 1
                         processed_count += 1
+                    await update_progress_safe(title)
                     return True
                 else:
                     result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration, spotify_url=sp_url)
@@ -1198,6 +1208,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         async with state_lock:
                             success_count += 1
                             processed_count += 1
+                        await update_progress_safe(title)
                         return True
                     else:
                         ready_to_deliver[idx] = None
@@ -1205,6 +1216,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         async with state_lock:
                             failed_count += 1
                             processed_count += 1
+                        await update_progress_safe(title)
                         return False
 
             except Exception as e:
@@ -1214,6 +1226,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                 async with state_lock:
                     failed_count += 1
                     processed_count += 1
+                await update_progress_safe(title)
                 return False
 
     try:

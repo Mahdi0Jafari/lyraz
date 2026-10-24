@@ -34,21 +34,32 @@ class TelegramLeechService:
     _active_client = None
     _active_session_str = None
     _active_loop = None
-    _client_lock = None
-    _leech_lock = None
+    _loop_locks = {}
+    _loop_leech_locks = {}
     _bot_entity = None
+    _is_user_busy = False
 
     @classmethod
     def _get_lock(cls):
-        if cls._client_lock is None:
-            cls._client_lock = asyncio.Lock()
-        return cls._client_lock
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+        lid = id(curr_loop)
+        if lid not in cls._loop_locks:
+            cls._loop_locks[lid] = asyncio.Lock()
+        return cls._loop_locks[lid]
 
     @classmethod
     def _get_leech_lock(cls):
-        if cls._leech_lock is None:
-            cls._leech_lock = asyncio.Lock()
-        return cls._leech_lock
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+        lid = id(curr_loop)
+        if lid not in cls._loop_leech_locks:
+            cls._loop_leech_locks[lid] = asyncio.Lock()
+        return cls._loop_leech_locks[lid]
 
     @classmethod
     async def get_client(cls):
@@ -88,12 +99,16 @@ class TelegramLeechService:
                 return cls._active_client, None
 
             if cls._active_client:
-                try:
-                    await cls._active_client.disconnect()
-                except Exception:
-                    pass
-                cls._active_client = None
-                cls._bot_entity = None
+                if cls._active_loop and cls._active_loop.is_running() and cls._active_loop != curr_loop:
+                    cls._active_client = None
+                    cls._bot_entity = None
+                else:
+                    try:
+                        await cls._active_client.disconnect()
+                    except Exception:
+                        pass
+                    cls._active_client = None
+                    cls._bot_entity = None
 
             try:
                 client = TelegramClient(StringSession(session_str), int(api_id), str(api_hash).strip())
@@ -319,10 +334,13 @@ class TelegramLeechService:
                 if len(clean_t) >= 3 and len(primary_artist) >= 2:
                     row = conn.execute("""
                         SELECT * FROM tracks 
-                        WHERE LOWER(title) LIKE ? AND LOWER(performer) LIKE ? 
-                          AND storage_message_id IS NOT NULL 
+                        WHERE (
+                            (LOWER(title) LIKE ? AND LOWER(performer) LIKE ?) OR
+                            (LOWER(title) LIKE ? AND LOWER(title) LIKE ?)
+                        )
+                        AND storage_message_id IS NOT NULL 
                         LIMIT 1
-                    """, (f"%{clean_t}%", f"%{primary_artist}%")).fetchone()
+                    """, (f"%{clean_t}%", f"%{primary_artist}%", f"%{clean_t}%", f"%{primary_artist}%")).fetchone()
                     if row:
                         return dict(row), "title_artist"
 
@@ -357,23 +375,30 @@ class TelegramLeechService:
         audio_msg = None
         used_bot = None
 
+        cls._is_user_busy = True
         try:
             async with cls._get_leech_lock():
-                # 1. Query Primary Bot: @DeezerMusicBot
-                logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url}...")
-                sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
-                
-                # High-frequency adaptive polling: check every 0.35s (up to 17.5s wait)
-                for _ in range(50):
-                    await asyncio.sleep(0.35)
-                    recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
-                    for m in recent:
-                        if m.id > sent_req.id and (m.document or m.audio):
-                            audio_msg = m
-                            used_bot = cls.PRIMARY_BOT
+                # 1. Query Primary Bot: @DeezerMusicBot with auto-retry
+                for attempt in range(1, 3):
+                    logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url} (Attempt {attempt}/2)...")
+                    sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
+                    
+                    # High-frequency adaptive polling: check every 0.35s (up to 14s wait per attempt)
+                    for _ in range(40):
+                        await asyncio.sleep(0.35)
+                        recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
+                        for m in recent:
+                            if m.id > sent_req.id and (m.document or m.audio):
+                                audio_msg = m
+                                used_bot = cls.PRIMARY_BOT
+                                break
+                        if audio_msg:
                             break
                     if audio_msg:
                         break
+                    if attempt == 1:
+                        logger.info(f"[LeechEngine] {cls.PRIMARY_BOT} delayed, pausing 2s before retry...")
+                        await asyncio.sleep(2)
 
                 # 2. Failover to @deezload2bot
                 if not audio_msg:
@@ -426,6 +451,9 @@ class TelegramLeechService:
                 
                 logger.info(f"[LeechEngine] Relaying '{title}' cloud-to-cloud to @{bot_handle} (Zero download)...")
                 await client.send_file(bot_entity, audio_msg.media, caption=relay_caption)
+                
+                # Anti-flood breathing room for DeezerBot before next track
+                await asyncio.sleep(0.8)
 
             # 5. Wait for official Bot to copy audio to storage channel & save in SQLite (fast 0.15s polling)
             found_track = None
@@ -457,6 +485,7 @@ class TelegramLeechService:
             )
 
             return True, {
+                "id": found_track.get('id'),
                 "title": found_track['title'],
                 "performer": found_track['performer'],
                 "duration": found_track['duration'],
@@ -475,7 +504,11 @@ class TelegramLeechService:
                 await client.disconnect()
             except Exception:
                 pass
+            cls._active_client = None
+            cls._bot_entity = None
             return False, f"Cloud leech error: {str(e)}"
+        finally:
+            cls._is_user_busy = False
 
     @classmethod
     async def ingest_and_register_track(cls, spotify_url, target_channel_id=None, title=None, artist=None, youtube_id=None):
@@ -529,6 +562,10 @@ class TelegramLeechService:
         settings = cls._get_db_settings()
         if not settings.get('userbot_enabled') or not settings.get('userbot_session_string'):
             return False, "Userbot engine is not enabled or connected."
+
+        if cls._is_user_busy:
+            logger.info("[RescueEngine] User download is actively running. Deferring background cloud rescue.")
+            return True, {"rescued": 0, "failed": 0, "message": "User download active"}
 
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
