@@ -1256,27 +1256,46 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"💽 Title: {clean_title}"
             )
 
-            # Copy message directly into storage channel without downloading to server
+            # ⚡️ Deduplication Check: Do not post duplicate to channel if already stored
             storage_msg_id = None
-            try:
-                copied_msg = await context.bot.copy_message(
-                    chat_id=dest_channel,
-                    from_chat_id=update.effective_user.id,
-                    message_id=update.message.message_id,
-                    caption=channel_caption
-                )
-                storage_msg_id = copied_msg.message_id
-            except Exception as copy_err:
-                logger.warning(f"copy_message failed ({copy_err}), falling back to send_audio...")
-                sent_msg = await context.bot.send_audio(
-                    chat_id=dest_channel,
-                    audio=audio.file_id,
-                    caption=channel_caption,
-                    title=clean_title,
-                    performer=clean_performer,
-                    duration=getattr(audio, 'duration', 0) or 0
-                )
-                storage_msg_id = sent_msg.message_id
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.row_factory = sqlite3.Row
+                existing = None
+                if spotify_id:
+                    existing = conn.execute(
+                        "SELECT * FROM tracks WHERE spotify_id = ? AND storage_message_id IS NOT NULL", 
+                        (spotify_id,)
+                    ).fetchone()
+                if not existing and clean_title and clean_performer:
+                    existing = conn.execute(
+                        "SELECT * FROM tracks WHERE LOWER(title) = ? AND LOWER(performer) = ? AND storage_message_id IS NOT NULL LIMIT 1",
+                        (clean_title.lower(), clean_performer.lower())
+                    ).fetchone()
+
+            if existing:
+                storage_msg_id = existing['storage_message_id']
+                logger.info(f"⚡️ [CloudLeechRelay] Track '{clean_title}' already in storage channel (Msg ID: {storage_msg_id}), skipping duplicate post.")
+            else:
+                # Copy message directly into storage channel without downloading to server
+                try:
+                    copied_msg = await context.bot.copy_message(
+                        chat_id=dest_channel,
+                        from_chat_id=update.effective_user.id,
+                        message_id=update.message.message_id,
+                        caption=channel_caption
+                    )
+                    storage_msg_id = copied_msg.message_id
+                except Exception as copy_err:
+                    logger.warning(f"copy_message failed ({copy_err}), falling back to send_audio...")
+                    sent_msg = await context.bot.send_audio(
+                        chat_id=dest_channel,
+                        audio=audio.file_id,
+                        caption=channel_caption,
+                        title=clean_title,
+                        performer=clean_performer,
+                        duration=getattr(audio, 'duration', 0) or 0
+                    )
+                    storage_msg_id = sent_msg.message_id
 
             # Register in SQLite database
             thumb_file_id = audio.thumbnail.file_id if getattr(audio, 'thumbnail', None) else None

@@ -194,11 +194,67 @@ class TelegramLeechService:
         return True
 
     @classmethod
+    def find_existing_in_vault(cls, spotify_id=None, youtube_id=None, title=None, artist=None):
+        """
+        Check if track already exists in the database vault (storage channel).
+        Priorities:
+        1. spotify_id
+        2. youtube_id
+        3. normalized title + performer
+        """
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            # 1. Check by spotify_id
+            if spotify_id:
+                row = conn.execute(
+                    "SELECT * FROM tracks WHERE spotify_id = ? AND storage_message_id IS NOT NULL", 
+                    (spotify_id,)
+                ).fetchone()
+                if row:
+                    return dict(row), "spotify_id"
+
+            # 2. Check by youtube_id
+            if youtube_id:
+                row = conn.execute(
+                    "SELECT * FROM tracks WHERE youtube_id = ? AND storage_message_id IS NOT NULL", 
+                    (youtube_id,)
+                ).fetchone()
+                if row:
+                    return dict(row), "youtube_id"
+
+            # 3. Check by normalized title & performer
+            if title and artist:
+                clean_t = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title).strip().lower()
+                clean_a = re.sub(r'[\(\[\{].*?[\)\]\}]', '', artist).strip().lower()
+                primary_artist = clean_a.split(',')[0].split('&')[0].strip()
+                if len(clean_t) >= 3 and len(primary_artist) >= 2:
+                    row = conn.execute("""
+                        SELECT * FROM tracks 
+                        WHERE LOWER(title) LIKE ? AND LOWER(performer) LIKE ? 
+                          AND storage_message_id IS NOT NULL 
+                        LIMIT 1
+                    """, (f"%{clean_t}%", f"%{primary_artist}%")).fetchone()
+                    if row:
+                        return dict(row), "title_artist"
+
+        return None, None
+
+    @classmethod
     async def leech_track(cls, spotify_url, target_channel_id=None):
         """
         واکشی ابری قطعه موزیک با لینک اسپاتیفای و کپی مستقیم در کانال استوریج تلگرام
         بدون دانلود فیزیکی روی سرور یا مصرف پهنای باند.
         """
+        m_sp = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
+        spotify_id = m_sp.group(1) if m_sp else None
+
+        # ⚡️ Deduplication Gate 1: Check if already stored in database channel
+        if spotify_id:
+            existing, match_type = cls.find_existing_in_vault(spotify_id=spotify_id)
+            if existing:
+                logger.info(f"[LeechEngine] Duplicate prevented: '{existing['title']}' already in vault via {match_type} (Storage Msg ID: {existing['storage_message_id']})")
+                return True, existing
+
         settings = cls._get_db_settings()
         session_str = settings.get("userbot_session_string")
         if not session_str or not settings.get("userbot_enabled"):
@@ -343,20 +399,42 @@ class TelegramLeechService:
             return False, f"Cloud leech error: {str(e)}"
 
     @classmethod
-    async def ingest_and_register_track(cls, spotify_url, target_channel_id=None):
+    async def ingest_and_register_track(cls, spotify_url, target_channel_id=None, title=None, artist=None, youtube_id=None):
         """
         Leech track via userbot, relay to official Lyraz Bot, and register in database tracks table.
+        Checks vault first to avoid re-uploading duplicates to storage channel.
         """
         m = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
         spotify_id = m.group(1) if m else None
 
-        # Check vault cache first
-        if spotify_id:
-            with sqlite3.connect(Config.DATABASE_URI) as conn:
-                conn.row_factory = sqlite3.Row
-                existing = conn.execute("SELECT * FROM tracks WHERE spotify_id = ? AND storage_message_id IS NOT NULL", (spotify_id,)).fetchone()
-                if existing:
-                    return True, dict(existing), "cached"
+        # ⚡️ Deduplication Gate 2: Check vault by spotify_id, youtube_id, or title+artist
+        existing, match_type = cls.find_existing_in_vault(
+            spotify_id=spotify_id,
+            youtube_id=youtube_id,
+            title=title,
+            artist=artist
+        )
+        if existing:
+            # Link spotify_id to existing track if missing
+            if spotify_id and not existing.get('spotify_id'):
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    conn.execute("UPDATE tracks SET spotify_id = ? WHERE id = ?", (spotify_id, existing['id']))
+                    conn.commit()
+
+            # Mark completed in campaign_tracks
+            if spotify_id or spotify_url:
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    conn.execute("""
+                        UPDATE campaign_tracks 
+                        SET status = 'completed', 
+                            error_msg = 'Resolved via existing vault match',
+                            delivered_at = CURRENT_TIMESTAMP
+                        WHERE (spotify_url = ? OR spotify_url LIKE ?) AND status != 'completed'
+                    """, (spotify_url, f"%{spotify_id}%"))
+                    conn.commit()
+
+            logger.info(f"[LeechEngine] Duplicate resolved from vault via {match_type}: '{existing['title']}' (Storage Msg: {existing['storage_message_id']})")
+            return True, existing, "cached"
 
         ok, res = await cls.leech_track(spotify_url, target_channel_id)
         if not ok:
@@ -376,7 +454,7 @@ class TelegramLeechService:
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
             failed_tracks = conn.execute("""
-                SELECT id, title, artist, spotify_url, campaign_id
+                SELECT id, title, artist, spotify_url, youtube_id, campaign_id
                 FROM campaign_tracks
                 WHERE status = 'failed' AND spotify_url IS NOT NULL
                 ORDER BY id ASC
@@ -391,16 +469,22 @@ class TelegramLeechService:
 
         for trk in failed_tracks:
             sp_url = trk['spotify_url']
-            ok, res, reason = await cls.ingest_and_register_track(sp_url)
+            ok, res, reason = await cls.ingest_and_register_track(
+                sp_url, 
+                title=trk['title'], 
+                artist=trk['artist'], 
+                youtube_id=trk['youtube_id']
+            )
             if ok:
                 rescued_count += 1
-                logger.info(f"[RescueEngine] Rescued: {trk['title']} - {trk['artist']}")
+                logger.info(f"[RescueEngine] Rescued ({reason}): {trk['title']} - {trk['artist']}")
             else:
                 failed_count += 1
                 logger.warning(f"[RescueEngine] Failed to rescue {trk['title']}: {res}")
 
-            # تاخیر امن برای جلوگیری از ریت‌لیمیت بات‌ها
-            await asyncio.sleep(3)
+            # تاخیر امن فقط زمانی که واکشی واقعی از شبکه انجام شده باشد
+            if reason != "cached":
+                await asyncio.sleep(3)
 
         return True, {
             "processed": len(failed_tracks),
