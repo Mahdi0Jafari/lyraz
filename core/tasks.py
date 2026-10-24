@@ -1081,26 +1081,34 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
             await update_progress_safe(title)
             try:
                 vid = track_info.get('videoId') or track_info.get('video_id')
-                
-                # Fast DB cache lookup by title and artist to avoid YouTube Search API calls
-                if not vid:
-                    def check_db_by_name():
-                        with sqlite3.connect(Config.DATABASE_URI) as conn:
-                            conn.row_factory = sqlite3.Row
-                            cur = conn.execute("SELECT * FROM tracks WHERE title = ? AND performer = ? LIMIT 1", (title, artist))
-                            res = cur.fetchone()
-                            if res: return dict(res)
-                            cur = conn.execute("SELECT * FROM tracks WHERE title LIKE ? AND performer LIKE ? LIMIT 1", (f"{title}%", f"{artist}%"))
-                            res = cur.fetchone()
-                            if res: return dict(res)
-                            return None
-                    
-                    cached_by_name = await asyncio.to_thread(check_db_by_name)
-                    if cached_by_name:
-                        vid = cached_by_name['youtube_id']
+                sp_url = track_info.get('spotify_url')
+                sp_id = track_info.get('spotify_id') or track_info.get('id')
 
-                if not vid:
-                    vid = await asyncio.to_thread(yt_service.find_best_match, search_query, title, artist, track_duration)
+                # ⚡️ Fast-Track 1: Multi-Gate Vault Cache Check (Zero-Wait)
+                from core.services.telegram_leech_service import telegram_leech_service
+                cached, match_type = telegram_leech_service.find_existing_in_vault(
+                    spotify_id=sp_id,
+                    youtube_id=vid,
+                    title=title,
+                    artist=artist
+                )
+
+                # ⚡️ Fast-Track 2: If NOT in vault, try Telegram Cloud Leech (DeezerBot)
+                # Bypasses YouTube datacenter bot blocks and downloads 320kbps original audio!
+                if not cached and sp_url:
+                    settings = telegram_leech_service._get_db_settings()
+                    if settings.get('userbot_enabled') and settings.get('userbot_session_string'):
+                        logger.info(f"⚡️ [Batch Leech] Cloud leeching '{title}' via Telegram userbot ({sp_url})...")
+                        leech_ok, leech_data, leech_reason = await telegram_leech_service.ingest_and_register_track(sp_url, title=title, artist=artist)
+                        if leech_ok and leech_data.get('file_id'):
+                            cached = leech_data
+                        else:
+                            logger.info(f"Batch leech skipped/failed for '{title}': {leech_reason}")
+
+                # 🔄 Fallback 3: YouTube Search & yt-dlp only if leech is not available or failed
+                if not cached:
+                    if not vid:
+                        vid = await asyncio.to_thread(yt_service.find_best_match, search_query, title, artist, track_duration)
                     if not vid:
                         async with state_lock:
                             failed_count += 1
@@ -1109,13 +1117,15 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         delivery_signal.set()
                         return False
 
-                def check_cache():
-                    with sqlite3.connect(Config.DATABASE_URI) as conn:
-                        conn.row_factory = sqlite3.Row
-                        cur = conn.execute("SELECT * FROM tracks WHERE youtube_id=?", (vid,))
-                        return cur.fetchone()
+                    def check_cache():
+                        with sqlite3.connect(Config.DATABASE_URI) as conn:
+                            conn.row_factory = sqlite3.Row
+                            cur = conn.execute("SELECT * FROM tracks WHERE youtube_id=?", (vid,))
+                            return cur.fetchone()
 
-                cached = await asyncio.to_thread(check_cache)
+                    cached_row = await asyncio.to_thread(check_cache)
+                    if cached_row:
+                        cached = dict(cached_row)
 
                 if cached:
                     cached = dict(cached)
@@ -1181,7 +1191,7 @@ async def _async_batch_logic(tracks, playlist_name, cover_url, user_id, user_fir
                         processed_count += 1
                     return True
                 else:
-                    result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration)
+                    result = await _async_logic(vid, title, artist, user_id, user_first_name, session_token, chat_id, message_id=message_id, quality=quality, is_batch=True, duration=track_duration, spotify_url=sp_url)
                     if result and isinstance(result, tuple):
                         ready_to_deliver[idx] = result
                         delivery_signal.set()

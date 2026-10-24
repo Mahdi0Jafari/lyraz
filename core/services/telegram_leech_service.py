@@ -35,6 +35,7 @@ class TelegramLeechService:
     _active_session_str = None
     _active_loop = None
     _client_lock = None
+    _leech_lock = None
     _bot_entity = None
 
     @classmethod
@@ -42,6 +43,12 @@ class TelegramLeechService:
         if cls._client_lock is None:
             cls._client_lock = asyncio.Lock()
         return cls._client_lock
+
+    @classmethod
+    def _get_leech_lock(cls):
+        if cls._leech_lock is None:
+            cls._leech_lock = asyncio.Lock()
+        return cls._leech_lock
 
     @classmethod
     async def get_client(cls):
@@ -351,73 +358,74 @@ class TelegramLeechService:
         used_bot = None
 
         try:
-            # 1. Query Primary Bot: @DeezerMusicBot
-            logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url}...")
-            sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
-            
-            # High-frequency adaptive polling: check every 0.35s (up to 17.5s wait)
-            for _ in range(50):
-                await asyncio.sleep(0.35)
-                recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
-                for m in recent:
-                    if m.id > sent_req.id and (m.document or m.audio):
-                        audio_msg = m
-                        used_bot = cls.PRIMARY_BOT
-                        break
-                if audio_msg:
-                    break
-
-            # 2. Failover to @deezload2bot
-            if not audio_msg:
-                logger.warning(f"[LeechEngine] {cls.PRIMARY_BOT} did not respond in time. Failing over to {cls.BACKUP_BOT}...")
-                sent_req2 = await client.send_message(cls.BACKUP_BOT, spotify_url)
+            async with cls._get_leech_lock():
+                # 1. Query Primary Bot: @DeezerMusicBot
+                logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url}...")
+                sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
                 
-                # Check every 0.4s (up to 14s wait)
-                for _ in range(35):
-                    await asyncio.sleep(0.4)
-                    recent = await client.get_messages(cls.BACKUP_BOT, limit=5)
+                # High-frequency adaptive polling: check every 0.35s (up to 17.5s wait)
+                for _ in range(50):
+                    await asyncio.sleep(0.35)
+                    recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
                     for m in recent:
-                        if m.id > sent_req2.id:
-                            if m.document or m.audio:
-                                audio_msg = m
-                                used_bot = cls.BACKUP_BOT
-                                break
-                            elif m.buttons and not audio_msg:
-                                try:
-                                    await m.click(0, 0)
-                                except Exception:
-                                    pass
+                        if m.id > sent_req.id and (m.document or m.audio):
+                            audio_msg = m
+                            used_bot = cls.PRIMARY_BOT
+                            break
                     if audio_msg:
                         break
 
-            if not audio_msg or not (audio_msg.document or audio_msg.audio):
-                return False, "No audio file received from Telegram bots."
+                # 2. Failover to @deezload2bot
+                if not audio_msg:
+                    logger.warning(f"[LeechEngine] {cls.PRIMARY_BOT} did not respond in time. Failing over to {cls.BACKUP_BOT}...")
+                    sent_req2 = await client.send_message(cls.BACKUP_BOT, spotify_url)
+                    
+                    # Check every 0.4s (up to 14s wait)
+                    for _ in range(35):
+                        await asyncio.sleep(0.4)
+                        recent = await client.get_messages(cls.BACKUP_BOT, limit=5)
+                        for m in recent:
+                            if m.id > sent_req2.id:
+                                if m.document or m.audio:
+                                    audio_msg = m
+                                    used_bot = cls.BACKUP_BOT
+                                    break
+                                elif m.buttons and not audio_msg:
+                                    try:
+                                        await m.click(0, 0)
+                                    except Exception:
+                                        pass
+                        if audio_msg:
+                            break
 
-            # 3. Extract metadata
-            doc = audio_msg.document or audio_msg.audio
-            title = "Unknown Track"
-            performer = "Unknown Artist"
-            duration = 0
-            for attr in getattr(doc, 'attributes', []):
-                if hasattr(attr, 'title') and attr.title:
-                    title = attr.title
-                if hasattr(attr, 'performer') and attr.performer:
-                    performer = attr.performer
-                if hasattr(attr, 'duration') and attr.duration:
-                    duration = attr.duration
+                if not audio_msg or not (audio_msg.document or audio_msg.audio):
+                    return False, "No audio file received from Telegram bots."
 
-            # 4. Pure Telegram Cloud relay to official Lyraz Bot (Zero Server Bandwidth)
-            m_sp = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
-            spotify_id = m_sp.group(1) if m_sp else None
+                # 3. Extract metadata
+                doc = audio_msg.document or audio_msg.audio
+                title = "Unknown Track"
+                performer = "Unknown Artist"
+                duration = 0
+                for attr in getattr(doc, 'attributes', []):
+                    if hasattr(attr, 'title') and attr.title:
+                        title = attr.title
+                    if hasattr(attr, 'performer') and attr.performer:
+                        performer = attr.performer
+                    if hasattr(attr, 'duration') and attr.duration:
+                        duration = attr.duration
 
-            bot_handle = (Config.BOT_USERNAME or 'LyrazBot').lstrip('@')
-            if not cls._bot_entity:
-                cls._bot_entity = await client.get_entity(bot_handle)
-            bot_entity = cls._bot_entity
-            relay_caption = f"#cloud_leech {spotify_id or 'none'} {dest_channel}"
-            
-            logger.info(f"[LeechEngine] Relaying '{title}' cloud-to-cloud to @{bot_handle} (Zero download)...")
-            await client.send_file(bot_entity, audio_msg.media, caption=relay_caption)
+                # 4. Pure Telegram Cloud relay to official Lyraz Bot (Zero Server Bandwidth)
+                m_sp = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
+                spotify_id = m_sp.group(1) if m_sp else None
+
+                bot_handle = (Config.BOT_USERNAME or 'LyrazBot').lstrip('@')
+                if not cls._bot_entity:
+                    cls._bot_entity = await client.get_entity(bot_handle)
+                bot_entity = cls._bot_entity
+                relay_caption = f"#cloud_leech {spotify_id or 'none'} {dest_channel}"
+                
+                logger.info(f"[LeechEngine] Relaying '{title}' cloud-to-cloud to @{bot_handle} (Zero download)...")
+                await client.send_file(bot_entity, audio_msg.media, caption=relay_caption)
 
             # 5. Wait for official Bot to copy audio to storage channel & save in SQLite (fast 0.15s polling)
             found_track = None

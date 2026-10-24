@@ -157,8 +157,16 @@ class SpotifyScraperService:
 
             duration = round(track.get('duration', 0) / 1000) if track.get('duration') else None
 
+            # استخراج URI و Spotify ID و لینک اختصاصی ترک
+            uri = track.get('uri') or ""
+            track_id = uri.split(':')[-1] if 'track:' in uri else track.get('id')
+            spotify_track_url = f"https://open.spotify.com/track/{track_id}" if track_id else None
+
             if title and artist:
                 tracks.append({
+                    "id": track_id,
+                    "spotify_id": track_id,
+                    "spotify_url": spotify_track_url,
                     "title": title,
                     "artist": artist,
                     "search_query": f"{artist} {title}",
