@@ -1301,7 +1301,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     conn.execute("""
                         UPDATE campaign_tracks 
                         SET status = 'completed', 
-                            error_reason = NULL,
+                            error_msg = NULL,
                             storage_message_id = ?
                         WHERE (spotify_url LIKE ? OR spotify_url LIKE ?) AND status != 'completed'
                     """, (storage_msg_id, f"%{spotify_id}%", f"%{spotify_id}"))
