@@ -677,8 +677,11 @@ class CatalogAutopilotService:
         """
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
-            settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-            if not settings or 'autopilot_enabled' not in settings.keys() or not settings['autopilot_enabled']:
+            settings_row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+            if not settings_row:
+                return
+            settings = dict(settings_row)
+            if not settings.get('autopilot_enabled'):
                 return
 
             # ۰. همگام‌سازی خودکار وضعیت کمپین‌های تکمیل‌شده و پاکسازی لاگ‌های معلق قدیمی
@@ -784,7 +787,7 @@ class CatalogAutopilotService:
                 conn.commit()
 
             # ۱.۵. خودترمیمی ابری تلگرام برای قطعات ناموفق (Telegram Cloud Auto-Rescue)
-            if settings and 'userbot_enabled' in settings.keys() and settings['userbot_enabled'] and settings.get('userbot_session_string'):
+            if settings.get('userbot_enabled') and settings.get('userbot_session_string'):
                 try:
                     from core.services.telegram_leech_service import telegram_leech_service
                     import asyncio
