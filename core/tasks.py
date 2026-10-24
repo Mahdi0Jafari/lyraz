@@ -570,19 +570,19 @@ def ingest_artist_campaign_task(campaign_id, tracks, artist_name, target_channel
 # ==========================================
 
 @huey.task()
-def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None, target_channel_id=None, priority=None):
+def download_and_process_track(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, cover_url=None, duration=None, log_id=None, target_channel_id=None, priority=None, spotify_url=None, **kwargs):
     """ورکر تسک برای دانلود و پردازش یک آهنگ (Non-blocking)"""
     logger.info(f"🚀 Task Started: {title} ({video_id})")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(
-            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration, log_id=log_id, target_channel_id=target_channel_id)
+            _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality, cover_url=cover_url, duration=duration, log_id=log_id, target_channel_id=target_channel_id, spotify_url=spotify_url)
         )
     finally:
         loop.close()
 
-async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None, log_id=None, target_channel_id=None):
+async def _async_logic(video_id, title, artist, user_id, user_first_name, session_token, chat_id, message_id, quality=None, is_batch=False, cover_url=None, duration=None, log_id=None, target_channel_id=None, spotify_url=None):
     """
     is_batch: اگر True باشد، پیام وضعیتی که در هندلر ساخته شده (message_id) پاک نمی‌شود، 
     چون آن پیام قرار است به عنوان نوار پیشرفت کل پلی‌لیست عمل کند. اما فایل صوتی حتماً ارسال می‌شود.
@@ -666,6 +666,51 @@ async def _async_logic(video_id, title, artist, user_id, user_first_name, sessio
                 path = None
         
         if not cached_track:
+            # ۲.۸. ⚡️ اولویت اول: واکشی ابری فوق‌سریع ۳۲۰kbps از طریق یوزربات تلگرام (Cloud-to-Cloud Leech)
+            if not spotify_url and video_id:
+                try:
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        row = conn.execute("SELECT spotify_url FROM campaign_tracks WHERE youtube_id = ? AND spotify_url IS NOT NULL LIMIT 1", (video_id,)).fetchone()
+                        if row:
+                            spotify_url = row[0]
+                except Exception:
+                    pass
+
+            if spotify_url:
+                try:
+                    from core.services.telegram_leech_service import telegram_leech_service
+                    settings = telegram_leech_service._get_db_settings()
+                    if settings.get('userbot_enabled') and settings.get('userbot_session_string'):
+                        logger.info(f"⚡️ [Leech Priority] Attempting cloud leech for '{final_title}' via Telegram userbot ({spotify_url})...")
+                        leech_ok, leech_track_data, leech_reason = await telegram_leech_service.ingest_and_register_track(
+                            spotify_url, target_channel_id=target_channel_id
+                        )
+                        if leech_ok:
+                            logger.info(f"✅ [Leech Priority] Cloud leech succeeded for '{final_title}'! Bypassing YouTube download completely.")
+                            if log_id:
+                                try:
+                                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                                        conn.execute("UPDATE ingestion_logs SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?", (log_id,))
+                                        conn.commit()
+                                except Exception:
+                                    pass
+
+                            if message_id and not is_batch and chat_id:
+                                try:
+                                    if leech_track_data.get('file_id'):
+                                        await local_bot.send_audio(
+                                            chat_id=chat_id,
+                                            audio=leech_track_data['file_id'],
+                                            caption=f"🎵 <b>{final_title}</b> - {final_artist}\n⚡️ <i>Lyraz Cloud Vault (320kbps)</i>",
+                                            parse_mode=ParseMode.HTML
+                                        )
+                                        await local_bot.delete_message(chat_id=chat_id, message_id=message_id)
+                                except Exception as send_err:
+                                    logger.warning(f"Failed to forward leeched track to user: {send_err}")
+                            return True
+                except Exception as leech_err:
+                    logger.warning(f"Cloud leech attempt skipped/failed: {leech_err}, falling back to YouTube pipeline.")
+
             # محاسبه هوشمند بیت‌ریت برای فایل‌های طولانی (بیش از ۲۰ دقیقه) تا حجم فایل زیر ۴۸ مگابایت تلگرام بماند
             effective_quality = quality
             file_duration = duration or rich_metadata.get('duration')

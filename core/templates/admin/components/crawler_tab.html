@@ -73,6 +73,119 @@
 
 
     <!-- ========================================== -->
+    <!-- 🤖 SECTION: TELEGRAM USERBOT & CLOUD LEECH -->
+    <!-- ========================================== -->
+    <div class="glass-panel rounded-2xl p-6 border border-white/5 relative overflow-hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-6">
+            <div class="flex items-center gap-3">
+                <div class="size-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+                    <span class="material-symbols-outlined text-[22px]">send</span>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-sm font-extrabold text-white">Telegram Userbot & Cloud Leech Engine</h3>
+                        <span id="userbot-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/5 text-gray-400 border border-white/10">Checking...</span>
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-0.5">Automated cloud-to-cloud ingestion from @DeezerMusicBot & @deezload2bot straight into your storage channel (0 MB server bandwidth).</p>
+                </div>
+            </div>
+            
+            <div id="userbot-connected-actions" class="hidden flex items-center gap-2">
+                <span id="userbot-user-info" class="text-xs text-emerald-400 font-mono font-bold"></span>
+                <button onclick="disconnectUserbot()" class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl text-xs font-bold transition flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[15px]">power_settings_new</span> Disconnect
+                </button>
+            </div>
+        </div>
+
+        <!-- Disconnected Form: API credentials & Verification -->
+        <div id="userbot-form-container" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Telegram API ID</label>
+                    <input type="text" id="ub-api-id" placeholder="e.g. 12345678" class="glass-input w-full h-10 px-3 rounded-xl text-xs font-mono text-white">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Telegram API Hash</label>
+                    <input type="text" id="ub-api-hash" placeholder="API Hash (32 hex chars)" class="glass-input w-full h-10 px-3 rounded-xl text-xs font-mono text-white">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Phone Number (with +)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="ub-phone" placeholder="+989..." class="glass-input flex-1 h-10 px-3 rounded-xl text-xs font-mono text-white">
+                        <button id="btn-ub-send-code" onclick="sendUserbotCode()" class="bg-blue-600 hover:bg-blue-500 text-white px-3.5 h-10 rounded-xl font-bold text-xs transition flex items-center gap-1 shadow-lg shadow-blue-500/20 whitespace-nowrap">
+                            <span class="material-symbols-outlined text-[15px]">sms</span> Send Code
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Verification Code & 2FA Password -->
+            <div id="userbot-verify-row" class="pt-3 border-t border-white/5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-[11px] font-bold text-blue-400 mb-1.5 uppercase tracking-wider">Telegram Code (5 digits)</label>
+                    <input type="text" id="ub-code" placeholder="Enter Telegram Code" class="glass-input w-full h-10 px-3 rounded-xl text-xs font-mono text-white border-blue-500/40">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">2FA Cloud Password (Optional)</label>
+                    <input type="password" id="ub-password" placeholder="2FA Password (if enabled)" class="glass-input w-full h-10 px-3 rounded-xl text-xs font-mono text-white">
+                </div>
+                <div class="flex items-end">
+                    <button id="btn-ub-verify" onclick="verifyUserbotCode()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white h-10 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+                        <span class="material-symbols-outlined text-[16px]">verified_user</span> Authorize & Save to Database
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Spotify Track Leech Tester -->
+        <div class="mt-6 pt-4 border-t border-white/5 flex flex-col sm:flex-row items-center gap-3">
+            <div class="relative flex-1 w-full">
+                <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-gray-400">link</span>
+                <input type="text" id="ub-test-track" placeholder="Test Spotify Track URL (e.g. https://open.spotify.com/track/...)" value="https://open.spotify.com/track/6kWxIqQDsKFYCJGbU4AjCX" class="glass-input w-full h-10 pl-10 pr-3 rounded-xl text-xs text-white font-mono">
+            </div>
+            <button id="btn-ub-test-leech" onclick="testUserbotLeech()" class="w-full sm:w-auto bg-primary hover:bg-[#0be02f] text-black px-5 h-10 rounded-xl font-bold text-xs transition shadow-[0_0_15px_rgba(13,242,51,0.2)] flex items-center justify-center gap-1.5 whitespace-nowrap">
+                <span class="material-symbols-outlined text-[16px]">bolt</span> Instant Cloud Leech
+            </button>
+        </div>
+        <div id="ub-test-result" class="hidden mt-3 p-3 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-300"></div>
+
+        <!-- Autonomous Self-Healing & Failed Tracks Rescue Hub -->
+        <div class="mt-6 pt-5 border-t border-white/5 bg-gradient-to-r from-emerald-500/10 via-blue-500/5 to-purple-500/10 -mx-6 -mb-6 p-6 rounded-b-2xl border-t border-white/10">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="size-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                        <span class="material-symbols-outlined text-[22px]">healing</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h4 class="text-sm font-extrabold text-white">Autonomous Self-Healing (Cloud Rescue)</h4>
+                            <span id="ub-rescue-badge" class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Auto-Healer Active</span>
+                        </div>
+                        <p class="text-[11px] text-gray-400 mt-0.5">
+                            Rescue YouTube-banned campaign tracks by streaming directly from Telegram bots.
+                            <span class="text-emerald-300 font-mono font-bold ml-1" id="ub-rescue-remaining-text">Checking failed tracks...</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <select id="ub-rescue-batch-size" class="glass-input h-10 px-3 rounded-xl text-xs font-mono text-white appearance-none cursor-pointer">
+                        <option value="5">Batch: 5 Tracks</option>
+                        <option value="10" selected>Batch: 10 Tracks</option>
+                        <option value="25">Batch: 25 Tracks</option>
+                    </select>
+                    <button id="btn-ub-rescue-batch" onclick="runUserbotRescueBatch()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 h-10 rounded-xl font-bold text-xs transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 whitespace-nowrap">
+                        <span class="material-symbols-outlined text-[16px]">medical_services</span> Start Batch Rescue
+                    </button>
+                </div>
+            </div>
+            <div id="ub-rescue-result" class="hidden mt-3 p-3 rounded-xl bg-black/40 border border-white/10 text-xs text-gray-300 font-mono"></div>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
     <!-- ⚙️ SECTION 1: SCHEDULER & SETTINGS          -->
     <!-- ========================================== -->
     <div class="glass-panel rounded-2xl p-6 border border-white/5 relative">
@@ -565,4 +678,230 @@
         document.getElementById('sched-status-label').className = this.checked ? 'ml-3 text-xs font-bold text-primary' : 'ml-3 text-xs font-bold text-gray-400';
         saveSchedulerSettings();
     });
+
+    // ==========================================
+    // 🤖 TELEGRAM USERBOT & CLOUD LEECH METHODS
+    // ==========================================
+    async function loadUserbotStatus() {
+        try {
+            const res = await fetch('/api/admin/userbot/status');
+            const data = await res.json();
+            if (data.status === 'success') {
+                const ub = data.data;
+                const badge = document.getElementById('userbot-badge');
+                const actions = document.getElementById('userbot-connected-actions');
+                const userInfo = document.getElementById('userbot-user-info');
+                const form = document.getElementById('userbot-form-container');
+
+                if (ub.api_id) document.getElementById('ub-api-id').value = ub.api_id;
+                if (ub.phone) document.getElementById('ub-phone').value = ub.phone;
+
+                if (ub.is_connected) {
+                    badge.innerText = 'Connected & Ready';
+                    badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                    userInfo.innerText = `🟢 ${ub.first_name || 'User'} (${ub.phone})`;
+                    actions.classList.remove('hidden');
+                    form.classList.add('opacity-40', 'pointer-events-none');
+                } else {
+                    badge.innerText = 'Disconnected';
+                    badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30';
+                    actions.classList.add('hidden');
+                    form.classList.remove('opacity-40', 'pointer-events-none');
+                }
+
+                const remCount = ub.remaining_failed_count !== undefined ? ub.remaining_failed_count : 0;
+                const remEl = document.getElementById('ub-rescue-remaining-text');
+                if (remEl) {
+                    remEl.innerText = `Failed in Queue: ${remCount.toLocaleString()} tracks`;
+                }
+            }
+        } catch (e) {
+            console.error('Error loading userbot status:', e);
+        }
+    }
+
+    async function sendUserbotCode() {
+        const api_id = document.getElementById('ub-api-id').value.trim();
+        const api_hash = document.getElementById('ub-api-hash').value.trim();
+        const phone = document.getElementById('ub-phone').value.trim();
+
+        if (!api_id || !api_hash || !phone) {
+            showToast('⚠️ Please fill API ID, API Hash and Phone Number');
+            return;
+        }
+
+        const btn = document.getElementById('btn-ub-send-code');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[15px] animate-spin">progress_activity</span> Sending...`;
+
+        try {
+            const res = await fetch('/api/admin/userbot/send_code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_id, api_hash, phone })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`✅ ${data.message}`);
+                document.getElementById('ub-code').focus();
+            } else {
+                showToast(`❌ ${data.message || 'Error sending code'}`);
+            }
+        } catch (e) {
+            showToast('❌ Network error while sending code');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[15px]">sms</span> Send Code`;
+        }
+    }
+
+    async function verifyUserbotCode() {
+        const phone = document.getElementById('ub-phone').value.trim();
+        const code = document.getElementById('ub-code').value.trim();
+        const password = document.getElementById('ub-password').value.trim();
+
+        if (!phone || !code) {
+            showToast('⚠️ Phone and Verification Code are required');
+            return;
+        }
+
+        const btn = document.getElementById('btn-ub-verify');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Verifying...`;
+
+        try {
+            const res = await fetch('/api/admin/userbot/verify_code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, code, password })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('🎉 Userbot connected and StringSession saved to database!');
+                document.getElementById('ub-code').value = '';
+                document.getElementById('ub-password').value = '';
+                loadUserbotStatus();
+            } else if (data.status === '2fa_required') {
+                showToast(`⚠️ ${data.message}`);
+                document.getElementById('ub-password').focus();
+            } else {
+                showToast(`❌ ${data.message || 'Verification failed'}`);
+            }
+        } catch (e) {
+            showToast('❌ Network error during verification');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">verified_user</span> Authorize & Save to Database`;
+        }
+    }
+
+    async function disconnectUserbot() {
+        if (!confirm('Are you sure you want to disconnect this Telegram userbot?')) return;
+        try {
+            const res = await fetch('/api/admin/userbot/disconnect', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('Userbot disconnected.');
+                loadUserbotStatus();
+            }
+        } catch (e) {
+            showToast('❌ Error disconnecting');
+        }
+    }
+
+    async function testUserbotLeech() {
+        const urlInput = document.getElementById('ub-test-track');
+        const url = urlInput.value.trim();
+        if (!url) {
+            showToast('⚠️ Please enter a Spotify Track URL');
+            return;
+        }
+
+        const btn = document.getElementById('btn-ub-test-leech');
+        const resBox = document.getElementById('ub-test-result');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Leeching...`;
+        resBox.classList.remove('hidden');
+        resBox.innerHTML = `⏳ Sending link to @DeezerMusicBot and waiting for cloud relay...`;
+
+        try {
+            const res = await fetch('/api/admin/userbot/test_leech', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                const track = data.data;
+                const sizeMb = (track.file_size / (1024 * 1024)).toFixed(2);
+                resBox.innerHTML = `
+                    <div class="flex items-center gap-2 text-emerald-400 font-bold mb-1">
+                        <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                        <span>Track Successfully Ingested in ${track.elapsed}s!</span>
+                    </div>
+                    <div class="text-[11px] text-gray-300 space-y-0.5 font-mono">
+                        <div>🎵 <b>Title:</b> ${track.title}</div>
+                        <div>👤 <b>Artist:</b> ${track.performer}</div>
+                        <div>💾 <b>Size:</b> ${sizeMb} MB | ⏱ <b>Duration:</b> ${track.duration}s</div>
+                        <div>🤖 <b>Source:</b> ${track.provider} ──► <b>Storage Channel Msg ID:</b> ${track.storage_message_id}</div>
+                    </div>
+                `;
+                showToast('🎉 Track leeched and sent to storage channel!');
+            } else {
+                resBox.innerHTML = `<span class="text-red-400 font-bold">❌ Error:</span> ${data.message}`;
+                showToast(`❌ ${data.message || 'Leech failed'}`);
+            }
+        } catch (e) {
+            resBox.innerHTML = `<span class="text-red-400 font-bold">❌ Network Error</span>`;
+            showToast('❌ Network error during leech test');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">bolt</span> Instant Cloud Leech`;
+        }
+    }
+
+    async function runUserbotRescueBatch() {
+        const batchSize = document.getElementById('ub-rescue-batch-size').value;
+        const btn = document.getElementById('btn-ub-rescue-batch');
+        const resBox = document.getElementById('ub-rescue-result');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> Rescuing...`;
+        resBox.classList.remove('hidden');
+        resBox.innerHTML = `⏳ Processing rescue batch of ${batchSize} tracks via Telegram bots...`;
+
+        try {
+            const res = await fetch('/api/admin/userbot/rescue_batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batch_size: parseInt(batchSize) })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                const info = data.data;
+                resBox.innerHTML = `
+                    <div class="flex items-center gap-2 text-emerald-400 font-bold mb-1">
+                        <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                        <span>Rescue Batch Done: ${info.rescued} Rescued, ${info.failed} Failed</span>
+                    </div>
+                    <div class="text-[11px] text-gray-300">
+                        Processed: <b>${info.processed}</b> | Remaining in queue: <b>${info.remaining ? info.remaining.toLocaleString() : '0'}</b>
+                    </div>
+                `;
+                showToast(`🎉 Rescued ${info.rescued} tracks!`);
+                loadUserbotStatus();
+            } else {
+                resBox.innerHTML = `<span class="text-red-400 font-bold">❌ Error:</span> ${data.message}`;
+                showToast(`❌ ${data.message || 'Rescue failed'}`);
+            }
+        } catch (e) {
+            resBox.innerHTML = `<span class="text-red-400 font-bold">❌ Network Error</span>`;
+            showToast('❌ Network error during batch rescue');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">medical_services</span> Start Batch Rescue`;
+        }
+    }
+
+    // Load initial userbot status on tab mount
+    loadUserbotStatus();
 </script>

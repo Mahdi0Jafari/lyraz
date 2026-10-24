@@ -204,7 +204,14 @@ def init_db():
                 ('crawler_max_tracks', 'INTEGER', '15'),
                 ('crawler_source', 'TEXT', "'global_top_50'"),
                 ('autopilot_enabled', 'BOOLEAN', '0'),
-                ('autopilot_target_goal', 'INTEGER', '25000')
+                ('autopilot_target_goal', 'INTEGER', '25000'),
+                ('userbot_api_id', 'INTEGER', 'NULL'),
+                ('userbot_api_hash', 'TEXT', 'NULL'),
+                ('userbot_phone', 'TEXT', 'NULL'),
+                ('userbot_session_string', 'TEXT', 'NULL'),
+                ('userbot_first_name', 'TEXT', 'NULL'),
+                ('userbot_username', 'TEXT', 'NULL'),
+                ('userbot_enabled', 'BOOLEAN', '0')
             ]:
                 try:
                     c.execute(f"ALTER TABLE settings ADD COLUMN {col} {col_type} DEFAULT {default_val}")

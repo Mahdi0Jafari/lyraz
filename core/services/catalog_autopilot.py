@@ -783,6 +783,20 @@ class CatalogAutopilotService:
                     )
                 conn.commit()
 
+            # ۱.۵. خودترمیمی ابری تلگرام برای قطعات ناموفق (Telegram Cloud Auto-Rescue)
+            if settings and 'userbot_enabled' in settings.keys() and settings['userbot_enabled'] and settings.get('userbot_session_string'):
+                try:
+                    from core.services.telegram_leech_service import telegram_leech_service
+                    import asyncio
+                    # اجرای بچ کوچک ۳ تایی در هر تیک ۳ دقیقه‌ای به صورت امن و پس‌زمینه
+                    loop = asyncio.new_event_loop()
+                    try:
+                        loop.run_until_complete(telegram_leech_service.rescue_failed_batch(batch_size=3))
+                    finally:
+                        loop.close()
+                except Exception as rescue_err:
+                    logger.warning(f"[Autopilot Tick] Telegram cloud auto-rescue error: {rescue_err}")
+
             # ۲. تزریق و استخراج پیوسته برای کمپین‌هایی که هنوز در انتظار استخراج یوتیوب هستند
             # علامت‌گذاری ترک‌های بدون یوتیوب آیدی که بیش از ۲ ساعت مانده‌اند به عنوان failed
             conn.execute("""

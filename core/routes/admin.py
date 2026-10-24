@@ -514,6 +514,91 @@ def clear_crawler_logs_api():
     db.commit()
     return jsonify({'status': 'success'})
 
+# ==========================================
+# 🤖 TELEGRAM USERBOT & CLOUD LEECH API
+# ==========================================
+
+@admin_bp.route('/api/admin/userbot/status', methods=['GET'])
+def get_userbot_status_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    from core.services.telegram_leech_service import telegram_leech_service
+    status_data = telegram_leech_service.get_status()
+    return jsonify({'status': 'success', 'data': status_data})
+
+@admin_bp.route('/api/admin/userbot/send_code', methods=['POST'])
+def userbot_send_code_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    import asyncio
+    from core.services.telegram_leech_service import telegram_leech_service
+    data = request.json or {}
+    api_id = data.get('api_id')
+    api_hash = data.get('api_hash')
+    phone = data.get('phone')
+
+    if not api_id or not api_hash or not phone:
+        return jsonify({'status': 'error', 'message': 'لطفاً API ID، API Hash و شماره موبایل را وارد کنید.'}), 400
+
+    ok, msg = asyncio.run(telegram_leech_service.send_code(api_id, api_hash, phone))
+    if ok:
+        return jsonify({'status': 'success', 'message': msg})
+    return jsonify({'status': 'error', 'message': msg}), 400
+
+@admin_bp.route('/api/admin/userbot/verify_code', methods=['POST'])
+def userbot_verify_code_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    import asyncio
+    from core.services.telegram_leech_service import telegram_leech_service
+    data = request.json or {}
+    phone = data.get('phone')
+    code = data.get('code')
+    password = data.get('password')
+
+    if not phone or not code:
+        return jsonify({'status': 'error', 'message': 'شماره موبایل و کد تایید الزامی است.'}), 400
+
+    ok, res = asyncio.run(telegram_leech_service.verify_code(phone, code, password))
+    if ok:
+        return jsonify({'status': 'success', 'message': 'اتصال یوزربات با موفقیت برقرار و در دیتابیس ذخیره شد.', 'user': res})
+    
+    if isinstance(res, str) and "2FA_REQUIRED" in res:
+        return jsonify({'status': '2fa_required', 'message': res.replace("2FA_REQUIRED:", "").strip()})
+    return jsonify({'status': 'error', 'message': str(res)}), 400
+
+@admin_bp.route('/api/admin/userbot/disconnect', methods=['POST'])
+def userbot_disconnect_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    from core.services.telegram_leech_service import telegram_leech_service
+    telegram_leech_service.disconnect()
+    return jsonify({'status': 'success', 'message': 'اتصال یوزربات با موفقیت قطع شد.'})
+
+@admin_bp.route('/api/admin/userbot/test_leech', methods=['POST'])
+def userbot_test_leech_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    import asyncio
+    from core.services.telegram_leech_service import telegram_leech_service
+    data = request.json or {}
+    url = data.get('url', '').strip()
+    if not url:
+        return jsonify({'status': 'error', 'message': 'لینک اسپاتیفای الزامی است.'}), 400
+
+    ok, res = asyncio.run(telegram_leech_service.leech_track(url))
+    if ok:
+        return jsonify({'status': 'success', 'message': 'آهنگ با موفقیت به کانال استوریج منتقل شد!', 'data': res})
+    return jsonify({'status': 'error', 'message': str(res)}), 400
+
+@admin_bp.route('/api/admin/userbot/rescue_batch', methods=['POST'])
+def userbot_rescue_batch_api():
+    if not is_admin(): return jsonify({'status': 'error', 'message': 'Unauthorized'}), 403
+    import asyncio
+    from core.services.telegram_leech_service import telegram_leech_service
+    data = request.json or {}
+    batch_size = int(data.get('batch_size', 5))
+
+    ok, res = asyncio.run(telegram_leech_service.rescue_failed_batch(batch_size=batch_size))
+    if ok:
+        return jsonify({'status': 'success', 'message': 'پردازش دسته ترمیمی انجام شد.', 'data': res})
+    return jsonify({'status': 'error', 'message': str(res)}), 400
+
 @admin_bp.route('/api/admin/artist_hub/search', methods=['POST'])
 def artist_hub_search_api():
     """جستجوی زنده خواننده در اسپاتیفای بر اساس نام"""
