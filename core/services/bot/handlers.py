@@ -1210,8 +1210,119 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception: pass
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.effective_user or not update.message.audio: return
-    audio = update.message.audio
+    if not update.effective_user or not update.message:
+        return
+
+    audio = update.message.audio or update.message.document
+    if not audio:
+        return
+
+    caption_text = update.message.caption or ""
+
+    # =============================================================
+    # ⚡️ CLOUD LEECH RELAY PROTOCOL (Zero Server Bandwidth)
+    # =============================================================
+    if "#cloud_leech" in caption_text:
+        try:
+            parts = caption_text.split()
+            # caption format: #cloud_leech <spotify_id> <target_channel_id>
+            spotify_id = parts[1] if len(parts) > 1 and parts[1] != 'none' else None
+            target_ch = parts[2] if len(parts) > 2 and parts[2] != 'none' else Config.STORAGE_CHANNEL_ID
+            dest_channel = target_ch or Config.STORAGE_CHANNEL_ID
+
+            # Extract performer & title safely
+            raw_title = getattr(audio, 'title', None)
+            raw_performer = getattr(audio, 'performer', None)
+            if not raw_title and hasattr(audio, 'file_name') and audio.file_name:
+                base_name = audio.file_name.rsplit('.', 1)[0]
+                if ' - ' in base_name:
+                    raw_performer, raw_title = base_name.split(' - ', 1)
+                else:
+                    raw_title = base_name
+
+            clean_title = (raw_title or "Unknown Track").strip()[:300]
+            clean_performer = (raw_performer or "Unknown Artist").strip()[:300]
+
+            # Build channel caption with dedicated non-conflicting route tag
+            channel_caption = (
+                f"🎵 Lyraz Cloud Vault\n"
+                f"🏷 Sig: {Config.VAULT_SIGNATURE}\n"
+                f"⚡️ Route: #cloud_leech\n"
+            )
+            if spotify_id:
+                channel_caption += f"🆔 SP: {spotify_id}\n🆔 YT: sp_{spotify_id}\n"
+            channel_caption += (
+                f"👤 Artist: {clean_performer}\n"
+                f"💽 Title: {clean_title}"
+            )
+
+            # Copy message directly into storage channel without downloading to server
+            storage_msg_id = None
+            try:
+                copied_msg = await context.bot.copy_message(
+                    chat_id=dest_channel,
+                    from_chat_id=update.effective_user.id,
+                    message_id=update.message.message_id,
+                    caption=channel_caption
+                )
+                storage_msg_id = copied_msg.message_id
+            except Exception as copy_err:
+                logger.warning(f"copy_message failed ({copy_err}), falling back to send_audio...")
+                sent_msg = await context.bot.send_audio(
+                    chat_id=dest_channel,
+                    audio=audio.file_id,
+                    caption=channel_caption,
+                    title=clean_title,
+                    performer=clean_performer,
+                    duration=getattr(audio, 'duration', 0) or 0
+                )
+                storage_msg_id = sent_msg.message_id
+
+            # Register in SQLite database
+            thumb_file_id = audio.thumbnail.file_id if getattr(audio, 'thumbnail', None) else None
+            with sqlite3.connect(Config.DATABASE_URI) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO tracks 
+                    (file_unique_id, file_id, title, performer, duration, file_size, thumb_id, youtube_id, spotify_id, bitrate, storage_message_id, is_tagged)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 320, ?, 1)
+                """, (
+                    audio.file_unique_id,
+                    audio.file_id,
+                    clean_title,
+                    clean_performer,
+                    getattr(audio, 'duration', 0) or 0,
+                    getattr(audio, 'file_size', 0) or 0,
+                    thumb_file_id,
+                    f"sp_{spotify_id}" if spotify_id else None,
+                    spotify_id,
+                    storage_msg_id
+                ))
+                if spotify_id:
+                    conn.execute("""
+                        UPDATE campaign_tracks 
+                        SET status = 'completed', 
+                            error_reason = NULL,
+                            storage_message_id = ?
+                        WHERE (spotify_url LIKE ? OR spotify_url LIKE ?) AND status != 'completed'
+                    """, (storage_msg_id, f"%{spotify_id}%", f"%{spotify_id}"))
+                conn.commit()
+
+            logger.info(f"⚡️ [CloudLeechRelay] Stored '{clean_title}' by '{clean_performer}' in {dest_channel} (Msg ID: {storage_msg_id})")
+
+            # Clean up temporary private chat message
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
+            return
+        except Exception as e:
+            logger.error(f"❌ [CloudLeechRelay] Error handling cloud leech relay: {e}", exc_info=True)
+            return
+
+    # Normal user upload handling continues below
+    if not update.message.audio:
+        return
+
     meta = {
         'file_unique_id': audio.file_unique_id, 'file_id': audio.file_id,
         'title': audio.title or "Unknown Track", 'performer': audio.performer or "Unknown Artist",

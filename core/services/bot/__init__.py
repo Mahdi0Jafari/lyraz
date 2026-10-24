@@ -75,8 +75,9 @@ def run_bot_service():
             app.add_handler(InlineQueryHandler(inline_music_search))
             app.add_handler(CallbackQueryHandler(handle_callbacks))
             
-            # هندلر فایل صوتی (بالاتر از متن)
-            app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
+            # Audio & audio document handler
+            audio_filter = filters.AUDIO | filters.Document.Category("audio") if hasattr(filters.Document, "Category") else (filters.AUDIO | filters.Document.ALL)
+            app.add_handler(MessageHandler(audio_filter, handle_audio))
             
             app.add_handler(ChatMemberHandler(handle_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
             

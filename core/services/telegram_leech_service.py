@@ -280,47 +280,55 @@ class TelegramLeechService:
                 if hasattr(attr, 'duration') and attr.duration:
                     duration = attr.duration
 
-            # 4. Fast download media via Telethon to temp cache file (~0.5s)
-            cache_dir = os.path.join(Config.INSTANCE_PATH, 'yt_cache')
-            os.makedirs(cache_dir, exist_ok=True)
-            temp_path = os.path.join(cache_dir, f"leech_{int(time.time()*1000)}.mp3")
-            downloaded_path = await client.download_media(audio_msg.media, file=temp_path)
-            await client.disconnect()
-
-            # 5. Hand off to the OFFICIAL LYRAZ BOT pipeline for channel storage & Bot API file_id!
-            from core.tasks import get_bot_instance, upload_to_telegram
-            local_bot = get_bot_instance()
-            
+            # 4. Pure Telegram Cloud relay to official Lyraz Bot (Zero Server Bandwidth)
             m_sp = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
             spotify_id = m_sp.group(1) if m_sp else None
 
-            tg_audio, storage_msg_id = await upload_to_telegram(
-                local_bot, downloaded_path, title, performer,
-                video_id=f"sp_{spotify_id}" if spotify_id else "leech",
-                duration=duration
-            )
+            bot_handle = (Config.BOT_USERNAME or 'LyrazBot').lstrip('@')
+            bot_entity = await client.get_entity(bot_handle)
+            relay_caption = f"#cloud_leech {spotify_id or 'none'} {dest_channel}"
+            
+            logger.info(f"[LeechEngine] Relaying '{title}' cloud-to-cloud to @{bot_handle} (Zero download)...")
+            await client.send_file(bot_entity, audio_msg.media, caption=relay_caption)
+            await client.disconnect()
 
-            # Clean up temp file immediately
-            try:
-                if os.path.exists(downloaded_path):
-                    os.remove(downloaded_path)
-            except Exception:
-                pass
+            # 5. Wait for official Bot to copy audio to storage channel & save in SQLite
+            found_track = None
+            for _ in range(30):  # up to 15s wait
+                await asyncio.sleep(0.5)
+                with sqlite3.connect(Config.DATABASE_URI) as conn:
+                    conn.row_factory = sqlite3.Row
+                    if spotify_id:
+                        row = conn.execute(
+                            "SELECT * FROM tracks WHERE spotify_id = ? AND storage_message_id IS NOT NULL", 
+                            (spotify_id,)
+                        ).fetchone()
+                    else:
+                        row = conn.execute(
+                            "SELECT * FROM tracks WHERE title = ? AND performer = ? AND storage_message_id IS NOT NULL", 
+                            (title, performer)
+                        ).fetchone()
+                    if row:
+                        found_track = dict(row)
+                        break
 
-            if not tg_audio:
-                return False, "Failed to upload audio to storage channel via official Lyraz Bot."
+            if not found_track:
+                return False, "Timed out waiting for official Lyraz Bot to relay audio to storage channel."
 
             elapsed = round(time.time() - start_time, 2)
-            logger.info(f"[LeechEngine] Successfully leeched '{title}' via {used_bot} and stored via Lyraz Bot in {elapsed}s (Storage Msg ID: {storage_msg_id})")
+            logger.info(
+                f"[LeechEngine] Successfully cloud-leeched '{found_track['title']}' via {used_bot} -> "
+                f"@{bot_handle} -> Channel in {elapsed}s (Storage Msg ID: {found_track['storage_message_id']})"
+            )
 
             return True, {
-                "title": title,
-                "performer": performer,
-                "duration": duration,
-                "file_size": tg_audio.file_size or getattr(doc, 'size', 0),
-                "file_id": tg_audio.file_id,
-                "file_unique_id": tg_audio.file_unique_id,
-                "storage_message_id": storage_msg_id,
+                "title": found_track['title'],
+                "performer": found_track['performer'],
+                "duration": found_track['duration'],
+                "file_size": found_track['file_size'],
+                "file_id": found_track['file_id'],
+                "file_unique_id": found_track['file_unique_id'],
+                "storage_message_id": found_track['storage_message_id'],
                 "spotify_id": spotify_id,
                 "elapsed": elapsed,
                 "provider": used_bot
@@ -337,7 +345,7 @@ class TelegramLeechService:
     @classmethod
     async def ingest_and_register_track(cls, spotify_url, target_channel_id=None):
         """
-        Leech track via userbot, upload via official Lyraz Bot, and register in database tracks table.
+        Leech track via userbot, relay to official Lyraz Bot, and register in database tracks table.
         """
         m = re.search(r'track/([a-zA-Z0-9]+)', spotify_url)
         spotify_id = m.group(1) if m else None
@@ -346,7 +354,7 @@ class TelegramLeechService:
         if spotify_id:
             with sqlite3.connect(Config.DATABASE_URI) as conn:
                 conn.row_factory = sqlite3.Row
-                existing = conn.execute("SELECT * FROM tracks WHERE spotify_id = ?", (spotify_id,)).fetchone()
+                existing = conn.execute("SELECT * FROM tracks WHERE spotify_id = ? AND storage_message_id IS NOT NULL", (spotify_id,)).fetchone()
                 if existing:
                     return True, dict(existing), "cached"
 
@@ -354,37 +362,7 @@ class TelegramLeechService:
         if not ok:
             return False, res, "leech_failed"
 
-        # Direct insert into tracks table using official Bot API credentials returned by upload_to_telegram
-        with sqlite3.connect(Config.DATABASE_URI) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO tracks 
-                (file_unique_id, file_id, title, performer, duration, file_size, spotify_id, storage_message_id, is_tagged)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-            """, (
-                res['file_unique_id'],
-                res['file_id'],
-                res['title'],
-                res['performer'],
-                res['duration'],
-                res['file_size'],
-                spotify_id,
-                res['storage_message_id']
-            ))
-            track_id = cursor.lastrowid
-
-            # Mark completed in campaign_tracks table
-            if spotify_id or spotify_url:
-                conn.execute("""
-                    UPDATE campaign_tracks 
-                    SET status = 'completed', error_msg = 'Rescued via Telegram Leech'
-                    WHERE (spotify_url = ? OR spotify_url LIKE ?) AND status = 'failed'
-                """, (spotify_url, f"%{spotify_id}%"))
-
-            conn.commit()
-            saved_row = conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)).fetchone()
-            return True, dict(saved_row) if saved_row else res, "ingested"
+        return True, res, "ingested"
 
     @classmethod
     async def rescue_failed_batch(cls, batch_size=5):
