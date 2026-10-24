@@ -394,9 +394,33 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     if sp_data['type'] == 'track':
         title = sp_data['title']
         artist = sp_data['artist']
+        sp_id = sp_data.get('id')
         cover_url = sp_data.get('cover')
         duration = sp_data.get('duration')
 
+        # ⚡️ Fast-Track 1: Instant Database Vault Check (<300ms Delivery)
+        from core.services.telegram_leech_service import telegram_leech_service
+        existing, match_type = telegram_leech_service.find_existing_in_vault(
+            spotify_id=sp_id, title=title, artist=artist
+        )
+        if existing and (existing.get('file_id') or existing.get('storage_message_id')):
+            logger.info(f"⚡️ [Fast-Track] Instant vault delivery for Spotify track '{title}' via {match_type}")
+            delivered = await deliver_instant_cached_track(update, context, existing, status_msg)
+            if delivered:
+                return
+
+        # ⚡️ Fast-Track 2: Direct High-Speed Telegram Cloud Leech (320kbps Original)
+        userbot_status = telegram_leech_service.get_status()
+        if userbot_status.get('is_connected'):
+            await status_msg.edit_text(f"⚡️ Fetching *{title}* via Cloud Engine (320kbps)...", parse_mode=ParseMode.MARKDOWN)
+            leech_ok, leech_data, leech_reason = await telegram_leech_service.ingest_and_register_track(url)
+            if leech_ok and leech_data.get('file_id'):
+                delivered = await deliver_instant_cached_track(update, context, leech_data, status_msg)
+                if delivered:
+                    return
+            logger.info(f"Cloud leech skipped/failed ({leech_reason}), falling back to YouTube matching...")
+
+        # 🔄 Fallback: YouTube Search and Huey queue
         await status_msg.edit_text(f"🔎 Matching *{title}* on global database...", parse_mode=ParseMode.MARKDOWN)
         from telegram.constants import ChatAction
         try: await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -406,7 +430,7 @@ async def handle_spotify_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_msg.edit_text("❌ Could not find an authentic match for this specific track.")
             return
 
-        await dispatch_to_huey(update, context, vid, title, artist, status_msg, cover_url=cover_url, duration=duration)
+        await dispatch_to_huey(update, context, vid, title, artist, status_msg, cover_url=cover_url, duration=duration, spotify_url=url)
 
     # --- Case 2: Playlist or Album (V4.5 Batch Process) ---
     elif sp_data['type'] in ['playlist', 'album']:
@@ -507,17 +531,122 @@ async def handle_soundcloud_link(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
-async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg, cover_url=None, duration=None):
+async def deliver_instant_cached_track(update: Update, context: ContextTypes.DEFAULT_TYPE, cached_track: dict, status_msg=None, session_token=None):
+    """
+    ⚡️ Zero-Queue Instant Delivery Engine (<300ms)
+    Sends cached audio directly to the user without hitting Huey worker queue.
+    Performs background accounting (log_user_download, playlist sync) asynchronously.
+    """
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    from core.tasks import deliver_audio_safe
+    from telegram.constants import ChatAction
+
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+    except Exception:
+        pass
+
+    if not session_token and user:
+        session_token = await asyncio.to_thread(get_user_current_session, user.id)
+
+    reply_markup = None
+    d_name = "Hub"
+    hub_url = ""
+    hub_admin_id = None
+    if session_token:
+        with sqlite3.connect(Config.DATABASE_URI) as conn:
+            conn.row_factory = sqlite3.Row
+            res = conn.execute("SELECT device_name, admin_id FROM sessions WHERE token=?", (session_token,)).fetchone()
+            d_name = res['device_name'] if res and res['device_name'] else f"Hub-{session_token[:4]}"
+            hub_admin_id = res['admin_id'] if res else None
+
+        base_url = Config.BASE_URL.rstrip('/') if hasattr(Config, 'BASE_URL') and Config.BASE_URL else "https://lyraz.ir"
+        hub_url = f"{base_url}/live/{session_token}"
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ Open Player", url=hub_url)]])
+
+    final_title = cached_track.get('title') or "Unknown Track"
+    final_artist = cached_track.get('performer') or "Unknown Artist"
+    hub_link = f"[{d_name}]({hub_url})" if session_token else ""
+    user_caption = f"🎧 *{final_title}*\n👤 {final_artist}" + (f"\n📡 Added to: {hub_link}" if session_token else "")
+
+    delivery_res = await deliver_audio_safe(
+        local_bot=context.bot,
+        chat_id=chat_id,
+        track_row=cached_track,
+        title=final_title,
+        artist=final_artist,
+        user_caption=user_caption,
+        reply_markup=reply_markup
+    )
+
+    if delivery_res:
+        if status_msg:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+
+        # Asynchronous non-blocking post-delivery accounting
+        async def _bg_accounting():
+            try:
+                track_db_id = cached_track.get('id')
+                if not track_db_id and cached_track.get('youtube_id'):
+                    with sqlite3.connect(Config.DATABASE_URI) as conn:
+                        row = conn.execute("SELECT id FROM tracks WHERE youtube_id = ?", (cached_track['youtube_id'],)).fetchone()
+                        if row: track_db_id = row[0]
+
+                if track_db_id and user and user.id != 0:
+                    from core.services.bot.database import log_user_download
+                    log_user_download(telegram_id=user.id, track_id=track_db_id, source='bot_instant', first_name=user.first_name)
+
+                if session_token and track_db_id:
+                    internal_user_id = get_user_id(user.id)
+                    safe_owner_id = hub_admin_id if hub_admin_id else internal_user_id
+                    bot_db_exec(
+                        "INSERT INTO playlist_items (owner_id, track_id, added_by, session_token) VALUES (?, ?, ?, ?)",
+                        (safe_owner_id, track_db_id, internal_user_id, session_token)
+                    )
+                    from core.tasks import notify_web_bridge
+                    notify_web_bridge({
+                        'type': 'new_track',
+                        'title': final_title,
+                        'performer': final_artist,
+                        'file_unique_id': cached_track.get('file_unique_id'),
+                        'duration': cached_track.get('duration'),
+                        'added_by': user.first_name if user else "User",
+                        'session_token': session_token,
+                        'sync_timestamp': time.time()
+                    })
+            except Exception as bg_err:
+                logger.warning(f"Background accounting error in deliver_instant_cached_track: {bg_err}")
+
+        asyncio.create_task(_bg_accounting())
+        return True
+
+    return False
+
+
+async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, vid, title, artist, status_msg, cover_url=None, duration=None, spotify_url=None):
     from core.tasks import download_and_process_track
     user = update.effective_user
     
     def fetch_dispatch_meta():
         c_token = get_user_current_session(user.id)
         c_track = get_track_by_youtube_id(vid)
+        if not c_track:
+            from core.services.telegram_leech_service import telegram_leech_service
+            c_track, _ = telegram_leech_service.find_existing_in_vault(youtube_id=vid, title=title, artist=artist)
         u_role = get_user_role(user.id)
         return c_token, c_track, u_role
 
     current_token, cached, role = await asyncio.to_thread(fetch_dispatch_meta)
+
+    # ⚡️ Fast-Track: Instant sub-second delivery for cached tracks (Bypasses Huey queue completely)
+    if cached and (cached.get('file_id') or cached.get('storage_message_id')):
+        delivered = await deliver_instant_cached_track(update, context, cached, status_msg, current_token)
+        if delivered:
+            return
 
     # Dynamic Smart Priority System & Unified Quality
     # محاسبه اولویت صف بر اساس وفاداری، دعوت‌ها و نقش کاربر
@@ -546,7 +675,8 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         quality=Config.AUDIO_QUALITY,
         cover_url=cover_url,
         duration=duration,
-        priority=user_prio
+        priority=user_prio,
+        spotify_url=spotify_url
     )
 
 async def show_referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):

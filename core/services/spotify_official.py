@@ -103,7 +103,8 @@ class SpotifyScraperService:
                 "artist": artist,
                 "search_query": f"{artist} {title}",
                 "cover": cover_url,
-                "duration": duration
+                "duration": duration,
+                "id": track_id
             }
 
         # در صورت در دسترس نبودن امبد، استفاده از تگ‌های OpenGraph
@@ -115,7 +116,8 @@ class SpotifyScraperService:
                 "artist": fb['artist'],
                 "search_query": f"{fb['artist']} {fb['title']}",
                 "cover": fb['cover'],
-                "duration": None
+                "duration": None,
+                "id": track_id
             }
 
         return None

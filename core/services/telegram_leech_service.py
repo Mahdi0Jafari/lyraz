@@ -31,6 +31,79 @@ _PENDING_AUTHS = {}
 class TelegramLeechService:
     PRIMARY_BOT = "@DeezerMusicBot"
     BACKUP_BOT = "@deezload2bot"
+    _active_client = None
+    _active_session_str = None
+    _active_loop = None
+    _client_lock = None
+    _bot_entity = None
+
+    @classmethod
+    def _get_lock(cls):
+        if cls._client_lock is None:
+            cls._client_lock = asyncio.Lock()
+        return cls._client_lock
+
+    @classmethod
+    async def get_client(cls):
+        """
+        Returns a persistent connected TelegramClient singleton.
+        Reuses warm MTProto connection, eliminating ~1.5s connection handshake per track.
+        """
+        settings = cls._get_db_settings()
+        session_str = settings.get("userbot_session_string")
+        api_id = settings.get("userbot_api_id")
+        api_hash = settings.get("userbot_api_hash")
+
+        if not session_str or not settings.get("userbot_enabled") or not api_id or not api_hash:
+            return None, "Userbot not configured or disabled in settings."
+
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+
+        if (cls._active_client and 
+            cls._active_session_str == session_str and 
+            cls._active_loop == curr_loop and 
+            cls._active_client.is_connected()):
+            try:
+                if await cls._active_client.is_user_authorized():
+                    return cls._active_client, None
+            except Exception:
+                pass
+
+        lock = cls._get_lock()
+        async with lock:
+            if (cls._active_client and 
+                cls._active_session_str == session_str and 
+                cls._active_loop == curr_loop and 
+                cls._active_client.is_connected()):
+                return cls._active_client, None
+
+            if cls._active_client:
+                try:
+                    await cls._active_client.disconnect()
+                except Exception:
+                    pass
+                cls._active_client = None
+                cls._bot_entity = None
+
+            try:
+                client = TelegramClient(StringSession(session_str), int(api_id), str(api_hash).strip())
+                await client.connect()
+                if not await client.is_user_authorized():
+                    await client.disconnect()
+                    cls._active_client = None
+                    cls._bot_entity = None
+                    return None, "Userbot session is unauthorized or expired."
+
+                cls._active_client = client
+                cls._active_session_str = session_str
+                cls._active_loop = curr_loop
+                return client, None
+            except Exception as e:
+                logger.error(f"[LeechEngine] Failed to connect persistent userbot client: {e}")
+                return None, str(e)
 
     @staticmethod
     def _get_db_settings():
@@ -190,6 +263,15 @@ class TelegramLeechService:
                 WHERE id = 1
             """)
             conn.commit()
+        if cls._active_client:
+            try:
+                curr_loop = asyncio.get_event_loop()
+                if curr_loop and curr_loop.is_running():
+                    curr_loop.create_task(cls._active_client.disconnect())
+            except Exception:
+                pass
+        cls._active_client = None
+        cls._bot_entity = None
         logger.info("Userbot session cleared from database.")
         return True
 
@@ -255,27 +337,14 @@ class TelegramLeechService:
                 logger.info(f"[LeechEngine] Duplicate prevented: '{existing['title']}' already in vault via {match_type} (Storage Msg ID: {existing['storage_message_id']})")
                 return True, existing
 
-        settings = cls._get_db_settings()
-        session_str = settings.get("userbot_session_string")
-        if not session_str or not settings.get("userbot_enabled"):
-            return False, "Userbot engine is not enabled or connected."
-
-        api_id = settings.get("userbot_api_id")
-        api_hash = settings.get("userbot_api_hash")
-        if not api_id or not api_hash:
-            return False, "Userbot API ID or API Hash is not set in database settings."
-
-        api_id = int(api_id)
-        api_hash = str(api_hash).strip()
         dest_channel = target_channel_id or Config.STORAGE_CHANNEL_ID
         if not dest_channel:
             return False, "Storage channel STORAGE_CHANNEL_ID is not configured."
 
-        client = TelegramClient(StringSession(session_str), api_id, api_hash)
-        await client.connect()
-        if not await client.is_user_authorized():
-            await client.disconnect()
-            return False, "Userbot session is unauthorized or expired. Please reconnect."
+        # Re-use persistent warm MTProto client (Zero handshake latency)
+        client, err = await cls.get_client()
+        if not client:
+            return False, err or "Userbot client could not be connected."
 
         start_time = time.time()
         audio_msg = None
@@ -286,8 +355,9 @@ class TelegramLeechService:
             logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url}...")
             sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
             
-            for _ in range(12):  # up to 24s wait
-                await asyncio.sleep(2)
+            # High-frequency adaptive polling: check every 0.35s (up to 17.5s wait)
+            for _ in range(50):
+                await asyncio.sleep(0.35)
                 recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
                 for m in recent:
                     if m.id > sent_req.id and (m.document or m.audio):
@@ -302,8 +372,9 @@ class TelegramLeechService:
                 logger.warning(f"[LeechEngine] {cls.PRIMARY_BOT} did not respond in time. Failing over to {cls.BACKUP_BOT}...")
                 sent_req2 = await client.send_message(cls.BACKUP_BOT, spotify_url)
                 
-                for _ in range(10):  # up to 20s wait
-                    await asyncio.sleep(2)
+                # Check every 0.4s (up to 14s wait)
+                for _ in range(35):
+                    await asyncio.sleep(0.4)
                     recent = await client.get_messages(cls.BACKUP_BOT, limit=5)
                     for m in recent:
                         if m.id > sent_req2.id:
@@ -320,7 +391,6 @@ class TelegramLeechService:
                         break
 
             if not audio_msg or not (audio_msg.document or audio_msg.audio):
-                await client.disconnect()
                 return False, "No audio file received from Telegram bots."
 
             # 3. Extract metadata
@@ -341,17 +411,18 @@ class TelegramLeechService:
             spotify_id = m_sp.group(1) if m_sp else None
 
             bot_handle = (Config.BOT_USERNAME or 'LyrazBot').lstrip('@')
-            bot_entity = await client.get_entity(bot_handle)
+            if not cls._bot_entity:
+                cls._bot_entity = await client.get_entity(bot_handle)
+            bot_entity = cls._bot_entity
             relay_caption = f"#cloud_leech {spotify_id or 'none'} {dest_channel}"
             
             logger.info(f"[LeechEngine] Relaying '{title}' cloud-to-cloud to @{bot_handle} (Zero download)...")
             await client.send_file(bot_entity, audio_msg.media, caption=relay_caption)
-            await client.disconnect()
 
-            # 5. Wait for official Bot to copy audio to storage channel & save in SQLite
+            # 5. Wait for official Bot to copy audio to storage channel & save in SQLite (fast 0.15s polling)
             found_track = None
-            for _ in range(30):  # up to 15s wait
-                await asyncio.sleep(0.5)
+            for _ in range(50):  # up to 7.5s wait
+                await asyncio.sleep(0.15)
                 with sqlite3.connect(Config.DATABASE_URI) as conn:
                     conn.row_factory = sqlite3.Row
                     if spotify_id:
