@@ -531,12 +531,14 @@ async def handle_soundcloud_link(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
-async def deliver_instant_cached_track(update: Update, context: ContextTypes.DEFAULT_TYPE, cached_track: dict, status_msg=None, session_token=None):
+async def deliver_instant_cached_track(update: Update, context: ContextTypes.DEFAULT_TYPE, cached_track, status_msg=None, session_token=None):
     """
     ⚡️ Zero-Queue Instant Delivery Engine (<300ms)
     Sends cached audio directly to the user without hitting Huey worker queue.
     Performs background accounting (log_user_download, playlist sync) asynchronously.
     """
+    if cached_track and not isinstance(cached_track, dict):
+        cached_track = dict(cached_track)
     user = update.effective_user
     chat_id = update.effective_chat.id
     from core.tasks import deliver_audio_safe
@@ -637,6 +639,8 @@ async def dispatch_to_huey(update: Update, context: ContextTypes.DEFAULT_TYPE, v
         if not c_track:
             from core.services.telegram_leech_service import telegram_leech_service
             c_track, _ = telegram_leech_service.find_existing_in_vault(youtube_id=vid, title=title, artist=artist)
+        if c_track and not isinstance(c_track, dict):
+            c_track = dict(c_track)
         u_role = get_user_role(user.id)
         return c_token, c_track, u_role
 

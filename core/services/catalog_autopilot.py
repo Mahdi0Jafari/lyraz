@@ -794,7 +794,19 @@ class CatalogAutopilotService:
                     # اجرای بچ کوچک ۳ تایی در هر تیک ۳ دقیقه‌ای به صورت امن و پس‌زمینه
                     loop = asyncio.new_event_loop()
                     try:
-                        loop.run_until_complete(telegram_leech_service.rescue_failed_batch(batch_size=3))
+                        async def _safe_rescue():
+                            try:
+                                await telegram_leech_service.rescue_failed_batch(batch_size=3)
+                            finally:
+                                client = telegram_leech_service._active_client
+                                if client and client.is_connected():
+                                    try:
+                                        await client.disconnect()
+                                    except Exception:
+                                        pass
+                                telegram_leech_service._active_client = None
+                                telegram_leech_service._bot_entity = None
+                        loop.run_until_complete(_safe_rescue())
                     finally:
                         loop.close()
                 except Exception as rescue_err:

@@ -340,7 +340,8 @@ def get_track_by_youtube_id(video_id):
     conn = get_db_connection()
     if not conn: return None
     try:
-        return conn.execute("SELECT * FROM tracks WHERE youtube_id = ?", (video_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tracks WHERE youtube_id = ?", (video_id,)).fetchone()
+        return dict(row) if row else None
     except sqlite3.Error as e:
         logger.error(f"Get Track Error: {e}")
         return None
@@ -352,7 +353,8 @@ def get_track_by_spotify_id(spotify_id):
     conn = get_db_connection()
     if not conn: return None
     try:
-        return conn.execute("SELECT * FROM tracks WHERE spotify_id = ?", (spotify_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tracks WHERE spotify_id = ?", (spotify_id,)).fetchone()
+        return dict(row) if row else None
     except sqlite3.Error as e:
         logger.error(f"Get Track by Spotify Error: {e}")
         return None
