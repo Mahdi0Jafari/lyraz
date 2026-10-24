@@ -1,8 +1,8 @@
 # core/services/telegram_leech_service.py
 """
-سرویس یکپارچه و پیشرفته واکشی ابری موزیک با یوزربات تلگرام (Telegram Cloud Leech Service)
-پشتیبانی از احراز هویت مستقیم از پنل ادمین، ذخیره‌سازی سشن متنی (StringSession) در دیتابیس،
-و استخر چندرباته با اولویت @DeezerMusicBot و فال‌بک @deezload2bot.
+Lyraz Telegram Cloud Leech Service.
+Supports direct MTProto web authentication via Admin Panel, dynamic StringSession
+storage in SQLite settings table, and multi-bot pool with @DeezerMusicBot priority and @deezload2bot fallback.
 """
 
 import os
@@ -23,7 +23,7 @@ from core.config import Config
 
 logger = logging.getLogger(__name__)
 
-# حافظه موقت برای ذخیره کلاینت‌های در حال احراز هویت قبل از ثبت نهایی سشن
+# Temporary in-memory state for pending auth requests before session finalization
 _PENDING_AUTHS = {}
 
 class TelegramLeechService:
@@ -71,7 +71,7 @@ class TelegramLeechService:
 
     @classmethod
     async def send_code(cls, api_id, api_hash, phone):
-        """ارسال کد تایید تلگرام به شماره مورد نظر و نگهداری کلاینت در حافظه موقت"""
+        """Send verification code and save intermediate StringSession to decouple event loops."""
         try:
             api_id = int(api_id)
             api_hash = str(api_hash).strip()
@@ -85,50 +85,58 @@ class TelegramLeechService:
             await client.connect()
 
             res = await client.send_code_request(phone)
+            temp_session_str = client.session.save()
+            await client.disconnect()
+
             _PENDING_AUTHS[phone] = {
-                "client": client,
+                "session_string": temp_session_str,
                 "phone_code_hash": res.phone_code_hash,
                 "api_id": api_id,
                 "api_hash": api_hash,
                 "created_at": time.time()
             }
             logger.info(f"Verification code sent to {phone}")
-            return True, "کد تأیید با موفقیت به تلگرام شما ارسال شد."
+            return True, "Verification code sent to your Telegram."
         except FloodWaitError as e:
             logger.warning(f"FloodWait while sending code to {phone}: {e}")
-            return False, f"تلگرام درخواست را موقتاً محدود کرد. لطفاً {e.seconds} ثانیه بعد مجدداً تلاش کنید."
+            return False, f"Telegram rate limit: please wait {e.seconds} seconds before retrying."
         except Exception as e:
             logger.error(f"Error sending verification code: {e}")
-            return False, f"خطا در ارسال کد: {str(e)}"
+            return False, f"Error sending verification code: {str(e)}"
 
     @classmethod
     async def verify_code(cls, phone, code, password=None):
-        """تایید کد تلگرام و رمز ۲ مرحله‌ای و ذخیره دائمی StringSession در دیتابیس"""
+        """Verify code on the current request's event loop with the saved StringSession."""
         phone = str(phone).strip()
         if not phone.startswith("+"):
             phone = f"+{phone}"
 
         pending = _PENDING_AUTHS.get(phone)
         if not pending:
-            return False, "نشست فعال برای این شماره یافت نشد. لطفاً ابتدا دکمه 'ارسال کد' را بزنید."
+            return False, "No active session found for this phone number. Please click Send Code first."
 
-        client = pending["client"]
+        session_string = pending["session_string"]
         phone_code_hash = pending["phone_code_hash"]
         api_id = pending["api_id"]
         api_hash = pending["api_hash"]
+
+        # Create a fresh client directly bound to the current event loop
+        client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        await client.connect()
 
         try:
             try:
                 await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
             except SessionPasswordNeededError:
                 if not password:
-                    return False, "2FA_REQUIRED: لطفاً رمز عبور تأیید دومرحله‌ای (Cloud Password) خود را وارد کنید."
+                    await client.disconnect()
+                    return False, "2FA_REQUIRED: Please enter your 2FA Cloud Password."
                 await client.sign_in(password=password)
 
             me = await client.get_me()
-            session_str = client.session.save()
+            final_session_str = client.session.save()
 
-            # ذخیره امن در دیتابیس SQLite
+            # Save securely to SQLite database
             with sqlite3.connect(Config.DATABASE_URI) as conn:
                 conn.execute("""
                     UPDATE settings 
@@ -140,12 +148,11 @@ class TelegramLeechService:
                         userbot_username = ?, 
                         userbot_enabled = 1
                     WHERE id = 1
-                """, (api_id, api_hash, phone, session_str, me.first_name, me.username or ""))
+                """, (api_id, api_hash, phone, final_session_str, me.first_name, me.username or ""))
                 conn.commit()
 
-            # قطع اتصال موقت کلاینت تستی
             await client.disconnect()
-            del _PENDING_AUTHS[phone]
+            _PENDING_AUTHS.pop(phone, None)
 
             logger.info(f"Userbot successfully linked and saved to DB for {me.first_name} ({phone})")
             return True, {
@@ -155,12 +162,18 @@ class TelegramLeechService:
             }
 
         except PhoneCodeInvalidError:
-            return False, "کد تأیید وارد شده نامعتبر یا منقضی شده است."
+            await client.disconnect()
+            return False, "Invalid or expired verification code."
         except PasswordHashInvalidError:
-            return False, "رمز تأیید دومرحله‌ای اشتباه است."
+            await client.disconnect()
+            return False, "Invalid 2FA password."
         except Exception as e:
             logger.error(f"Error during verify_code: {e}")
-            return False, f"خطا در احراز هویت: {str(e)}"
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            return False, f"Authentication error: {str(e)}"
 
     @classmethod
     def disconnect(cls):
@@ -187,35 +200,35 @@ class TelegramLeechService:
         settings = cls._get_db_settings()
         session_str = settings.get("userbot_session_string")
         if not session_str or not settings.get("userbot_enabled"):
-            return False, "موتور یوزربات فعال یا متصل نیست."
+            return False, "Userbot engine is not enabled or connected."
 
         api_id = settings.get("userbot_api_id")
         api_hash = settings.get("userbot_api_hash")
         if not api_id or not api_hash:
-            return False, "API ID یا API Hash یوزربات در تنظیمات دیتابیس ست نشده است."
+            return False, "Userbot API ID or API Hash is not set in database settings."
 
         api_id = int(api_id)
         api_hash = str(api_hash).strip()
         dest_channel = target_channel_id or Config.STORAGE_CHANNEL_ID
         if not dest_channel:
-            return False, "کانال ذخیره‌سازی STORAGE_CHANNEL_ID تنظیم نشده است."
+            return False, "Storage channel STORAGE_CHANNEL_ID is not configured."
 
         client = TelegramClient(StringSession(session_str), api_id, api_hash)
         await client.connect()
         if not await client.is_user_authorized():
             await client.disconnect()
-            return False, "نشست یوزربات منقضی شده است. لطفاً از پنل ادمین مجدداً متصل شوید."
+            return False, "Userbot session is unauthorized or expired. Please reconnect."
 
         start_time = time.time()
         audio_msg = None
         used_bot = None
 
         try:
-            # ۱. تلاش با ربات اول: @DeezerMusicBot
+            # 1. Query Primary Bot: @DeezerMusicBot
             logger.info(f"[LeechEngine] Querying {cls.PRIMARY_BOT} for {spotify_url}...")
             sent_req = await client.send_message(cls.PRIMARY_BOT, spotify_url)
             
-            for _ in range(12):  # تا ۲۴ ثانیه انتظار
+            for _ in range(12):  # up to 24s wait
                 await asyncio.sleep(2)
                 recent = await client.get_messages(cls.PRIMARY_BOT, limit=5)
                 for m in recent:
@@ -226,12 +239,12 @@ class TelegramLeechService:
                 if audio_msg:
                     break
 
-            # ۲. در صورت عدم دریافت از ربات اول، فال‌بک به @deezload2bot
+            # 2. Failover to @deezload2bot
             if not audio_msg:
                 logger.warning(f"[LeechEngine] {cls.PRIMARY_BOT} did not respond in time. Failing over to {cls.BACKUP_BOT}...")
                 sent_req2 = await client.send_message(cls.BACKUP_BOT, spotify_url)
                 
-                for _ in range(10):  # تا ۲۰ ثانیه انتظار
+                for _ in range(10):  # up to 20s wait
                     await asyncio.sleep(2)
                     recent = await client.get_messages(cls.BACKUP_BOT, limit=5)
                     for m in recent:
@@ -241,7 +254,6 @@ class TelegramLeechService:
                                 used_bot = cls.BACKUP_BOT
                                 break
                             elif m.buttons and not audio_msg:
-                                # در صورت مشاهده منوی ترک، دکمه اول لمس می‌شود
                                 try:
                                     await m.click(0, 0)
                                 except Exception:
@@ -251,9 +263,9 @@ class TelegramLeechService:
 
             if not audio_msg or not (audio_msg.document or audio_msg.audio):
                 await client.disconnect()
-                return False, "هیچ فایلی از ربات‌های تلگرام دریافت نشد."
+                return False, "No audio file received from Telegram bots."
 
-            # ۳. استخراج متادیتا
+            # 3. Extract metadata
             doc = audio_msg.document or audio_msg.audio
             title = "Unknown Track"
             performer = "Unknown Artist"
@@ -266,7 +278,7 @@ class TelegramLeechService:
                 if hasattr(attr, 'duration') and attr.duration:
                     duration = attr.duration
 
-            # ۴. کپی مستقیم و ابری (Server-Side) به کانال استوریج لایراز
+            # 4. Cloud relay directly to Lyraz storage channel
             caption = f"🎵 {title} - {performer}\n⚡️ Ingested by Lyraz Userbot ({used_bot})\n🔗 {spotify_url}"
             sent_to_storage = await client.send_file(
                 dest_channel,
@@ -295,7 +307,7 @@ class TelegramLeechService:
                 await client.disconnect()
             except Exception:
                 pass
-            return False, f"خطای واکشی ابری: {str(e)}"
+            return False, f"Cloud leech error: {str(e)}"
 
     @classmethod
     async def ingest_and_register_track(cls, spotify_url, target_channel_id=None):
@@ -391,7 +403,7 @@ class TelegramLeechService:
         """
         settings = cls._get_db_settings()
         if not settings.get('userbot_enabled') or not settings.get('userbot_session_string'):
-            return False, "موتور یوزربات فعال یا متصل نیست."
+            return False, "Userbot engine is not enabled or connected."
 
         with sqlite3.connect(Config.DATABASE_URI) as conn:
             conn.row_factory = sqlite3.Row
@@ -404,7 +416,7 @@ class TelegramLeechService:
             """, (batch_size,)).fetchall()
 
         if not failed_tracks:
-            return True, {"rescued": 0, "failed": 0, "message": "هیچ قطعه شکست‌خورده دارای لینک اسپاتیفای برای ترمیم یافت نشد."}
+            return True, {"rescued": 0, "failed": 0, "message": "No failed tracks with Spotify links found for rescue."}
 
         rescued_count = 0
         failed_count = 0
