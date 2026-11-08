@@ -17,7 +17,7 @@ from core.models import init_db
 from .handlers import (
     start, list_devices, handle_callbacks, handle_text, 
     handle_audio, inline_music_search, youtube_dl, handle_my_chat_member,
-    sync_vault_cmd, show_menu, handle_queue_cmd, vault_repair_cmd, leave_hub_cmd
+    sync_vault_cmd, show_menu, close_menu_cmd, handle_queue_cmd, vault_repair_cmd, leave_hub_cmd
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ async def on_post_init(application):
     try:
         commands = [
             BotCommand("menu", "📌 Main Navigation Menu"),
+            BotCommand("close", "⌨️ Hide Menu Keyboard"),
             BotCommand("start", "🚀 Start / Connect to Hub"),
             BotCommand("queue", "📋 Playback Queue & Controls"),
             BotCommand("devices", "📺 My Connected Live Hubs"),
@@ -64,6 +65,7 @@ def run_bot_service():
             # --- Register Handlers (به ترتیب اولویت) ---
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CommandHandler("menu", show_menu))
+            app.add_handler(CommandHandler(["close", "hide"], close_menu_cmd))
             app.add_handler(CommandHandler("queue", handle_queue_cmd))
             app.add_handler(CommandHandler("devices", list_devices))
             app.add_handler(CommandHandler(["leave", "leave_hub", "disconnect"], leave_hub_cmd))

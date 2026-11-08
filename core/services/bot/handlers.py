@@ -8,7 +8,7 @@ import urllib.parse
 import logging
 import time
 import sqlite3
-from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telegram import Update, ForceReply, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode, ChatAction
 
@@ -819,11 +819,19 @@ async def render_queue_info(user_id, token):
     return text, markup
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Restores the persistent bottom reply keyboard immediately"""
+    """Restores the bottom reply keyboard immediately"""
     await update.message.reply_text(
         "👇 *Main Navigation Menu:*\nUse the buttons below to control your Hub, search, or download music:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=get_main_menu_keyboard()
+    )
+
+async def close_menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Removes the reply keyboard completely"""
+    await update.message.reply_text(
+        "⌨️ <b>Menu keyboard hidden.</b>\nTap the Telegram <b>Menu</b> button or type /menu anytime to bring it back.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=ReplyKeyboardRemove()
     )
 
 async def handle_queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -879,6 +887,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text.strip()
     
+    if text.lower() in ["بستن منو", "بستن کیبورد", "close menu", "hide menu", "close", "hide", "/close", "/hide"]:
+        await close_menu_cmd(update, context)
+        return
+
     if text in ["📺 My Devices", "📱 My Devices", "📺 My Hubs", "📺 Devices"]: 
         await list_devices(update, context)
         return

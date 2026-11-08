@@ -218,7 +218,6 @@ class YouTubeService:
         if video_id.startswith('sc_'):
             sc_id = video_id.replace('sc_', '')
             try:
-                import yt_dlp
                 ydl_opts = {'quiet': True, 'no_warnings': True, 'socket_timeout': 5}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(f"https://api.soundcloud.com/tracks/{sc_id}", download=False)

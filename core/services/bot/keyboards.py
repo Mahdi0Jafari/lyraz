@@ -5,8 +5,9 @@ from core.config import Config
 
 def get_main_menu_keyboard():
     """
-    Persistent Bottom Menu (Reply Keyboard).
-    is_persistent=True ensures the menu NEVER disappears or minimizes.
+    Bottom Navigation Menu (Reply Keyboard).
+    resize_keyboard=True ensures optimal button sizing.
+    is_persistent=False allows users to minimize/collapse the keyboard and exit via Back button.
     """
     keyboard = [
         [KeyboardButton("🔍 Search Music"), KeyboardButton("📥 Download Link")],
@@ -17,7 +18,7 @@ def get_main_menu_keyboard():
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
-        is_persistent=True
+        is_persistent=False
     )
 
 def get_onboarding_keyboard(session_token=None, is_admin=True):
